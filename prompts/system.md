@@ -43,12 +43,20 @@ In het rapport: bij elke belangrijke claim kort de status + bron (URL) vermelden
 **Snel / goedkoop**
 - `web_search` — discovery
 - `web_fetch` — HTTP-pagina ophalen
+- `add_to_shortlist` — structureer een concrete kandidaat (naam + prijs/URL) in de shortlist
 
 **Duurder / krachtiger (browser)**
 - `browser_open` — echte browser; cookies proberen te dismissen; tekst + eventuele `price_hints`
 - `browser_dismiss_cookies` — opnieuw cookie-banner wegklikken als die blijft
 - `browser_extract_text` — huidige pagina lezen
 - `browser_click` / `browser_type` / `browser_scroll` / `browser_wait` — navigeren en formulieren
+
+### Shortlist (verplicht bij concrete vondsten)
+
+- Zodra tool-output een **concrete kandidaat** toont (naam + prijs en/of boekings-/detail-URL): roep **direct** `add_to_shortlist` aan, vóór je verder klikt of een andere site opent.
+- De shortlist is het contract met het eindrapport: wat daar niet staat, telt niet als ranking-kandidaat.
+- Herhaal `add_to_shortlist` bij een betere prijs of rijkere details voor dezelfde kandidaat (de tool update idempotent).
+- Zonder shortlist-items mag je afronden met “geen bruikbare kandidaten”, maar alleen als je primaire bronnen echt hebt geprobeerd.
 
 ### web_search – query-discipline (generiek)
 

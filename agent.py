@@ -28,19 +28,23 @@ import yaml
 from llm import OllamaClient
 from memory_store import MemoryStore
 from storage import (
+    add_to_shortlist,
     append_conversation,
     append_note,
     compact_session_handoff,
     create_run_dir,
     load_notes,
+    load_shortlist,
     notes_as_prompt_text,
     save_metadata,
     save_report,
     save_sources,
     save_state,
     save_task,
+    shortlist_as_prompt_text,
 )
 from tools import TOOL_DEFINITIONS, execute_tool
+from urllib.parse import urlparse
 
 
 MAX_TOOL_RESULT_CHARS = 2500
@@ -305,24 +309,38 @@ def try_forced_report(
     task_text: str,
     system_prompt: str,
 ) -> str | None:
-    """Synthesize from notes + state only — avoid huge chat history."""
-    notes = load_notes(run_dir, limit=120)
-    notes_text = notes_as_prompt_text(notes, max_chars=12000, prioritize=True)
+    """Synthesize primarily from shortlist.json; notes only as supporting evidence."""
+    shortlist_text = shortlist_as_prompt_text(run_dir, max_chars=8000)
+    shortlist_items = load_shortlist(run_dir)
+    notes = load_notes(run_dir, limit=80)
+    notes_text = notes_as_prompt_text(notes, max_chars=6000, prioritize=True)
+
+    ranking_rule = (
+        "The SHORTLIST below is authoritative for Ranking. "
+        "If it is non-empty, you MUST rank those items; "
+        "you MUST NOT claim that no candidates were found.\n"
+        if shortlist_items
+        else (
+            "The SHORTLIST is empty. You may conclude that no concrete candidates "
+            "were structured. Use notes/events only to explain limitations "
+            "(failed sites, timeouts, 404s) — do not invent names.\n"
+        )
+    )
+
     force_messages = [
         {"role": "system", "content": system_prompt},
         {
             "role": "user",
             "content": (
                 f"Research question:\n{task_text}\n\n"
-                f"Collected notes (only source of facts; prioritized):\n{notes_text}\n\n"
+                f"## SHORTLIST (primary source for Ranking)\n{shortlist_text}\n\n"
+                f"## Supporting notes (evidence / limitations only)\n{notes_text}\n\n"
                 "STOP. No tools. Write the final Markdown report now.\n"
                 "Rules:\n"
-                "- Use ONLY facts present in the notes. Invent nothing.\n"
-                "- If notes contain prices, URLs, or feature claims from browser/fetch, "
-                "include them with the appropriate verification status. "
-                "Do NOT say 'not investigated' when notes already have that evidence.\n"
-                "- Prefer candidates that have primary-source or browser evidence over "
-                "search-snippet-only names.\n"
+                f"- {ranking_rule}"
+                "- Use ONLY facts from shortlist + notes. Invent nothing.\n"
+                "- Every ranked item must come from the shortlist when it is non-empty.\n"
+                "- Mark verification status honestly from the evidence you have.\n"
                 "First line exact: RESEARCH_COMPLETE\n"
                 "Structure: Research question, Executive summary, Ranking, "
                 "Details, Uncertainties, Sources."
@@ -330,8 +348,18 @@ def try_forced_report(
         },
     ]
     try:
-        print("[agent] Forced report from notes (minimal context)...")
-        append_conversation(run_dir, {"type": "forced_report_request", "mode": "notes_only"})
+        print(
+            f"[agent] Forced report (shortlist={len(shortlist_items)} items, "
+            f"notes={len(notes)})..."
+        )
+        append_conversation(
+            run_dir,
+            {
+                "type": "forced_report_request",
+                "mode": "shortlist_first",
+                "shortlist_count": len(shortlist_items),
+            },
+        )
         message = client.chat(force_messages, tools=None)
         append_conversation(run_dir, {"type": "forced_report_response", "message": message})
         content = _message_text(message)
@@ -402,24 +430,43 @@ def build_subtask_prompt(
     index: int,
     total: int,
     prior_handoff: str = "",
+    shortlist_text: str = "",
 ) -> str:
     """Focused user message for one executor session (generic)."""
     handoff_block = ""
     if prior_handoff.strip():
         handoff_block = (
-            "\n## Findings from previous phase (read-only; do not re-discover from scratch)\n"
-            f"{prior_handoff.strip()}\n\n"
-            "Build on this shortlist/evidence where relevant. "
-            "Do not ignore concrete URLs, prices, or names already found.\n"
+            "\n## Findings from previous phase (read-only)\n"
+            f"{prior_handoff.strip()}\n"
+        )
+    shortlist_block = ""
+    if shortlist_text.strip() and shortlist_text.strip() != "(shortlist empty)":
+        shortlist_block = (
+            "\n## Structured shortlist so far (authoritative candidates)\n"
+            f"{shortlist_text.strip()}\n\n"
+            "Your job in this phase is to **verify / deepen these items** "
+            "(reviews, features, price checks on secondary sources if the task allows). "
+            "Do **not** start a broad new market scan. "
+            "You may still `add_to_shortlist` to update prices/details.\n"
+        )
+    elif index > 1:
+        shortlist_block = (
+            "\n## Structured shortlist so far\n(empty)\n"
+            "Previous phase did not structure candidates. "
+            "You may continue primary-source discovery if still in scope, "
+            "or document limitations and complete.\n"
         )
     return (
         f"## Full research task (context only)\n{full_task}\n\n"
         f"## Your focus for this session ({index}/{total})\n{subtask}\n"
+        f"{shortlist_block}"
         f"{handoff_block}\n"
-        "Work only on this focus. Gather verifiable notes via tools. "
+        "Work only on this focus. "
+        "When you see a concrete candidate (name + price and/or URL), call "
+        "`add_to_shortlist` immediately. "
         "When this focus is done (enough verified info or clear dead end), "
-        "output RESEARCH_COMPLETE with a short Markdown summary of findings "
-        "for this sub-task only (not the global final ranking)."
+        "output RESEARCH_COMPLETE with a short Markdown summary for this "
+        "sub-task only (not the global final ranking)."
     )
 
 
@@ -459,9 +506,24 @@ def run_session(
     )
     session_llm_start = counters["llm_calls"]
     session_tool_fail_streak = 0
+    # Per-host browser budget + no-op detection (generic thrash guard)
+    max_browser_per_host = int(limits.get("max_browser_actions_per_host", 8))
+    max_noops_per_host = int(limits.get("max_browser_noops_per_host", 2))
+    host_browser_count: dict[str, int] = {}
+    host_noop_count: dict[str, int] = {}
+    host_blocked: set[str] = set()
+    last_browser_sig: dict[str, tuple[str, frozenset[str]]] = {}
 
     def prefer_browser(url: str) -> bool:
         return memory.preferred_tool_for_url(url) == "browser_open"
+
+    def host_of(url: str | None) -> str:
+        if not url:
+            return ""
+        try:
+            return (urlparse(url).hostname or "").lower()
+        except Exception:
+            return ""
 
     status = "running"
     stop_reason: str | None = None
@@ -564,10 +626,127 @@ def run_session(
 
                     print(f"[agent] [{session_label}] Tool call: {name}({arguments})")
 
+                    # --- Structured shortlist tool (no network) ---
+                    if name == "add_to_shortlist":
+                        t0 = time.perf_counter()
+                        result = add_to_shortlist(
+                            run_dir,
+                            name=str(arguments.get("name") or ""),
+                            source_url=str(arguments.get("source_url") or ""),
+                            price=arguments.get("price"),
+                            details=str(arguments.get("details") or ""),
+                            session=session_label,
+                        )
+                        duration_ms = (time.perf_counter() - t0) * 1000
+                        print(
+                            f"[agent] [{session_label}] Tool {name} finished in "
+                            f"{duration_ms:.0f} ms → {result.get('action')} "
+                            f"(count={result.get('count')})"
+                        )
+                        append_note(
+                            run_dir,
+                            {
+                                "source_type": "shortlist",
+                                "title": arguments.get("name"),
+                                "summary": (
+                                    f"{result.get('action')}: price={arguments.get('price')} "
+                                    f"url={arguments.get('source_url')} "
+                                    f"{str(arguments.get('details') or '')[:200]}"
+                                ),
+                                "url": arguments.get("source_url") or "",
+                                "session": session_label,
+                                "ok": bool(result.get("ok")),
+                            },
+                        )
+                        counters["notes_count"] += 1
+                        append_conversation(
+                            run_dir,
+                            {
+                                "type": "tool_result",
+                                "session": session_label,
+                                "tool": name,
+                                "arguments": arguments,
+                                "duration_ms": round(duration_ms, 1),
+                                "result_preview": str(result)[:500],
+                            },
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "content": json.dumps(result, ensure_ascii=False),
+                                "name": name,
+                            }
+                        )
+                        continue
+
+                    # --- Pre-check: host budget / blacklist for browser tools ---
+                    pre_host = ""
+                    if name.startswith("browser_"):
+                        pre_url = arguments.get("url") or ""
+                        if not pre_url and name != "browser_open":
+                            # continuing on current page — use last known host if any
+                            pre_host = next(iter(last_browser_sig.keys()), "")
+                        else:
+                            pre_host = host_of(str(pre_url))
+                        if pre_host and pre_host in host_blocked:
+                            result = {
+                                "error": (
+                                    f"Host {pre_host} abandoned this session "
+                                    f"(budget or repeated no-ops). "
+                                    "Try another primary source or RESEARCH_COMPLETE."
+                                ),
+                                "blocked_host": pre_host,
+                            }
+                            duration_ms = 0.0
+                            print(
+                                f"[agent] [{session_label}] Skip browser on blocked host "
+                                f"{pre_host}"
+                            )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "content": json.dumps(result, ensure_ascii=False),
+                                    "name": name,
+                                }
+                            )
+                            append_conversation(
+                                run_dir,
+                                {
+                                    "type": "tool_result",
+                                    "session": session_label,
+                                    "tool": name,
+                                    "arguments": arguments,
+                                    "duration_ms": 0,
+                                    "result_preview": str(result)[:500],
+                                },
+                            )
+                            continue
+                        if pre_host and host_browser_count.get(pre_host, 0) >= max_browser_per_host:
+                            host_blocked.add(pre_host)
+                            result = {
+                                "error": (
+                                    f"max_browser_actions_per_host ({max_browser_per_host}) "
+                                    f"reached for {pre_host}. Abandon this host."
+                                ),
+                                "blocked_host": pre_host,
+                            }
+                            duration_ms = 0.0
+                            print(
+                                f"[agent] [{session_label}] Host budget exhausted: {pre_host}"
+                            )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "content": json.dumps(result, ensure_ascii=False),
+                                    "name": name,
+                                }
+                            )
+                            continue
+
                     if name == "web_search":
                         counters["search_calls"] += 1
                         if counters["search_calls"] > max_search:
-                            result: Any = {"error": "max_search_calls exceeded"}
+                            result = {"error": "max_search_calls exceeded"}
                             duration_ms = 0.0
                         else:
                             result, duration_ms = execute_tool(
@@ -605,12 +784,54 @@ def run_session(
                             )
                         url = None
 
+                    # --- Host budget + no-op tracking for browser ---
+                    if name.startswith("browser_") and isinstance(result, dict):
+                        h = host_of(url if isinstance(url, str) else None) or pre_host
+                        if h:
+                            host_browser_count[h] = host_browser_count.get(h, 0) + 1
+                            hints = result.get("price_hints") or []
+                            hint_set = frozenset(str(x) for x in hints[:20])
+                            page_url = (result.get("url") or url or "") if isinstance(
+                                result.get("url") or url, str
+                            ) else ""
+                            sig = (page_url, hint_set)
+                            prev = last_browser_sig.get(h)
+                            is_noop = False
+                            if prev is not None:
+                                prev_url, prev_hints = prev
+                                # same URL and no new price hints → functional no-op
+                                if page_url and page_url == prev_url and hint_set <= prev_hints:
+                                    is_noop = True
+                                if err:
+                                    is_noop = True
+                            last_browser_sig[h] = sig
+                            if is_noop:
+                                host_noop_count[h] = host_noop_count.get(h, 0) + 1
+                            else:
+                                host_noop_count[h] = 0
+                            if host_noop_count.get(h, 0) >= max_noops_per_host:
+                                host_blocked.add(h)
+                                print(
+                                    f"[agent] [{session_label}] Host {h} abandoned "
+                                    f"after {max_noops_per_host} no-ops"
+                                )
+                                if isinstance(result, dict):
+                                    result = dict(result)
+                                    result["host_abandoned"] = True
+                                    result["advice"] = (
+                                        f"Stop interacting with {h}. "
+                                        "Move to another primary source or "
+                                        "add_to_shortlist what you have, then RESEARCH_COMPLETE."
+                                    )
+                            if host_browser_count.get(h, 0) >= max_browser_per_host:
+                                host_blocked.add(h)
+
                     # Generic: repeated tool failures → stop thrashing this session
                     tool_failed = bool(err) or blocked or not ok
-                    if name.startswith("browser_") or name in ("web_fetch", "web_search"):
-                        if tool_failed and name.startswith("browser_"):
+                    if name.startswith("browser_"):
+                        if tool_failed:
                             session_tool_fail_streak += 1
-                        elif not tool_failed:
+                        else:
                             session_tool_fail_streak = 0
                     if session_tool_fail_streak >= 3:
                         print(
@@ -624,8 +845,8 @@ def run_session(
                                     {
                                         "error": (
                                             "Repeated browser interaction failures. "
-                                            "Stop UI retries; summarize what you have "
-                                            "and RESEARCH_COMPLETE for this focus."
+                                            "Stop UI retries; call add_to_shortlist for "
+                                            "any concrete finds, then RESEARCH_COMPLETE."
                                         )
                                     },
                                     ensure_ascii=False,
@@ -633,9 +854,7 @@ def run_session(
                                 "name": name,
                             }
                         )
-                        # One more LLM turn will be allowed; streak breaks loop after complete
                         session_tool_fail_streak = 0
-                        # Fall through to append normal result too below
 
                     if mem_cfg.get("enabled", True):
                         memory.record_tool_result(
@@ -907,7 +1126,12 @@ def main() -> int:
                 label = f"sub{i}"
                 print(f"\n[agent] === Executor session {i}/{len(subtasks)} ===")
                 user_content = build_subtask_prompt(
-                    task_text, sub, i, len(subtasks), prior_handoff=prior_handoff
+                    task_text,
+                    sub,
+                    i,
+                    len(subtasks),
+                    prior_handoff=prior_handoff,
+                    shortlist_text=shortlist_as_prompt_text(run_dir),
                 )
                 result = run_session(
                     client=client,
@@ -1023,6 +1247,7 @@ def main() -> int:
         },
     )
 
+    shortlist_n = len(load_shortlist(run_dir))
     metadata = {
         "run_id": run_dir.name,
         "status": status,
@@ -1036,6 +1261,7 @@ def main() -> int:
         "search_calls": counters["search_calls"],
         "sources_count": len(sources),
         "notes_count": counters["notes_count"],
+        "shortlist_count": shortlist_n,
         "limits": limits,
     }
     save_metadata(run_dir, metadata)
@@ -1045,7 +1271,8 @@ def main() -> int:
     print(f"[agent] Report written to: {run_dir / 'report.md'}")
     print(
         f"[agent] Duration: {elapsed/60:.1f} min | LLM: {counters['llm_calls']} | "
-        f"Tools: {counters['tool_calls']} | Notes: {counters['notes_count']}"
+        f"Tools: {counters['tool_calls']} | Notes: {counters['notes_count']} | "
+        f"Shortlist: {shortlist_n}"
     )
     print(f"[agent] Memory tactics: {memory.tactics_path}")
 

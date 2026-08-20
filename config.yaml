@@ -14,6 +14,10 @@ limits:
   max_tool_calls: 150
   max_search_calls: 60
   max_tool_result_chars: 2500
+  # Per-host browser interaction budget (open/click/type/scroll/wait count together)
+  max_browser_actions_per_host: 8
+  # Consecutive no-op browser actions (same URL, no new price_hints) before abandoning host
+  max_browser_noops_per_host: 2
 
 tools:
   web_search:

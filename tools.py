@@ -201,6 +201,42 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_to_shortlist",
+            "description": (
+                "Record a concrete candidate found during research into the structured shortlist. "
+                "Call this as soon as you see a named candidate with a price and/or booking URL "
+                "from a tool result — before further clicking. "
+                "Idempotent: same name (+ same source URL) updates the entry; "
+                "a better (lower) price overwrites the previous price. "
+                "The final report is built primarily from this shortlist."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Candidate name (hotel, product, package, …)",
+                    },
+                    "source_url": {
+                        "type": "string",
+                        "description": "URL where you found this candidate / can book",
+                    },
+                    "price": {
+                        "type": "string",
+                        "description": "Price as shown on the page (e.g. '€622 p.p.' or '904')",
+                    },
+                    "details": {
+                        "type": "string",
+                        "description": "Short facts: stars, location, meal plan, review score, …",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]
 
 

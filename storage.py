@@ -171,3 +171,156 @@ def compact_session_handoff(
     if not session_notes:
         session_notes = notes[-15:]
     return notes_as_prompt_text(session_notes, max_chars=max_chars, prioritize=True)
+
+
+# --- Structured shortlist (contract between executor phases and critic) ---
+
+
+def _shortlist_path(run_dir: Path) -> Path:
+    return run_dir / "shortlist.json"
+
+
+def load_shortlist(run_dir: Path) -> list[dict[str, Any]]:
+    path = _shortlist_path(run_dir)
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and isinstance(data.get("items"), list):
+            return data["items"]
+    except Exception:
+        pass
+    return []
+
+
+def save_shortlist(run_dir: Path, items: list[dict[str, Any]]) -> None:
+    path = _shortlist_path(run_dir)
+    path.write_text(
+        json.dumps(items, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _norm_name(name: str) -> str:
+    return " ".join((name or "").lower().split())
+
+
+def _parse_price_hint(price: Any) -> float | None:
+    """Best-effort numeric extract for compare; None if unparseable."""
+    if price is None:
+        return None
+    if isinstance(price, (int, float)):
+        return float(price)
+    s = str(price)
+    # keep digits, comma/dot
+    import re as _re
+
+    m = _re.search(r"(\d+[.,]?\d*)", s.replace(" ", ""))
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def add_to_shortlist(
+    run_dir: Path,
+    *,
+    name: str,
+    source_url: str = "",
+    price: str | float | None = None,
+    details: str = "",
+    session: str = "",
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Idempotent shortlist upsert.
+    Match key: normalized name (+ source_url if both present).
+    If same candidate found again with a lower parseable price, overwrite price/details.
+    """
+    name = (name or "").strip()
+    if not name:
+        return {"ok": False, "error": "name is required"}
+
+    items = load_shortlist(run_dir)
+    key_name = _norm_name(name)
+    key_url = (source_url or "").strip()
+    new_price_num = _parse_price_hint(price)
+
+    matched_idx: int | None = None
+    for i, it in enumerate(items):
+        same_name = _norm_name(str(it.get("name") or "")) == key_name
+        if not same_name:
+            continue
+        old_url = (it.get("source_url") or "").strip()
+        if key_url and old_url and key_url != old_url:
+            # same name, different listing URL → treat as distinct offer
+            continue
+        matched_idx = i
+        break
+
+    entry: dict[str, Any] = {
+        "name": name,
+        "source_url": key_url,
+        "price": price if price is not None else "",
+        "details": (details or "")[:1000],
+        "session": session,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if extra:
+        for k, v in extra.items():
+            if k not in entry and isinstance(v, (str, int, float, bool, list, dict)):
+                entry[k] = v
+
+    action = "added"
+    if matched_idx is not None:
+        old = items[matched_idx]
+        old_price_num = _parse_price_hint(old.get("price"))
+        # Prefer lower price when both parseable; else prefer non-empty new fields
+        keep_old_price = (
+            new_price_num is not None
+            and old_price_num is not None
+            and old_price_num < new_price_num
+        )
+        if keep_old_price:
+            entry["price"] = old.get("price")
+        if not entry.get("source_url") and old.get("source_url"):
+            entry["source_url"] = old["source_url"]
+        if not entry.get("details") and old.get("details"):
+            entry["details"] = old["details"]
+        items[matched_idx] = entry
+        action = "updated"
+    else:
+        items.append(entry)
+
+    save_shortlist(run_dir, items)
+    return {
+        "ok": True,
+        "action": action,
+        "count": len(items),
+        "entry": entry,
+    }
+
+
+def shortlist_as_prompt_text(run_dir: Path, max_chars: int = 6000) -> str:
+    items = load_shortlist(run_dir)
+    if not items:
+        return "(shortlist empty)"
+    lines = [f"Shortlist ({len(items)} items):"]
+    total = 0
+    for i, it in enumerate(items, 1):
+        line = (
+            f"{i}. {it.get('name')}"
+            f" | price={it.get('price') or '—'}"
+            f" | url={it.get('source_url') or '—'}"
+            f" | {str(it.get('details') or '')[:200]}"
+        )
+        if total + len(line) > max_chars:
+            lines.append("...[shortlist truncated]")
+            break
+        lines.append(line)
+        total += len(line)
+    return "\n".join(lines)
