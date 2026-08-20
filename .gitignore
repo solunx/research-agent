@@ -1,12 +1,13 @@
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.mypy_cache/
+*.egg-info/
 .venv/
 venv/
 .env
-*.log
+.pytest_cache/
+.mypy_cache/
 runs/
-memory/site_tactics.json
-# behoud structurele memory-templates desgewenst:
-# memory/general_strategies.json
+*.log
+.DS_Store
+playwright/.cache/
+memory/events.jsonl

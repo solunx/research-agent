@@ -1,0 +1,56 @@
+{
+  "hyattinclusivecollection.com": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-19T19:30:39.550795+00:00",
+    "success_count": 1
+  },
+  "booking.com": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-20T15:50:04.686346+00:00",
+    "success_count": 24
+  },
+  "tui.be": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-20T17:02:58.627968+00:00",
+    "success_count": 8
+  },
+  "thomascook.com": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-20T05:37:57.058570+00:00",
+    "success_count": 2
+  },
+  "skyscanner.net": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-20T06:45:10.686507+00:00",
+    "success_count": 1
+  },
+  "brusselsairlines.com": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-20T06:45:47.843344+00:00",
+    "success_count": 3
+  },
+  "threecorners.com": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-20T15:48:39.639547+00:00",
+    "success_count": 5
+  },
+  "tui.nl": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-20T15:48:16.312310+00:00",
+    "success_count": 1
+  },
+  "vakantiediscounter.be": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-20T17:01:47.444119+00:00",
+    "success_count": 2
+  }
+}

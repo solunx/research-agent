@@ -206,34 +206,67 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "add_to_shortlist",
             "description": (
-                "Record a concrete candidate found during research into the structured shortlist. "
-                "Call this as soon as you see a named candidate with a price and/or booking URL "
-                "from a tool result — before further clicking. "
-                "Idempotent: same name (+ same source URL) updates the entry; "
-                "a better (lower) price overwrites the previous price. "
-                "The final report is built primarily from this shortlist."
+                "Record a concrete candidate into the structured shortlist. "
+                "Call as soon as tool output shows a named candidate with price and/or URL. "
+                "Idempotent on normalized name. "
+                "REQUIRED: constraints_check — honestly list which hard task requirements "
+                "this candidate matched / did not match / are still unknown "
+                "(use labels copied from the task, any domain). "
+                "match_status full|partial|unknown is derived or may be set explicitly. "
+                "The final report ranks primarily from this shortlist."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "Candidate name (hotel, product, package, …)",
+                        "description": "Candidate name (product, package, instrument, …)",
                     },
                     "source_url": {
                         "type": "string",
-                        "description": "URL where you found this candidate / can book",
+                        "description": "URL where you found this candidate / can act on it",
                     },
                     "price": {
                         "type": "string",
-                        "description": "Price as shown on the page (e.g. '€622 p.p.' or '904')",
+                        "description": "Price or numeric signal as shown on the page",
                     },
                     "details": {
                         "type": "string",
-                        "description": "Short facts: stars, location, meal plan, review score, …",
+                        "description": "Short facts supporting the candidate",
+                    },
+                    "constraints_check": {
+                        "type": "object",
+                        "description": (
+                            "Honesty about hard task constraints. "
+                            "Example: {\"matched\": [\"…\"], \"unmatched\": [\"…\"], "
+                            "\"unknown\": [\"…\"], \"match_status\": \"partial\"}."
+                        ),
+                        "properties": {
+                            "matched": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "unmatched": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "unknown": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "match_status": {
+                                "type": "string",
+                                "description": "full | partial | unknown",
+                            },
+                            "notes": {"type": "string"},
+                        },
+                    },
+                    "match_status": {
+                        "type": "string",
+                        "description": "Optional shorthand: full | partial | unknown",
                     },
                 },
-                "required": ["name"],
+                "required": ["name", "constraints_check"],
             },
         },
     },

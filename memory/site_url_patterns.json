@@ -1,0 +1,27 @@
+{
+  "sunweb.be": {
+    "example_urls": [
+      "https://www.sunweb.be/nl/vakantie/all-inclusive?Mealplan[0]=…&Mealplan[1]=…&Duration[0]=…&DepartureDate[0]=…&DepartureDate[1]=…&Participants[0][0]=…&Participants[0][1]=…&Participants[0][2]=…&TransportType=…&limit=…&offset=…&sort=…",
+      "https://www.sunweb.be/nl/vakantie/all-inclusive?Mealplan[0]=…&Mealplan[1]=…&Duration[0]=…&DepartureDate[0]=…&DepartureDate[1]=…&Participants[0][0]=…&Participants[0][1]=…&TransportType=…&limit=…&offset=…&sort=…"
+    ],
+    "param_names": [
+      "Mealplan[0]",
+      "Mealplan[1]",
+      "Duration[0]",
+      "DepartureDate[0]",
+      "DepartureDate[1]",
+      "Participants[0][0]",
+      "Participants[0][1]",
+      "TransportType",
+      "limit",
+      "offset",
+      "sort",
+      "Participants[0][2]"
+    ],
+    "path_hints": [
+      "/nl/vakantie/all-inclusive"
+    ],
+    "success_count": 4,
+    "last_verified": "2026-08-20T17:06:20.588255+00:00"
+  }
+}

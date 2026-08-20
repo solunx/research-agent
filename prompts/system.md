@@ -90,6 +90,40 @@ Als de task **geverifieerde boekingsprijzen** vraagt (pakketten, tickets, …):
 
 Geen vaste merknamen of selectors hardcoden: lees de pagina en kies knoppen/velden op basis van zichtbare labels.
 
+### Memory-first open (verplicht bij geleerde patterns)
+
+Als **Learned search URL patterns** voor een host bestaan:
+
+1. Eerste `browser_open` op die host = **search/deep-link** (path + query uit patterns; **waarden** uit de huidige task).
+2. Kale homepage / alleen `/nl` zonder query is **verboden** als eerste open (de runtime weigert dit).
+3. Homepage mag alleen als de deep-link faalt (404, leeg, nutteloze redirect) — daarna max een paar acties om te herleren, geen eindeloze form-loop.
+
+### Deep links / zoek-URL’s eerst (generiek)
+
+Gedraag je **niet** als een mens die lang op de homepage forms klikt.
+
+1. **Voorkeur:** direct search/results-URL met query-params (learned patterns, eerdere URL op dezelfde host, of param-namen die je al zag).
+2. Homepage + forms alleen zonder bruikbare URL-structuur.
+3. Cookie/consent: eerst `browser_dismiss_cookies` of zichtbare “Accepteer”.
+
+### Form-UI faalt → URL-parameters (generiek)
+
+Na **twee** no-op clicks/types op dezelfde host:
+
+1. Stop UI-klikken.
+2. **Eén** grace-`browser_open` op een **andere search-URL** (met query/params) — geen tweede homepage.
+3. Param-namen uit patterns of de site; waarden uit de task.
+4. Lukt dat niet → constraints **niet bevestigd**, andere bron of afronden.
+
+### Shortlist-URL’s + constraints_check
+
+- Bij `add_to_shortlist` is **`constraints_check` verplicht**:
+  - `matched` / `unmatched` / `unknown`: labels gekopieerd uit de **harde eisen van de task** (elk domein).
+  - of `match_status`: `full` | `partial` | `unknown`.
+- Zonder dit veld weigert de tool de entry.
+- Kandidaten die duidelijk niet aan harde task-eisen voldoen: `match_status=partial` of `unmatched` vullen — niet stil als perfecte hit opslaan.
+- Bij voorkeur detail-/boekings-URL; zichtbare kandidaten + prijs → direct shortlist.
+
 ### Research-aanpak
 
 - **Discovery** eerst (breed zoeken, kandidaten verzamelen).

@@ -118,8 +118,10 @@ def is_complete(message: dict[str, Any]) -> bool:
 
 def truncate_tool_result(name: str, result: Any, max_chars: int = MAX_TOOL_RESULT_CHARS) -> Any:
     """
-    Keep tool results small for the LLM context.
-    Always preserve status/error/blocked flags so the model can escalate correctly.
+    Keep tool results usable for the LLM without blind aggressive cuts.
+
+    Always preserve: url, title, price_hints, error/blocked flags.
+    Body text is truncated only when still oversized after that.
     """
     if name == "web_search" and isinstance(result, list):
         trimmed = []
@@ -134,7 +136,6 @@ def truncate_tool_result(name: str, result: Any, max_chars: int = MAX_TOOL_RESUL
         return trimmed
 
     if isinstance(result, dict):
-        # Always keep control fields; only truncate long text bodies
         out: dict[str, Any] = {}
         for key in (
             "url",
@@ -145,18 +146,26 @@ def truncate_tool_result(name: str, result: Any, max_chars: int = MAX_TOOL_RESUL
             "prefer_browser",
             "ok",
             "cookies_dismissed",
+            "host_abandoned",
+            "advice",
+            "blocked_host",
         ):
             if key in result:
                 out[key] = result[key]
-        # Keep price hints fully (short list)
+        # Price signals are high-value — keep them fully (bounded list)
         if isinstance(result.get("price_hints"), list):
-            out["price_hints"] = result["price_hints"][:20]
+            out["price_hints"] = result["price_hints"][:25]
         text = result.get("text")
         if isinstance(text, str):
-            if len(text) > max_chars:
+            # Prefer a larger body budget for browser pages (lists/prices often mid-page)
+            body_budget = max_chars
+            if name.startswith("browser_"):
+                body_budget = max(max_chars, 4000)
+            if len(text) > body_budget:
                 out["text"] = (
-                    text[:max_chars]
-                    + f"\n...[truncated {len(text)} -> {max_chars} chars]"
+                    text[:body_budget]
+                    + f"\n...[truncated {len(text)} -> {body_budget} chars; "
+                    "scroll or open a more specific URL if you need lower content]"
                 )
             else:
                 out["text"] = text
@@ -444,10 +453,12 @@ def build_subtask_prompt(
         shortlist_block = (
             "\n## Structured shortlist so far (authoritative candidates)\n"
             f"{shortlist_text.strip()}\n\n"
-            "Your job in this phase is to **verify / deepen these items** "
-            "(reviews, features, price checks on secondary sources if the task allows). "
-            "Do **not** start a broad new market scan. "
-            "You may still `add_to_shortlist` to update prices/details.\n"
+            "Your job in this phase is to **verify / deepen these items only** "
+            "(reviews, facilities, price checks on secondary sources if the task allows). "
+            "Do **not** start a broad new market scan or add unrelated new destinations.\n"
+            "After each useful verification, call `add_to_shortlist` again with the "
+            "same name and richer details / better source_url so the final report sees updates.\n"
+            "Prefer hotel/package **detail pages** over search-result list URLs.\n"
         )
     elif index > 1:
         shortlist_block = (
@@ -463,7 +474,10 @@ def build_subtask_prompt(
         f"{handoff_block}\n"
         "Work only on this focus. "
         "When you see a concrete candidate (name + price and/or URL), call "
-        "`add_to_shortlist` immediately. "
+        "`add_to_shortlist` immediately — prefer a detail/booking URL over a search list. "
+        "If form UI clicks fail twice with no page change, try **one** `browser_open` "
+        "with task constraints as URL query parameters (persons, dates, …) instead of "
+        "more clicks on the same controls. "
         "When this focus is done (enough verified info or clear dead end), "
         "output RESEARCH_COMPLETE with a short Markdown summary for this "
         "sub-task only (not the global final ranking)."
@@ -512,18 +526,72 @@ def run_session(
     host_browser_count: dict[str, int] = {}
     host_noop_count: dict[str, int] = {}
     host_blocked: set[str] = set()
+    # Hosts that already contributed shortlist items — get one softer abandon path
+    host_shortlist_hits: set[str] = set()
+    host_url_param_grace: set[str] = set()  # one extra browser_open allowed after no-ops
     last_browser_sig: dict[str, tuple[str, frozenset[str]]] = {}
+    # Single source of truth for the live tab (updated after every successful browser tool)
+    current_page_url: str = ""
 
     def prefer_browser(url: str) -> bool:
         return memory.preferred_tool_for_url(url) == "browser_open"
 
     def host_of(url: str | None) -> str:
+        """Normalize host: lowercase, strip www. so blocks/grace/patterns align."""
         if not url:
             return ""
         try:
-            return (urlparse(url).hostname or "").lower()
+            h = (urlparse(url).hostname or "").lower()
         except Exception:
             return ""
+        if h.startswith("www."):
+            h = h[4:]
+        return h
+
+    def _is_rootish_url(url: str) -> bool:
+        """True for bare homepage / locale home without search path or query."""
+        try:
+            p = urlparse(url)
+        except Exception:
+            return True
+        path = (p.path or "/").rstrip("/") or "/"
+        # locale-only paths still count as rootish
+        if path in ("/",) or path.count("/") <= 1 and len(path) <= 4:
+            # /nl, /en, /fr, /be, /de …
+            if not p.query:
+                return True
+        if path in ("/nl", "/en", "/fr", "/de", "/be", "/nl-be", "/fr-be"):
+            return not p.query
+        return False
+
+    def _looks_like_search_url(url: str) -> bool:
+        try:
+            p = urlparse(url)
+        except Exception:
+            return False
+        if p.query and ("=" in p.query):
+            return True
+        low = (p.path or "").lower()
+        return any(
+            x in low
+            for x in (
+                "/zoeken",
+                "/search",
+                "/results",
+                "/vakantie/",
+                "/all-inclusive",
+                "/serp",
+                "/find",
+            )
+        )
+
+    def refresh_host_shortlist_hits() -> None:
+        """Mark hosts whose URLs appear in the current shortlist."""
+        for it in load_shortlist(run_dir):
+            for u in list(it.get("source_urls") or []) + [it.get("source_url") or ""]:
+                hh = host_of(str(u) if u else None)
+                if hh:
+                    host_shortlist_hits.add(hh)
 
     status = "running"
     stop_reason: str | None = None
@@ -629,6 +697,9 @@ def run_session(
                     # --- Structured shortlist tool (no network) ---
                     if name == "add_to_shortlist":
                         t0 = time.perf_counter()
+                        cc = arguments.get("constraints_check")
+                        if not isinstance(cc, dict):
+                            cc = None
                         result = add_to_shortlist(
                             run_dir,
                             name=str(arguments.get("name") or ""),
@@ -636,13 +707,26 @@ def run_session(
                             price=arguments.get("price"),
                             details=str(arguments.get("details") or ""),
                             session=session_label,
+                            constraints_check=cc,
+                            match_status=str(arguments.get("match_status") or "") or None,
                         )
                         duration_ms = (time.perf_counter() - t0) * 1000
-                        print(
-                            f"[agent] [{session_label}] Tool {name} finished in "
-                            f"{duration_ms:.0f} ms → {result.get('action')} "
-                            f"(count={result.get('count')})"
-                        )
+                        su = str(arguments.get("source_url") or "")
+                        hh = host_of(su)
+                        if hh:
+                            host_shortlist_hits.add(hh)
+                        refresh_host_shortlist_hits()
+                        if result.get("ok"):
+                            print(
+                                f"[agent] [{session_label}] Tool {name} finished in "
+                                f"{duration_ms:.0f} ms → {result.get('action')} "
+                                f"(count={result.get('count')})"
+                            )
+                        else:
+                            print(
+                                f"[agent] [{session_label}] Tool {name} rejected in "
+                                f"{duration_ms:.0f} ms → {result.get('error')}"
+                            )
                         append_note(
                             run_dir,
                             {
@@ -682,45 +766,125 @@ def run_session(
                     # --- Pre-check: host budget / blacklist for browser tools ---
                     pre_host = ""
                     if name.startswith("browser_"):
-                        pre_url = arguments.get("url") or ""
-                        if not pre_url and name != "browser_open":
-                            # continuing on current page — use last known host if any
-                            pre_host = next(iter(last_browser_sig.keys()), "")
-                        else:
-                            pre_host = host_of(str(pre_url))
+                        # Prefer explicit URL arg (browser_open); else live tab URL
+                        pre_url = arguments.get("url") or current_page_url or ""
+                        pre_host = host_of(str(pre_url)) if pre_url else ""
                         if pre_host and pre_host in host_blocked:
-                            result = {
-                                "error": (
-                                    f"Host {pre_host} abandoned this session "
-                                    f"(budget or repeated no-ops). "
-                                    "Try another primary source or RESEARCH_COMPLETE."
-                                ),
-                                "blocked_host": pre_host,
-                            }
-                            duration_ms = 0.0
-                            print(
-                                f"[agent] [{session_label}] Skip browser on blocked host "
-                                f"{pre_host}"
+                            # Grace: ONE browser_open with a *search-like* different URL
+                            # (not another homepage). Not tied to shortlist hits.
+                            grace_url = str(arguments.get("url") or "")
+                            allow_grace = (
+                                name == "browser_open"
+                                and pre_host not in host_url_param_grace
+                                and grace_url
+                                and grace_url != current_page_url
+                                and _looks_like_search_url(grace_url)
+                                and not _is_rootish_url(grace_url)
                             )
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "content": json.dumps(result, ensure_ascii=False),
-                                    "name": name,
+                            if allow_grace:
+                                host_url_param_grace.add(pre_host)
+                                host_blocked.discard(pre_host)
+                                host_noop_count[pre_host] = 0
+                                print(
+                                    f"[agent] [{session_label}] Grace browser_open on "
+                                    f"{pre_host} (URL-param / deep-link recovery)"
+                                )
+                            else:
+                                result = {
+                                    "error": (
+                                        f"Host {pre_host} abandoned this session "
+                                        f"(budget or repeated no-ops). "
+                                        "Try another primary source or RESEARCH_COMPLETE."
+                                    ),
+                                    "blocked_host": pre_host,
+                                    "advice": (
+                                        "Do not keep clicking the same form. "
+                                        "Grace only accepts a search/deep-link URL "
+                                        "(query params or search path), not another homepage."
+                                    ),
                                 }
-                            )
-                            append_conversation(
-                                run_dir,
-                                {
-                                    "type": "tool_result",
-                                    "session": session_label,
-                                    "tool": name,
-                                    "arguments": arguments,
-                                    "duration_ms": 0,
-                                    "result_preview": str(result)[:500],
-                                },
-                            )
-                            continue
+                                duration_ms = 0.0
+                                print(
+                                    f"[agent] [{session_label}] Skip browser on blocked host "
+                                    f"{pre_host}"
+                                )
+                                messages.append(
+                                    {
+                                        "role": "tool",
+                                        "content": json.dumps(result, ensure_ascii=False),
+                                        "name": name,
+                                    }
+                                )
+                                append_conversation(
+                                    run_dir,
+                                    {
+                                        "type": "tool_result",
+                                        "session": session_label,
+                                        "tool": name,
+                                        "arguments": arguments,
+                                        "duration_ms": 0,
+                                        "result_preview": str(result)[:500],
+                                    },
+                                )
+                                continue
+                        # Memory-first: refuse root/homepage open when learned search patterns exist
+                        if (
+                            name == "browser_open"
+                            and pre_host
+                            and isinstance(arguments.get("url"), str)
+                            and _is_rootish_url(str(arguments.get("url")))
+                        ):
+                            patterns = memory.load_url_patterns()
+                            # match host or parent
+                            pat = patterns.get(pre_host)
+                            if not pat:
+                                for k, v in patterns.items():
+                                    if pre_host == k or pre_host.endswith("." + k) or k.endswith("." + pre_host):
+                                        pat = v
+                                        break
+                            if pat and (pat.get("param_names") or pat.get("path_hints")):
+                                paths = ", ".join((pat.get("path_hints") or [])[:3])
+                                params = ", ".join((pat.get("param_names") or [])[:10])
+                                result = {
+                                    "error": (
+                                        f"Memory-first: host {pre_host} has learned search URL "
+                                        f"patterns. Do not open the bare homepage first."
+                                    ),
+                                    "blocked_root_open": True,
+                                    "advice": (
+                                        "Build a deep-link/search URL using learned path + params, "
+                                        "with values from the current task constraints. "
+                                        f"paths=[{paths}] params=[{params}]. "
+                                        "Only use the homepage if that deep-link fails (404/empty)."
+                                    ),
+                                    "learned_path_hints": (pat.get("path_hints") or [])[:5],
+                                    "learned_param_names": (pat.get("param_names") or [])[:15],
+                                }
+                                duration_ms = 0.0
+                                print(
+                                    f"[agent] [{session_label}] Memory-first: reject root open "
+                                    f"on {pre_host} (patterns known)"
+                                )
+                                messages.append(
+                                    {
+                                        "role": "tool",
+                                        "content": json.dumps(result, ensure_ascii=False),
+                                        "name": name,
+                                    }
+                                )
+                                append_conversation(
+                                    run_dir,
+                                    {
+                                        "type": "tool_result",
+                                        "session": session_label,
+                                        "tool": name,
+                                        "arguments": arguments,
+                                        "duration_ms": 0,
+                                        "result_preview": str(result)[:500],
+                                    },
+                                )
+                                continue
+
                         if pre_host and host_browser_count.get(pre_host, 0) >= max_browser_per_host:
                             host_blocked.add(pre_host)
                             result = {
@@ -784,16 +948,29 @@ def run_session(
                             )
                         url = None
 
-                    # --- Host budget + no-op tracking for browser ---
+                    # --- Live tab URL + host budget + no-op tracking ---
                     if name.startswith("browser_") and isinstance(result, dict):
-                        h = host_of(url if isinstance(url, str) else None) or pre_host
+                        # Always refresh current_page_url from the real tab when present
+                        result_url = result.get("url")
+                        if isinstance(result_url, str) and result_url.startswith("http"):
+                            current_page_url = result_url
+                        elif (
+                            name == "browser_open"
+                            and isinstance(arguments.get("url"), str)
+                            and not err
+                        ):
+                            current_page_url = str(arguments["url"])
+
+                        h = host_of(current_page_url) or host_of(
+                            url if isinstance(url, str) else None
+                        ) or pre_host
                         if h:
                             host_browser_count[h] = host_browser_count.get(h, 0) + 1
                             hints = result.get("price_hints") or []
                             hint_set = frozenset(str(x) for x in hints[:20])
-                            page_url = (result.get("url") or url or "") if isinstance(
-                                result.get("url") or url, str
-                            ) else ""
+                            page_url = current_page_url or (
+                                result_url if isinstance(result_url, str) else ""
+                            )
                             sig = (page_url, hint_set)
                             prev = last_browser_sig.get(h)
                             is_noop = False
@@ -810,6 +987,7 @@ def run_session(
                             else:
                                 host_noop_count[h] = 0
                             if host_noop_count.get(h, 0) >= max_noops_per_host:
+                                refresh_host_shortlist_hits()
                                 host_blocked.add(h)
                                 print(
                                     f"[agent] [{session_label}] Host {h} abandoned "
@@ -819,9 +997,13 @@ def run_session(
                                     result = dict(result)
                                     result["host_abandoned"] = True
                                     result["advice"] = (
-                                        f"Stop interacting with {h}. "
-                                        "Move to another primary source or "
-                                        "add_to_shortlist what you have, then RESEARCH_COMPLETE."
+                                        f"Stop clicking the same controls on {h}. "
+                                        "You get ONE recovery: browser_open a *different* "
+                                        "URL that encodes task constraints as query params "
+                                        "(persons, dates, mealplan, …) using any param names "
+                                        "you saw on this site or in learned URL patterns. "
+                                        "If that also fails, move to another primary source "
+                                        "or RESEARCH_COMPLETE."
                                     )
                             if host_browser_count.get(h, 0) >= max_browser_per_host:
                                 host_blocked.add(h)
@@ -915,6 +1097,40 @@ def run_session(
                     result_for_context = truncate_tool_result(
                         name, result, max_chars=max_tool_result_chars
                     )
+
+                    # Learn search URL patterns for future runs (generic)
+                    if (
+                        name.startswith("browser_")
+                        and isinstance(result, dict)
+                        and not err
+                        and isinstance(result.get("url"), str)
+                    ):
+                        try:
+                            memory.record_search_url(
+                                str(result["url"]),
+                                useful=bool(
+                                    result.get("price_hints")
+                                    or "zoeken" in str(result.get("url")).lower()
+                                    or "search" in str(result.get("url")).lower()
+                                ),
+                            )
+                        except Exception:
+                            pass
+
+                    # Soft nudge: prices visible but shortlist still empty → remind to structure
+                    if (
+                        name.startswith("browser_")
+                        and isinstance(result_for_context, dict)
+                        and result_for_context.get("price_hints")
+                        and not load_shortlist(run_dir)
+                    ):
+                        result_for_context = dict(result_for_context)
+                        result_for_context["system_nudge"] = (
+                            "You are seeing price-like signals on this page and the "
+                            "structured shortlist is still empty. Call add_to_shortlist "
+                            "for concrete candidates (name + price and/or detail URL) before "
+                            "further navigation."
+                        )
 
                     append_conversation(
                         run_dir,

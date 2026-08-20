@@ -204,7 +204,31 @@ def save_shortlist(run_dir: Path, items: list[dict[str, Any]]) -> None:
 
 
 def _norm_name(name: str) -> str:
-    return " ".join((name or "").lower().split())
+    """
+    Aggressive name key for merge: lowercase, strip generic tokens
+    (hotel, resort, spa, …), keep alphanumerics only.
+    """
+    import re as _re
+
+    s = (name or "").lower()
+    for token in (
+        "hotel",
+        "resort",
+        "spa",
+        "apartments",
+        "apartment",
+        "boutique",
+        "the",
+        "adults only",
+        "adults-only",
+        "holiday",
+        "club",
+        "suites",
+        "suite",
+    ):
+        s = s.replace(token, " ")
+    s = _re.sub(r"[^a-z0-9]+", "", s)
+    return s
 
 
 def _parse_price_hint(price: Any) -> float | None:
@@ -214,7 +238,6 @@ def _parse_price_hint(price: Any) -> float | None:
     if isinstance(price, (int, float)):
         return float(price)
     s = str(price)
-    # keep digits, comma/dot
     import re as _re
 
     m = _re.search(r"(\d+[.,]?\d*)", s.replace(" ", ""))
@@ -226,6 +249,72 @@ def _parse_price_hint(price: Any) -> float | None:
         return None
 
 
+def _validate_constraints_check(cc: Any) -> tuple[bool, str, dict[str, Any] | None]:
+    """
+    Generic constraint honesty field — no domain keywords.
+    Accepts dict with matched / unmatched / unknown lists (strings from the task),
+    or match_status in {full, partial, unknown} plus optional notes.
+    """
+    if cc is None:
+        return False, (
+            "constraints_check is required: "
+            '{"matched": [...], "unmatched": [...], "unknown": [...]} '
+            "using hard requirements from the task (free-text labels), "
+            'or include match_status: "full"|"partial"|"unknown".'
+        ), None
+    if not isinstance(cc, dict):
+        return False, "constraints_check must be an object", None
+
+    match_status = str(cc.get("match_status") or "").strip().lower()
+    matched = cc.get("matched")
+    unmatched = cc.get("unmatched")
+    unknown = cc.get("unknown")
+    notes = str(cc.get("notes") or "").strip()
+
+    def _as_list(v: Any) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if str(x).strip()]
+        if isinstance(v, str) and v.strip():
+            return [v.strip()]
+        return []
+
+    matched_l = _as_list(matched)
+    unmatched_l = _as_list(unmatched)
+    unknown_l = _as_list(unknown)
+
+    if match_status and match_status not in ("full", "partial", "unknown"):
+        return False, 'match_status must be "full", "partial", or "unknown"', None
+
+    if not match_status and not matched_l and not unmatched_l and not unknown_l:
+        return False, (
+            "constraints_check empty: list at least one item under "
+            "matched, unmatched, or unknown (labels from the task), "
+            "or set match_status."
+        ), None
+
+    if not match_status:
+        if unmatched_l and matched_l:
+            match_status = "partial"
+        elif unmatched_l and not matched_l:
+            match_status = "partial"
+        elif matched_l and not unmatched_l and not unknown_l:
+            match_status = "full"
+        else:
+            match_status = "unknown"
+
+    cleaned = {
+        "match_status": match_status,
+        "matched": matched_l,
+        "unmatched": unmatched_l,
+        "unknown": unknown_l,
+    }
+    if notes:
+        cleaned["notes"] = notes[:500]
+    return True, "", cleaned
+
+
 def add_to_shortlist(
     run_dir: Path,
     *,
@@ -234,16 +323,36 @@ def add_to_shortlist(
     price: str | float | None = None,
     details: str = "",
     session: str = "",
+    constraints_check: dict[str, Any] | None = None,
+    match_status: str | None = None,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Idempotent shortlist upsert.
-    Match key: normalized name (+ source_url if both present).
-    If same candidate found again with a lower parseable price, overwrite price/details.
+    Idempotent shortlist upsert keyed by normalized candidate name.
+    Same name → one entry: merge source_urls, prefer lower price, keep richer details.
+    Requires constraints_check (generic honesty about task hard requirements).
     """
     name = (name or "").strip()
     if not name:
         return {"ok": False, "error": "name is required"}
+
+    # Allow match_status top-level as shorthand merged into constraints_check
+    cc_in: Any = constraints_check
+    if isinstance(cc_in, dict) and match_status and "match_status" not in cc_in:
+        cc_in = dict(cc_in)
+        cc_in["match_status"] = match_status
+    elif cc_in is None and match_status:
+        cc_in = {"match_status": match_status, "matched": [], "unmatched": [], "unknown": []}
+
+    ok_cc, err_cc, cleaned_cc = _validate_constraints_check(cc_in)
+    if not ok_cc:
+        return {"ok": False, "error": err_cc}
+
+    if not (source_url or "").strip() and (price is None or not str(price).strip()):
+        return {
+            "ok": False,
+            "error": "Provide at least source_url or price for a shortlist candidate",
+        }
 
     items = load_shortlist(run_dir)
     key_name = _norm_name(name)
@@ -252,48 +361,104 @@ def add_to_shortlist(
 
     matched_idx: int | None = None
     for i, it in enumerate(items):
-        same_name = _norm_name(str(it.get("name") or "")) == key_name
-        if not same_name:
-            continue
-        old_url = (it.get("source_url") or "").strip()
-        if key_url and old_url and key_url != old_url:
-            # same name, different listing URL → treat as distinct offer
-            continue
-        matched_idx = i
-        break
-
-    entry: dict[str, Any] = {
-        "name": name,
-        "source_url": key_url,
-        "price": price if price is not None else "",
-        "details": (details or "")[:1000],
-        "session": session,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if extra:
-        for k, v in extra.items():
-            if k not in entry and isinstance(v, (str, int, float, bool, list, dict)):
-                entry[k] = v
+        if _norm_name(str(it.get("name") or "")) == key_name:
+            matched_idx = i
+            break
 
     action = "added"
     if matched_idx is not None:
         old = items[matched_idx]
+        urls: list[str] = []
+        for u in list(old.get("source_urls") or []):
+            if isinstance(u, str) and u and u not in urls:
+                urls.append(u)
+        old_primary = (old.get("source_url") or "").strip()
+        if old_primary and old_primary not in urls:
+            urls.insert(0, old_primary)
+        if key_url and key_url not in urls:
+            urls.append(key_url)
+
         old_price_num = _parse_price_hint(old.get("price"))
-        # Prefer lower price when both parseable; else prefer non-empty new fields
-        keep_old_price = (
+        # Prefer lower parseable price; otherwise keep non-empty new price
+        if (
             new_price_num is not None
             and old_price_num is not None
-            and old_price_num < new_price_num
-        )
-        if keep_old_price:
-            entry["price"] = old.get("price")
-        if not entry.get("source_url") and old.get("source_url"):
-            entry["source_url"] = old["source_url"]
-        if not entry.get("details") and old.get("details"):
-            entry["details"] = old["details"]
+            and old_price_num <= new_price_num
+        ):
+            chosen_price = old.get("price")
+        elif price is not None and str(price).strip():
+            chosen_price = price
+        else:
+            chosen_price = old.get("price") or ""
+
+        old_details = str(old.get("details") or "")
+        new_details = (details or "").strip()
+        # Keep the longer / richer details string
+        chosen_details = (
+            new_details
+            if len(new_details) >= len(old_details)
+            else old_details
+        )[:1200]
+
+        # Prefer display name without heavy parenthetical noise if new is cleaner
+        chosen_name = name if len(name) >= len(str(old.get("name") or "")) else old.get("name")
+
+        # Prefer a more specific detail/booking URL as primary source_url
+        def _url_specificity(u: str) -> tuple[int, int]:
+            low = (u or "").lower()
+            # Lower score for search/list pages; higher for longer paths
+            listish = any(
+                x in low
+                for x in (
+                    "/zoeken",
+                    "/search",
+                    "/results",
+                    "/vakanties?",
+                    "sort=",
+                    "offset=",
+                    "limit=",
+                )
+            )
+            path_len = len(low.split("?")[0])
+            return (0 if listish else 1, path_len)
+
+        ranked_urls = sorted(urls, key=_url_specificity, reverse=True)
+        primary_url = ranked_urls[0] if ranked_urls else key_url
+
+        entry: dict[str, Any] = {
+            "name": chosen_name,
+            "source_url": primary_url,
+            "source_urls": ranked_urls if ranked_urls else urls,
+            "price": chosen_price,
+            "details": chosen_details,
+            "constraints_check": cleaned_cc,
+            "match_status": (cleaned_cc or {}).get("match_status") or "unknown",
+            "session": session or old.get("session") or "",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if extra:
+            for k, v in extra.items():
+                if k not in entry and isinstance(v, (str, int, float, bool, list, dict)):
+                    entry[k] = v
         items[matched_idx] = entry
         action = "updated"
     else:
+        urls = [key_url] if key_url else []
+        entry = {
+            "name": name,
+            "source_url": key_url,
+            "source_urls": urls,
+            "price": price if price is not None else "",
+            "details": (details or "")[:1200],
+            "constraints_check": cleaned_cc,
+            "match_status": (cleaned_cc or {}).get("match_status") or "unknown",
+            "session": session,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if extra:
+            for k, v in extra.items():
+                if k not in entry and isinstance(v, (str, int, float, bool, list, dict)):
+                    entry[k] = v
         items.append(entry)
 
     save_shortlist(run_dir, items)
@@ -309,13 +474,17 @@ def shortlist_as_prompt_text(run_dir: Path, max_chars: int = 6000) -> str:
     items = load_shortlist(run_dir)
     if not items:
         return "(shortlist empty)"
-    lines = [f"Shortlist ({len(items)} items):"]
+    lines = [f"Shortlist ({len(items)} unique candidates):"]
     total = 0
     for i, it in enumerate(items, 1):
+        urls = it.get("source_urls") or ([it.get("source_url")] if it.get("source_url") else [])
+        urls_s = "; ".join(str(u) for u in urls[:4] if u)
+        ms = it.get("match_status") or (it.get("constraints_check") or {}).get("match_status") or "?"
         line = (
             f"{i}. {it.get('name')}"
+            f" | match={ms}"
             f" | price={it.get('price') or '—'}"
-            f" | url={it.get('source_url') or '—'}"
+            f" | urls={urls_s or '—'}"
             f" | {str(it.get('details') or '')[:200]}"
         )
         if total + len(line) > max_chars:
