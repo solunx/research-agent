@@ -1,0 +1,20 @@
+{
+  "strategies": [
+    {
+      "trigger": "HTTP 403, blocked, or empty body from web_fetch",
+      "tactic": "Retry same URL with browser_open",
+      "efficiency_gain": "Avoids repeated failed fetches"
+    },
+    {
+      "trigger": "JS-heavy page or cookie wall, little useful text from fetch",
+      "tactic": "Use browser_open; dismiss cookies then browser_extract_text",
+      "efficiency_gain": "Gets visible content when static fetch fails"
+    },
+    {
+      "trigger": "Enough candidates with sources already collected",
+      "tactic": "Stop extra searches; write RESEARCH_COMPLETE report",
+      "efficiency_gain": "Prevents context bloat and LLM timeouts"
+    }
+  ],
+  "updated_at": "2026-08-19T00:00:00+00:00"
+}

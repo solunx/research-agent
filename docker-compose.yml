@@ -1,0 +1,15 @@
+services:
+  research-agent:
+    build: .
+    image: local-research-agent:phase1
+    shm_size: "1gb"
+    volumes:
+      - ./runs:/app/runs
+      - ./tasks:/app/tasks:ro
+      - ./inputs:/app/inputs:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ./prompts:/app/prompts:ro
+      - ./memory:/app/memory
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright

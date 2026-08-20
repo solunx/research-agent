@@ -1,0 +1,53 @@
+llm:
+  provider: ollama
+  model: qwen3.8:27b
+  base_url: http://172.17.0.1:11434
+  temperature: 0.2
+  # Long reports need more than 120s (model was still generating at ~45 tok/s)
+  timeout_seconds: 480
+  max_retries: 2
+  retry_backoff_seconds: 2.0
+
+limits:
+  max_runtime_minutes: 120
+  max_llm_calls: 80
+  max_tool_calls: 150
+  max_search_calls: 60
+  max_tool_result_chars: 2500
+
+tools:
+  web_search:
+    provider: duckduckgo
+    max_results: 8
+    region: be-nl
+  web_fetch:
+    max_chars: 12000
+    timeout_seconds: 20
+    max_retries: 2
+    user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  browser:
+    headless: true
+    wait_seconds: 3.0
+    max_chars: 15000
+    timeout_seconds: 60
+    user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+storage:
+  runs_dir: runs
+  memory_dir: memory
+
+memory:
+  # Inject site tactics + general strategies into system prompt
+  enabled: true
+  # Prefer cheaper tool after this many days without retest
+  retest_after_days: 30
+  # Max tactics/strategies lines injected into prompt
+  max_tactics_in_prompt: 40
+  max_strategies_in_prompt: 15
+
+safety:
+  # Refuse to run outside Docker unless overridden
+  require_docker: true
+  # Set env ALLOW_HOST_RUN=1 to bypass for local debug
+
+verbose: false

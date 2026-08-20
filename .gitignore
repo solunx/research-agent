@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+.env
+*.log
+runs/
+memory/site_tactics.json
+# behoud structurele memory-templates desgewenst:
+# memory/general_strategies.json
