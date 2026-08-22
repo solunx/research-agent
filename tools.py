@@ -22,6 +22,19 @@ from browser import (
     browser_wait,
 )
 
+# Low-level Playwright tools (excluded when --browser-backend browser_use)
+_PLAYWRIGHT_TOOL_NAMES = frozenset(
+    {
+        "browser_open",
+        "browser_dismiss_cookies",
+        "browser_extract_text",
+        "browser_click",
+        "browser_type",
+        "browser_scroll",
+        "browser_wait",
+    }
+)
+
 
 TOOL_DEFINITIONS = [
     {
@@ -204,6 +217,37 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "browser_use",
+            "description": (
+                "LAST-RESORT high-level browser agent (expensive, slow). "
+                "Use ONLY after web_fetch and/or browser_open failed or returned empty JS shells "
+                "on the same host. ONE narrow step only, e.g. "
+                "'List visible package names+prices on this page' OR "
+                "'Open detail of hotel X and report meal plan+price' — never both. "
+                "Prefer start_url to a deep-link/results page, not a homepage. "
+                "Do not ask it to filter complex UIs, multi-site research, or book. "
+                "After text returns, call add_to_shortlist for concrete candidates. "
+                "Runtime caps calls per host; timeouts count against the budget."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "instruction": {
+                        "type": "string",
+                        "description": "Narrow browser task for one site/flow",
+                    },
+                    "start_url": {
+                        "type": "string",
+                        "description": "Optional URL to open first",
+                    },
+                },
+                "required": ["instruction"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "add_to_shortlist",
             "description": (
                 "Record a concrete candidate into the structured shortlist. "
@@ -265,12 +309,52 @@ TOOL_DEFINITIONS = [
                         "type": "string",
                         "description": "Optional shorthand: full | partial | unknown",
                     },
+                    "claims": {
+                        "type": "array",
+                        "description": (
+                            "Optional light evidence list. Each item: "
+                            "{claim, evidence_urls?, status?} where status is "
+                            "geverifieerd|deels geverifieerd|niet bevestigd|onduidelijk."
+                        ),
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "claim": {"type": "string"},
+                                "evidence_urls": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                },
+                                "status": {"type": "string"},
+                            },
+                        },
+                    },
                 },
                 "required": ["name", "constraints_check"],
             },
         },
     },
 ]
+
+
+def tool_definitions_for_backend(backend: str = "playwright") -> list[dict[str, Any]]:
+    """
+    playwright: search + fetch + low-level browser_* + shortlist
+    browser_use: search + fetch + browser_use + shortlist (no click/type thrash tools)
+    """
+    backend = (backend or "playwright").strip().lower()
+    out: list[dict[str, Any]] = []
+    for td in TOOL_DEFINITIONS:
+        name = (td.get("function") or {}).get("name") or ""
+        if backend == "browser_use":
+            if name in _PLAYWRIGHT_TOOL_NAMES:
+                continue
+            out.append(td)
+        else:
+            # default playwright: hide browser_use tool to avoid confusion
+            if name == "browser_use":
+                continue
+            out.append(td)
+    return out
 
 
 def execute_tool(
@@ -280,6 +364,21 @@ def execute_tool(
     prefer_browser_for_url: Callable[[str], bool] | None = None,
 ) -> tuple[Any, float]:
     t0 = time.perf_counter()
+
+    if name == "browser_use":
+        from browser_use_bridge import run_browser_use_task
+
+        bu_cfg = (config.get("tools") or {}).get("browser_use") or {}
+        llm_cfg = config.get("llm") or {}
+        result = run_browser_use_task(
+            str(arguments.get("instruction") or ""),
+            start_url=(str(arguments["start_url"]) if arguments.get("start_url") else None),
+            model=bu_cfg.get("model") or llm_cfg.get("model"),
+            base_url=bu_cfg.get("base_url") or llm_cfg.get("base_url"),
+            max_steps=int(bu_cfg.get("max_steps", 25)),
+            timeout_seconds=int(bu_cfg.get("timeout_seconds", 180)),
+        )
+        return result, (time.perf_counter() - t0) * 1000
 
     if name == "web_search":
         search_cfg = config.get("tools", {}).get("web_search", {})

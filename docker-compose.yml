@@ -13,3 +13,5 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      # Belgium local time for run folder names (was UTC → 2h behind CEST)
+      - TZ=Europe/Brussels

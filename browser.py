@@ -264,6 +264,26 @@ def browser_dismiss_cookies() -> dict[str, Any]:
         return {"ok": False, "error": str(e), "cookies_dismissed": 0}
 
 
+def _hide_consent_overlays(page) -> int:
+    """Best-effort hide common consent iframes/overlays that intercept pointer events."""
+    js = """
+    () => {
+      let n = 0;
+      const hide = (el) => { try { el.style.setProperty('display','none','important'); n++; } catch(e) {} };
+      document.querySelectorAll(
+        'iframe#consent_iframe, iframe[id*="consent" i], iframe[src*="consent" i], ' +
+        '[id*="cookie" i][class*="overlay" i], [class*="cookie-banner" i], ' +
+        '[id*="onetrust" i], [class*="onetrust" i], #didomi-popup, .qc-cmp2-container'
+      ).forEach(hide);
+      return n;
+    }
+    """
+    try:
+        return int(page.evaluate(js) or 0)
+    except Exception:
+        return 0
+
+
 def browser_click(selector: str, max_chars: int = 10000) -> dict[str, Any]:
     """
     Click an element (CSS or Playwright text selector, e.g. button:has-text('Zoeken')).
@@ -271,7 +291,30 @@ def browser_click(selector: str, max_chars: int = 10000) -> dict[str, Any]:
     """
     try:
         page = _ensure_browser()
-        page.locator(selector).first.click(timeout=15000)
+        _dismiss_cookies(page, rounds=2)
+        try:
+            page.locator(selector).first.click(timeout=15000)
+        except Exception as click_err:
+            err_s = str(click_err)
+            # Pointer intercepted by consent iframe / overlay → hide and retry once
+            if "intercepts pointer" in err_s or "consent_iframe" in err_s or "Timeout" in err_s:
+                hidden = _hide_consent_overlays(page)
+                _dismiss_cookies(page, rounds=2)
+                try:
+                    page.locator(selector).first.click(timeout=8000, force=True)
+                except Exception as e2:
+                    return {
+                        "ok": False,
+                        "url": page.url if page else "",
+                        "title": "",
+                        "text": "",
+                        "error": str(e2),
+                        "pointer_intercept": True,
+                        "overlays_hidden": hidden,
+                        "no_op_exempt": True,  # runtime may skip no-op strike
+                    }
+            else:
+                raise
         time.sleep(1.5)
         _dismiss_cookies(page, rounds=2)
         try:

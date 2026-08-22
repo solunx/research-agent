@@ -1,0 +1,127 @@
+# Learning log — experiments, results, decisions
+
+Living log of what we tried, what worked, what we abandoned.  
+High-level process: see `METHODOLOGY.md`.
+
+Format per entry: **date → hypothesis → result → decision**.
+
+---
+
+## 2026-08 — Architecture direction
+
+| Decision | Why |
+|----------|-----|
+| External notes + shortlist, not one giant chat | Ollama context crashes (500) on long runs |
+| Planner / executor / critic (`--planned`) | Flush context per phase |
+| Global host memory (not per-task only) | Same site must not be re-learned every task |
+| No travel hardcoding in core | Agent must stay general-purpose |
+| Browser Use = optional tier 3, not default | Not a magic bullet; slow; timeouts |
+| **Host capability = navigation + semantics + harvest** | Transport alone ≠ usable research (2026-08-22 runs) |
+| **Recon optimizes for interface learning, not deals** | Easy-booking recon left meal/date/pax semantics weak |
+| **Research executes memory; heavy tiers prefer recon** | Production should not rediscover hosts each run |
+
+---
+
+## 2026-08-22 — Capability model update
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| Recipes with only path+param *names* are enough | Research still ignored meal filter, 30-night range, Sunweb date snap | Add **semantics** + **harvest** layers to recipes |
+| Recon = “simple vacation until results” | Learned navigation; weak semantics/harvest | Recon = **probes** (one dimension at a time); stop at list/detail |
+| Literature AWM / Branch-and-Browse | Related (workflow memory) but we need site **capability** model | Keep building thin host OS layer; don’t copy full academic stacks |
+
+**Code shipped:** recipe fields `navigation` / `semantics` / `harvest` / `capability_score` / `needs_recon`; recon prompt rewrite; METHODOLOGY + recon task updated.
+
+---
+
+## 2026-08-22 — Harvest invariant + production stop (P0/P1)
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| LLM will call `add_to_shortlist` when it sees name+€ | Research run: notes had Sercotel €698 etc., shortlist=0 | **Runtime harvest invariant** auto-writes `observed_only` candidates |
+| Soft nudge alone is enough | Nudge present; still no shortlist | Invariant must not depend on LLM |
+| Production may UI-learn pax on Sunweb | 8+ no-ops then abandon | **needs_recon** on no-op abandon; no mini-recon in retrieve |
+| Forced report “no hotel names” | False — names were in notes | Auto shortlist + evidence model reduces forced-report lies |
+
+**Code shipped:** `extract_observed_candidates` / `harvest_invariant_from_browser_result` in `storage.py`; agent wires after browser tools (research only); `match_status=observed_only` + `evidence.observed/verified`; production stop marks `needs_recon`.
+
+**Not in this iteration:** VLM / extra Browser Use; full separate recon metrics pipeline (still shared counters, but recon still blocks shortlist).
+
+---
+
+## Browser backends (A/B)
+
+| Backend | Finding | Status |
+|---------|---------|--------|
+| Playwright deep-links | Best yield so far when recipes exist | **Keep as default Tier 2** |
+| Browser Use (full agent) | Long timeouts, low yield on package sites; good as last resort only | **Optional; not primary** |
+| “Rebuild Browser Use features ourselves” | Distraction | **Abandoned** |
+
+---
+
+## Package-site probes (lastminute / sunweb / corendon)
+
+| Observation | Implication |
+|-------------|-------------|
+| lastminute deep-links often show **0 results** even with valid param shape | URL mechanics ≠ inventory; need empty-inventory cap |
+| Sunweb `Participants[0][0]=3` → rewritten to **date** `1996-08-22` | Param semantics memory + strip on open |
+| Sunweb Mealplan codes `AI` / `UA`, not word “all-inclusive” | Recipe should store **value enums** later |
+| Corendon `destination=` often **ignored**; filter is UI panel | Deep-link alone insufficient; list harvest / UI filter still needed |
+| Consent iframe blocks clicks | Hide overlay + force click; don’t count as no-op |
+
+### Research run (Playwright, ~11 min, shortlist 1)
+
+- Soft mismatch worked on Sunweb; still only 1 strong candidate (Corendon Grand Park Lara).
+- Too many empty lastminute opens → low useful_ratio.
+- **Decision:** empty-inventory cap + recon/research split.
+
+### Recon run 2026-08-22 (`--run-kind recon`, ~3.5 min)
+
+| Host | Mechanism | Inventory |
+|------|-----------|-----------|
+| lastminute.be | `/s/tsx` params accepted; origin defaults LON; dates snap | Empty (3 probes) → cap abandon |
+| nl.lastminute.com | Same engine; origin AMS ok | Empty |
+| sunweb.be | AI/UA codes; date range widens; Participants date bug confirmed | **Populated** (prices) |
+| corendon.be | URL stable; destination param ineffective | **Populated** |
+
+- shortlist_count = **0** (correct for recon).
+- Report = `RECON_COMPLETE` + host_learnings (correct).
+- Phase 2 skipped due to empty shortlist (recon quirk: skip logic is research-oriented — improve later).
+- Agent still produced a rich mechanism summary in the LLM turn; critic used host_learnings file.
+
+**Decision:** recon mode is valid. Next: internal recon without hotel-specific task.md; persist richer recipe fields (value codes, ignored params).
+
+---
+
+## Mechanisms tried / status
+
+| Mechanism | Status | Notes |
+|-----------|--------|--------|
+| Soft constraint mismatch | **Keep** | Soft when prices present |
+| Param warnings + strip | **Keep** | Sunweb participants |
+| Empty-inventory cap (3) | **Keep** | Stops lastminute thrash |
+| Memory-first (no root open) | **Keep** | |
+| Cookie dismiss + iframe hide | **Keep / extend** | |
+| `--run-kind recon\|research` | **Keep** | Code-enforced shortlist block |
+| Harvest & hydrate (list → JSON → agent picks) | **Planned** | Biggest yield lever |
+| Schema URL builder | **Later** | Light guards first |
+| GUI-VLM one-shot recon | **Later** | Only if Playwright stuck |
+| Parallel same-query runs | **Abandoned** | Wasteful for this use case |
+| Hardcoding Sunweb/TUI steps in agent | **Rejected** | Task/memory only |
+
+---
+
+## Open follow-ups
+
+1. **Recon without task.md** — `--run-kind recon --hosts h1,h2` or auto from research primary sources.
+2. **Recon phase-2 skip** — don’t use “empty shortlist” skip in recon; optional single phase only.
+3. **Persist recon findings** beyond url_patterns (ignored params, value enums, inventory_ok flag).
+4. **List harvest** on Corendon/Sunweb result pages in research mode.
+5. **Ollama 500** — continue shorter tool results + earlier complete; eval metrics later.
+
+---
+
+## How to read this log later
+
+- If a technique is **Abandoned** / **Rejected**, do not reintroduce without new evidence.
+- Prefer updating this file after each meaningful run with: metrics (duration, shortlist_count, useful_ratio) + one-line lesson.

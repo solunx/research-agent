@@ -6,3 +6,6 @@ beautifulsoup4>=4.12.0
 lxml>=5.0.0
 python-dateutil>=2.9.0
 playwright>=1.49.0
+# Browser Use backend (--browser-backend browser_use). Keep installed so A/B works after rebuild.
+browser-use>=0.1.0
+langchain-ollama>=0.2.0

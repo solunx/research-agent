@@ -18,6 +18,8 @@ limits:
   max_browser_actions_per_host: 8
   # Consecutive no-op browser actions (same URL, no new price_hints) before abandoning host
   max_browser_noops_per_host: 2
+  # Tier-3 Browser Use: hard cap per host per session (timeouts are expensive)
+  max_browser_use_per_host: 2
 
 tools:
   web_search:
@@ -30,11 +32,17 @@ tools:
     max_retries: 2
     user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
   browser:
+    # Default backend: playwright | browser_use (override with --browser-backend)
+    backend: playwright
     headless: true
     wait_seconds: 3.0
     max_chars: 15000
     timeout_seconds: 60
     user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  browser_use:
+    max_steps: 25
+    timeout_seconds: 180
+    # model / base_url default to llm.* when omitted
 
 storage:
   runs_dir: runs

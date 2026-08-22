@@ -33,6 +33,7 @@ from storage import (
     append_note,
     compact_session_handoff,
     create_run_dir,
+    harvest_invariant_from_browser_result,
     load_notes,
     load_shortlist,
     notes_as_prompt_text,
@@ -43,7 +44,7 @@ from storage import (
     save_task,
     shortlist_as_prompt_text,
 )
-from tools import TOOL_DEFINITIONS, execute_tool
+from tools import TOOL_DEFINITIONS, execute_tool, tool_definitions_for_backend
 from urllib.parse import urlparse
 
 
@@ -95,16 +96,170 @@ def load_task(task_arg: str) -> str:
     return task_arg.strip()
 
 
-def load_system_prompt(prompts_dir: str = "prompts", memory_block: str = "") -> str:
+def browser_backend_prompt_addon(backend: str) -> str:
+    """Extra system rules depending on browser backend (A/B experiment)."""
+    backend = (backend or "playwright").strip().lower()
+    if backend == "browser_use":
+        return (
+            "\n### Browser backend: Browser Use (tiered — last resort)\n"
+            "Low-level browser_click/type/open tools are **disabled** in this run.\n"
+            "**Escalation order per host (mandatory):**\n"
+            "1. `web_search` / `web_fetch` (cheap)\n"
+            "2. If 403 / empty JS shell / prefer_browser → still try `web_fetch` once more "
+            "on a deep-link if you have one, then escalate\n"
+            "3. `browser_use` ONLY when cheaper tools failed on that host — "
+            "ONE narrow instruction (list packages OR open one detail), with `start_url`\n"
+            "4. After success (research runs only): `add_to_shortlist`; "
+            "use `web_fetch` on detail URLs when possible\n"
+            "Never open a bare homepage with browser_use when a search/deep-link URL exists.\n"
+            "Never combine filter+list+detail in one browser_use call.\n"
+            "Runtime limits browser_use calls per host; timeouts burn the budget — do not retry "
+            "the same failing instruction.\n"
+        )
+    return (
+        "\n### Browser backend: Playwright (built-in)\n"
+        "Escalation order per host: web_fetch → browser_open (deep-link) → limited clicks. "
+        "Prefer deep-link URLs and memory patterns. "
+        "Do not thrash forms; after 2 no-ops use URL params or abandon host.\n"
+    )
+
+
+def run_kind_prompt_addon(run_kind: str) -> str:
+    """Hard separation: recon/learning vs real research (enforced in code too)."""
+    kind = (run_kind or "research").strip().lower()
+    if kind == "recon":
+        return (
+            "\n### RUN KIND: RECON / LEARNING (not a research delivery)\n"
+            "Optimize for **maximum learnable website structure at minimum cost** — "
+            "NOT for completing a user booking or ranking deals.\n"
+            "\n"
+            "**FORBIDDEN:**\n"
+            "- `add_to_shortlist` (runtime rejects it)\n"
+            "- Ranking / shortlisting candidates for any user task\n"
+            "- Treating relaxed probe hits as final answers\n"
+            "- Going to checkout / payment / personal data\n"
+            "\n"
+            "**Three capability layers to learn per host (stop when each is clear or budget hits):**\n"
+            "1. **Navigation** — preferred channel; search/list path; never homepage-first if a pattern exists\n"
+            "2. **Semantics** — what each param/field does: destination, dates, pax, meal/filters; "
+            "what is rewritten, ignored, or mis-typed (e.g. count stored as date)\n"
+            "3. **Harvest** — after a results page: where names + prices + links appear "
+            "(price_hints, visible list). One detail page is enough; not full booking.\n"
+            "\n"
+            "**Probe style (prefer several small probes over one 'easy booking'):**\n"
+            "- Change one dimension at a time when possible (destination OR dates OR pax OR meal)\n"
+            "- Compare requested URL vs final URL after open\n"
+            "- Use broader/simpler values only so a **results list** appears (learning inventory, not the task)\n"
+            "- Stop per host when navigation+key semantics+harvest signal are known, "
+            "or after empty-inventory / no-op budgets\n"
+            "\n"
+            "When done: RESEARCH_COMPLETE with a **mechanism summary per host** "
+            "(navigation / semantics / harvest / failures). No product ranking.\n"
+        )
+    return (
+        "\n### RUN KIND: RESEARCH / RETRIEVE (task delivery)\n"
+        "Fulfill the user task. Prefer global memory: navigation + semantics + harvest "
+        "(recipes, param_warnings, URL patterns) from prior recon.\n"
+        "\n"
+        "**Harvest (runtime + you):**\n"
+        "- Runtime may auto-add **observed_only** candidates when extract shows name+price "
+        "(harvest invariant). Treat those as evidence buffer, not full verification.\n"
+        "- Enrich with `add_to_shortlist` (detail URL, constraints_check). "
+        "Never invent hotels; never upgrade observed→full without evidence.\n"
+        "- Evidence model: observed (name/price/url) vs verified (task criteria). "
+        "Report only claims you verified.\n"
+        "\n"
+        "**Production stop boundary (no mini-recon):**\n"
+        "- Recipe/deep-link → list with prices → harvest → next candidate or next host.\n"
+        "- Structural fail (UI no-ops on pax/filters, broken params, empty after valid deep-link): "
+        "host is marked needs_recon — **stop form-learning**, move to next primary source.\n"
+        "- Do **not** rediscover hosts from the homepage when recipes exist.\n"
+        "Full recon is only `--run-kind recon` (separate capability).\n"
+    )
+
+
+def load_system_prompt(
+    prompts_dir: str = "prompts",
+    memory_block: str = "",
+    browser_backend: str = "playwright",
+    run_kind: str = "research",
+) -> str:
     path = Path(prompts_dir) / "system.md"
     base = (
         path.read_text(encoding="utf-8")
         if path.exists()
         else "You are a careful research agent. Cite sources. Never invent facts."
     )
+    parts = [base]
     if memory_block:
-        return base + "\n\n" + memory_block
-    return base
+        parts.append(memory_block)
+    parts.append(browser_backend_prompt_addon(browser_backend))
+    parts.append(run_kind_prompt_addon(run_kind))
+    return "\n\n".join(parts)
+
+
+def _page_looks_empty_inventory(result: dict[str, Any]) -> bool:
+    """Heuristic: opened OK but no prices and empty-result language in text."""
+    if not isinstance(result, dict) or result.get("error"):
+        return False
+    if result.get("price_hints"):
+        return False
+    text = (result.get("text") or "").lower()
+    if not text or len(text) < 80:
+        return True
+    markers = (
+        "0 resultaten",
+        "geen resultaten",
+        "no results",
+        "0 results",
+        "niente trovato",
+        "keine treffer",
+        "no se han encontrado",
+    )
+    return any(m in text for m in markers)
+
+
+def strip_warned_params_from_url(url: str, memory: MemoryStore) -> tuple[str, list[str]]:
+    """
+    If site_recipes has param_warnings (e.g. participants[0][0] is date-like),
+    drop those query keys when the agent tries to send small integers as occupancy.
+    Returns (possibly rewritten url, list of stripped keys).
+    """
+    if not url or not memory:
+        return url, []
+    try:
+        from urllib.parse import parse_qsl, urlencode, urlunparse
+
+        domain = memory.touch_domain(url)
+        recipes = memory.load_recipes()
+        entry = recipes.get(domain) or {}
+        warnings = entry.get("param_warnings") or []
+        warn_params = {
+            str(w.get("param") or "").lower()
+            for w in warnings
+            if w.get("kind") == "not_count_looks_like_date"
+        }
+        if not warn_params:
+            return url, []
+        p = urlparse(url)
+        pairs = parse_qsl(p.query, keep_blank_values=True)
+        kept: list[tuple[str, str]] = []
+        stripped: list[str] = []
+        for k, v in pairs:
+            kl = k.lower()
+            if kl in warn_params and _looks_like_small_count(v):
+                stripped.append(k)
+                continue
+            kept.append((k, v))
+        if not stripped:
+            return url, []
+        new_q = urlencode(kept, doseq=True)
+        new_url = urlunparse(
+            (p.scheme, p.netloc, p.path, p.params, new_q, p.fragment)
+        )
+        return new_url, stripped
+    except Exception:
+        return url, []
 
 
 def extract_tool_calls(message: dict[str, Any]) -> list[dict[str, Any]]:
@@ -182,6 +337,137 @@ def truncate_tool_result(name: str, result: Any, max_chars: int = MAX_TOOL_RESUL
     return result
 
 
+def _query_constraint_keys(qs: dict[str, list[str]]) -> dict[str, str]:
+    """Map interesting constraint-like query keys → first value (lowercased)."""
+    hints = (
+        "participant",
+        "adult",
+        "pax",
+        "person",
+        "traveler",
+        "traveller",
+        "guest",
+        "date",
+        "depart",
+        "arrival",
+        "checkin",
+        "checkout",
+        "meal",
+        "board",
+        "duration",
+        "night",
+        "airport",
+        "origin",
+        "transport",
+        "room",
+        "from",
+    )
+    out: dict[str, str] = {}
+    for k, vals in qs.items():
+        kl = k.lower()
+        if any(h in kl for h in hints):
+            v = (vals[0] if vals else "") or ""
+            out[kl] = str(v).strip().lower()[:80]
+    return out
+
+
+def _looks_like_iso_date(s: str) -> bool:
+    """Heuristic: YYYY-MM-DD or similar (generic, not domain-specific)."""
+    s = (s or "").strip()
+    return bool(re.match(r"^\d{4}-\d{2}-\d{2}", s))
+
+
+def _looks_like_small_count(s: str) -> bool:
+    """Heuristic: occupancy-like small integer (1–20)."""
+    s = (s or "").strip()
+    if not re.match(r"^\d{1,2}$", s):
+        return False
+    try:
+        return 1 <= int(s) <= 20
+    except ValueError:
+        return False
+
+
+def detect_constraint_mismatch(
+    requested_url: str,
+    final_url: str,
+) -> dict[str, Any] | None:
+    """
+    Generic check: if the agent asked for constraint-like query params and the
+    site rewrote them to different values, the constraint is not applicable here.
+    No domain keywords — only structural param comparison.
+    Also flags type-like semantic mismatches (e.g. small count → ISO date).
+    """
+    if not requested_url or not final_url:
+        return None
+    try:
+        from urllib.parse import parse_qs
+
+        req = urlparse(requested_url)
+        fin = urlparse(final_url)
+        req_q = _query_constraint_keys(parse_qs(req.query, keep_blank_values=True))
+        fin_q = _query_constraint_keys(parse_qs(fin.query, keep_blank_values=True))
+    except Exception:
+        return None
+    if not req_q:
+        return None
+    mismatches: list[str] = []
+    semantic_flags: list[dict[str, str]] = []
+    for k, req_v in req_q.items():
+        if not req_v:
+            continue
+        # same key present with different value
+        if k in fin_q and fin_q[k] and fin_q[k] != req_v:
+            mismatches.append(f"{k}: requested={req_v[:40]} final={fin_q[k][:40]}")
+            # Count sent, date returned → param is not a headcount field
+            if _looks_like_small_count(req_v) and _looks_like_iso_date(fin_q[k]):
+                semantic_flags.append(
+                    {
+                        "param": k,
+                        "kind": "not_count_looks_like_date",
+                        "detail": (
+                            f"Sending a small integer as `{k}` produced a date-like "
+                            f"value ({fin_q[k][:20]}). Do not use this param for "
+                            "party size / occupancy; set occupancy via UI or another param."
+                        ),
+                    }
+                )
+            continue
+        # date-like key missing or replaced by another date key with different value
+        if "date" in k or "depart" in k or "check" in k:
+            other_dates = {
+                fk: fv
+                for fk, fv in fin_q.items()
+                if ("date" in fk or "depart" in fk or "check" in fk) and fv
+            }
+            if other_dates and req_v not in other_dates.values():
+                # requested date value nowhere in final date params
+                if not any(req_v in fv or fv in req_v for fv in other_dates.values()):
+                    mismatches.append(
+                        f"{k}: requested={req_v[:40]} not reflected in final URL"
+                    )
+    if not mismatches:
+        return None
+    advice = (
+        "The site rewrote or ignored some constraint query parameters. "
+        "Do NOT reopen the exact same URL. "
+        "If this page still shows useful candidates (names + prices), "
+        "add them to the shortlist with match_status=partial and unmatched/unknown "
+        "filled honestly — then continue on the current page or try another source. "
+        "Do not hard-abandon the host while visible deals remain."
+    )
+    if semantic_flags:
+        advice += " Param semantics: " + " | ".join(
+            f["detail"] for f in semantic_flags[:3]
+        )
+    return {
+        "constraint_mismatch": True,
+        "mismatches": mismatches[:8],
+        "semantic_flags": semantic_flags[:6],
+        "advice": advice,
+    }
+
+
 def _message_text(message: dict[str, Any]) -> str:
     content = (message.get("content") or "").strip()
     if content:
@@ -216,6 +502,7 @@ def note_from_tool(
         "browser_scroll",
         "browser_wait",
         "browser_dismiss_cookies",
+        "browser_use",
     )
     if name in browser_like and isinstance(result, dict):
         url = result.get("url") or arguments.get("url") or ""
@@ -350,6 +637,8 @@ def try_forced_report(
                 "- Use ONLY facts from shortlist + notes. Invent nothing.\n"
                 "- Every ranked item must come from the shortlist when it is non-empty.\n"
                 "- Mark verification status honestly from the evidence you have.\n"
+                "- When shortlist items have observed_at / claims, cite them "
+                "(when verified, and on which date if present).\n"
                 "First line exact: RESEARCH_COMPLETE\n"
                 "Structure: Research question, Executive summary, Ranking, "
                 "Details, Uncertainties, Sources."
@@ -501,12 +790,18 @@ def run_session(
     verbose: bool,
     session_label: str = "main",
     session_llm_budget: int | None = None,
+    active_tools: list[dict[str, Any]] | None = None,
+    run_kind: str = "research",
 ) -> dict[str, Any]:
     """
     One tool-using research loop with its own message list (fresh context).
     Notes/sources append to the shared run_dir / sources list.
     Returns {status, stop_reason, final_content, messages}.
+    run_kind: "research" (task delivery) | "recon" (learn hosts only; no shortlist).
     """
+    run_kind = (run_kind or "research").strip().lower()
+    is_recon = run_kind == "recon"
+    tools_for_llm = active_tools if active_tools is not None else TOOL_DEFINITIONS
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
@@ -523,13 +818,19 @@ def run_session(
     # Per-host browser budget + no-op detection (generic thrash guard)
     max_browser_per_host = int(limits.get("max_browser_actions_per_host", 8))
     max_noops_per_host = int(limits.get("max_browser_noops_per_host", 2))
+    max_browser_use_per_host = int(limits.get("max_browser_use_per_host", 2))
     host_browser_count: dict[str, int] = {}
     host_noop_count: dict[str, int] = {}
+    host_browser_use_count: dict[str, int] = {}  # tier-3 expensive agent calls
+    host_browser_use_blocked: set[str] = set()  # after timeout or budget
     host_blocked: set[str] = set()
     # Hosts that already contributed shortlist items — get one softer abandon path
     host_shortlist_hits: set[str] = set()
     host_url_param_grace: set[str] = set()  # one extra browser_open allowed after no-ops
     last_browser_sig: dict[str, tuple[str, frozenset[str]]] = {}
+    # Empty-inventory budget per host (0 results / no price_hints)
+    host_empty_inventory: dict[str, int] = {}
+    max_empty_inventory = int(limits.get("max_empty_inventory_per_host", 3))
     # Single source of truth for the live tab (updated after every successful browser tool)
     current_page_url: str = ""
 
@@ -646,7 +947,7 @@ def run_session(
 
             try:
                 t_llm = time.perf_counter()
-                message = client.chat(messages, tools=TOOL_DEFINITIONS)
+                message = client.chat(messages, tools=tools_for_llm)
                 llm_ms = (time.perf_counter() - t_llm) * 1000
                 print(f"[agent] [{session_label}] LLM call #{call_n} done ({llm_ms:.0f} ms)")
             except Exception as e:
@@ -697,9 +998,46 @@ def run_session(
                     # --- Structured shortlist tool (no network) ---
                     if name == "add_to_shortlist":
                         t0 = time.perf_counter()
+                        if is_recon:
+                            result = {
+                                "ok": False,
+                                "error": (
+                                    "add_to_shortlist is disabled in --run-kind recon. "
+                                    "This run only learns host mechanisms (URLs, params). "
+                                    "Nothing may enter the research shortlist or ranking."
+                                ),
+                                "run_kind": "recon",
+                            }
+                            duration_ms = (time.perf_counter() - t0) * 1000
+                            print(
+                                f"[agent] [{session_label}] Tool {name} BLOCKED (recon mode) "
+                                f"in {duration_ms:.0f} ms"
+                            )
+                            append_conversation(
+                                run_dir,
+                                {
+                                    "type": "tool_result",
+                                    "session": session_label,
+                                    "tool": name,
+                                    "arguments": arguments,
+                                    "duration_ms": round(duration_ms, 1),
+                                    "result_preview": str(result)[:500],
+                                },
+                            )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "content": json.dumps(result, ensure_ascii=False),
+                                    "name": name,
+                                }
+                            )
+                            continue
                         cc = arguments.get("constraints_check")
                         if not isinstance(cc, dict):
                             cc = None
+                        claims_arg = arguments.get("claims")
+                        if not isinstance(claims_arg, list):
+                            claims_arg = None
                         result = add_to_shortlist(
                             run_dir,
                             name=str(arguments.get("name") or ""),
@@ -709,7 +1047,10 @@ def run_session(
                             session=session_label,
                             constraints_check=cc,
                             match_status=str(arguments.get("match_status") or "") or None,
+                            claims=claims_arg,
                         )
+                        if result.get("ok"):
+                            counters["shortlist_adds"] = counters.get("shortlist_adds", 0) + 1
                         duration_ms = (time.perf_counter() - t0) * 1000
                         su = str(arguments.get("source_url") or "")
                         hh = host_of(su)
@@ -765,6 +1106,57 @@ def run_session(
 
                     # --- Pre-check: host budget / blacklist for browser tools ---
                     pre_host = ""
+                    # browser_use: resolve host from start_url (tier-3 budget)
+                    if name == "browser_use":
+                        bu_url = (
+                            arguments.get("start_url")
+                            or current_page_url
+                            or ""
+                        )
+                        pre_host = host_of(str(bu_url)) if bu_url else ""
+                        # If no URL, still allow but count under "_unknown"
+                        bu_key = pre_host or "_unknown"
+                        if bu_key in host_browser_use_blocked or (
+                            host_browser_use_count.get(bu_key, 0) >= max_browser_use_per_host
+                        ):
+                            result = {
+                                "error": (
+                                    f"browser_use budget exhausted for host "
+                                    f"{bu_key} (max {max_browser_use_per_host}/session). "
+                                    "Use web_fetch on known detail URLs, another primary "
+                                    "source, or RESEARCH_COMPLETE."
+                                ),
+                                "blocked_host": bu_key,
+                                "advice": (
+                                    "Do not retry the same browser_use instruction. "
+                                    "Escalate only once per host after cheaper tools failed."
+                                ),
+                            }
+                            duration_ms = 0.0
+                            print(
+                                f"[agent] [{session_label}] Skip browser_use on "
+                                f"{bu_key} (budget/blocked)"
+                            )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "content": json.dumps(result, ensure_ascii=False),
+                                    "name": name,
+                                }
+                            )
+                            append_conversation(
+                                run_dir,
+                                {
+                                    "type": "tool_result",
+                                    "session": session_label,
+                                    "tool": name,
+                                    "arguments": arguments,
+                                    "duration_ms": 0,
+                                    "result_preview": str(result)[:500],
+                                },
+                            )
+                            continue
+
                     if name.startswith("browser_"):
                         # Prefer explicit URL arg (browser_open); else live tab URL
                         pre_url = arguments.get("url") or current_page_url or ""
@@ -861,6 +1253,9 @@ def run_session(
                                     "learned_param_names": (pat.get("param_names") or [])[:15],
                                 }
                                 duration_ms = 0.0
+                                counters["memory_first_rejects"] = (
+                                    counters.get("memory_first_rejects", 0) + 1
+                                )
                                 print(
                                     f"[agent] [{session_label}] Memory-first: reject root open "
                                     f"on {pre_host} (patterns known)"
@@ -907,6 +1302,19 @@ def run_session(
                             )
                             continue
 
+                        # Param-warning guard: strip occupancy integers on date-like keys
+                        if name == "browser_open" and isinstance(arguments.get("url"), str):
+                            new_u, stripped = strip_warned_params_from_url(
+                                str(arguments["url"]), memory
+                            )
+                            if stripped:
+                                arguments = dict(arguments)
+                                arguments["url"] = new_u
+                                print(
+                                    f"[agent] [{session_label}] Stripped warned params "
+                                    f"{stripped} from deep-link (param_warnings)"
+                                )
+
                     if name == "web_search":
                         counters["search_calls"] += 1
                         if counters["search_calls"] > max_search:
@@ -930,7 +1338,9 @@ def run_session(
                     blocked = False
                     err = None
                     if isinstance(result, dict):
-                        url = result.get("url") or arguments.get("url")
+                        url = result.get("url") or arguments.get("url") or arguments.get(
+                            "start_url"
+                        )
                         err = result.get("error")
                         blocked = bool(result.get("blocked"))
                         ok = not err or (result.get("text") and not blocked)
@@ -947,6 +1357,51 @@ def run_session(
                                 and (non_notice[0].get("title") or "") == "Search error"
                             )
                         url = None
+
+                    # --- browser_use: count toward per-host tier-3 budget ---
+                    if name == "browser_use":
+                        bu_url = (
+                            (url if isinstance(url, str) else None)
+                            or arguments.get("start_url")
+                            or current_page_url
+                            or ""
+                        )
+                        bu_key = host_of(str(bu_url)) if bu_url else "_unknown"
+                        host_browser_use_count[bu_key] = (
+                            host_browser_use_count.get(bu_key, 0) + 1
+                        )
+                        timed_out = bool(
+                            err
+                            and (
+                                "timed out" in str(err).lower()
+                                or "timeout" in str(err).lower()
+                            )
+                        )
+                        if timed_out or not ok:
+                            # One failure/timeout is enough to stop further heavy calls
+                            # on this host for the rest of the session
+                            host_browser_use_blocked.add(bu_key)
+                            print(
+                                f"[agent] [{session_label}] browser_use failed/timeout on "
+                                f"{bu_key} — further browser_use blocked for this host"
+                            )
+                            if mem_cfg.get("enabled", True):
+                                memory.record_tier_outcome(
+                                    bu_key,
+                                    tier="browser_use",
+                                    success=False,
+                                    reason=str(err or "browser_use failed")[:200],
+                                )
+                        elif ok:
+                            if mem_cfg.get("enabled", True):
+                                memory.record_tier_outcome(
+                                    bu_key,
+                                    tier="browser_use",
+                                    success=True,
+                                    reason="browser_use returned text",
+                                )
+                        if host_browser_use_count[bu_key] >= max_browser_use_per_host:
+                            host_browser_use_blocked.add(bu_key)
 
                     # --- Live tab URL + host budget + no-op tracking ---
                     if name.startswith("browser_") and isinstance(result, dict):
@@ -974,12 +1429,22 @@ def run_session(
                             sig = (page_url, hint_set)
                             prev = last_browser_sig.get(h)
                             is_noop = False
-                            if prev is not None:
+                            # Consent iframe / pointer-intercept failures do not burn no-op budget
+                            exempt = bool(
+                                isinstance(result, dict) and result.get("no_op_exempt")
+                            )
+                            if prev is not None and not exempt:
                                 prev_url, prev_hints = prev
                                 # same URL and no new price hints → functional no-op
                                 if page_url and page_url == prev_url and hint_set <= prev_hints:
                                     is_noop = True
-                                if err:
+                                if err and not (
+                                    isinstance(err, str)
+                                    and (
+                                        "intercepts pointer" in err
+                                        or "consent_iframe" in err
+                                    )
+                                ):
                                     is_noop = True
                             last_browser_sig[h] = sig
                             if is_noop:
@@ -989,22 +1454,42 @@ def run_session(
                             if host_noop_count.get(h, 0) >= max_noops_per_host:
                                 refresh_host_shortlist_hits()
                                 host_blocked.add(h)
+                                counters["host_abandons"] = (
+                                    counters.get("host_abandons", 0) + 1
+                                )
                                 print(
                                     f"[agent] [{session_label}] Host {h} abandoned "
                                     f"after {max_noops_per_host} no-ops"
                                 )
+                                # Production stop boundary: no mini-recon in retrieve
+                                if not is_recon:
+                                    try:
+                                        memory.mark_needs_recon(
+                                            h,
+                                            reason=(
+                                                f"repeated UI no-ops in research "
+                                                f"(session={session_label})"
+                                            ),
+                                        )
+                                    except Exception:
+                                        pass
                                 if isinstance(result, dict):
                                     result = dict(result)
                                     result["host_abandoned"] = True
-                                    result["advice"] = (
-                                        f"Stop clicking the same controls on {h}. "
-                                        "You get ONE recovery: browser_open a *different* "
-                                        "URL that encodes task constraints as query params "
-                                        "(persons, dates, mealplan, …) using any param names "
-                                        "you saw on this site or in learned URL patterns. "
-                                        "If that also fails, move to another primary source "
-                                        "or RESEARCH_COMPLETE."
-                                    )
+                                    if is_recon:
+                                        result["advice"] = (
+                                            f"Stop clicking the same controls on {h}. "
+                                            "Note what failed (selector/param) for host "
+                                            "learnings; move to next host probe."
+                                        )
+                                    else:
+                                        result["advice"] = (
+                                            f"Stop learning UI on {h} during research. "
+                                            "Host marked needs_recon. Use any candidates "
+                                            "already auto-harvested or shortlisted; move to "
+                                            "another primary source or RESEARCH_COMPLETE. "
+                                            "Do not keep form-clicking."
+                                        )
                             if host_browser_count.get(h, 0) >= max_browser_per_host:
                                 host_blocked.add(h)
 
@@ -1094,11 +1579,60 @@ def run_session(
                                 entry["price_hints"] = result["price_hints"][:15]
                             sources.append(entry)
 
+                    # P0 harvest invariant: structure name+price without LLM gate
+                    if (
+                        not is_recon
+                        and name
+                        in (
+                            "browser_open",
+                            "browser_extract_text",
+                            "browser_click",
+                            "browser_scroll",
+                            "browser_wait",
+                        )
+                        and isinstance(result, dict)
+                        and not result.get("error")
+                        and (result.get("text") or result.get("price_hints"))
+                    ):
+                        try:
+                            hv = harvest_invariant_from_browser_result(
+                                run_dir, result, session=session_label
+                            )
+                            if hv.get("added") or hv.get("updated"):
+                                counters["shortlist_adds"] = (
+                                    counters.get("shortlist_adds", 0)
+                                    + int(hv.get("added") or 0)
+                                )
+                                counters["useful_actions"] = (
+                                    counters.get("useful_actions", 0)
+                                    + int(hv.get("added") or 0)
+                                    + int(hv.get("updated") or 0)
+                                )
+                                print(
+                                    f"[agent] [{session_label}] Harvest invariant: "
+                                    f"+{hv.get('added', 0)} observed, "
+                                    f"~{hv.get('updated', 0)} merged "
+                                    f"(shortlist={hv.get('count')})"
+                                )
+                                if isinstance(result, dict):
+                                    result = dict(result)
+                                    result["harvest_invariant"] = {
+                                        "added": hv.get("added"),
+                                        "updated": hv.get("updated"),
+                                        "candidates": hv.get("candidates"),
+                                    }
+                                refresh_host_shortlist_hits()
+                        except Exception as _hv_err:
+                            print(
+                                f"[agent] [{session_label}] Harvest invariant error: "
+                                f"{_hv_err}"
+                            )
+
                     result_for_context = truncate_tool_result(
                         name, result, max_chars=max_tool_result_chars
                     )
 
-                    # Learn search URL patterns for future runs (generic)
+                    # Learn search URL patterns + capability layers (generic)
                     if (
                         name.startswith("browser_")
                         and isinstance(result, dict)
@@ -1106,31 +1640,193 @@ def run_session(
                         and isinstance(result.get("url"), str)
                     ):
                         try:
+                            useful = bool(
+                                result.get("price_hints")
+                                or "zoeken" in str(result.get("url")).lower()
+                                or "search" in str(result.get("url")).lower()
+                            )
                             memory.record_search_url(
                                 str(result["url"]),
-                                useful=bool(
-                                    result.get("price_hints")
-                                    or "zoeken" in str(result.get("url")).lower()
-                                    or "search" in str(result.get("url")).lower()
-                                ),
+                                useful=useful,
                             )
+                            if name == "browser_open" and useful:
+                                from urllib.parse import urlparse as _up
+
+                                path = _up(str(result["url"])).path or ""
+                                memory.record_navigation_success(
+                                    str(result["url"]),
+                                    channel="browser_open",
+                                    path_hint=path or None,
+                                )
+                            if result.get("price_hints"):
+                                memory.record_harvest_hint(
+                                    str(result["url"]),
+                                    hint="list/detail page yields price_hints in extract",
+                                    has_price_signals=True,
+                                    has_name_list=None,
+                                )
                         except Exception:
                             pass
 
-                    # Soft nudge: prices visible but shortlist still empty → remind to structure
+                    # Constraint mismatch: requested deep-link params rewritten by site
                     if (
-                        name.startswith("browser_")
+                        name == "browser_open"
+                        and isinstance(result, dict)
+                        and isinstance(arguments.get("url"), str)
+                        and isinstance(result.get("url"), str)
+                    ):
+                        mm = detect_constraint_mismatch(
+                            str(arguments["url"]),
+                            str(result["url"]),
+                        )
+                        if mm:
+                            counters["constraint_mismatches"] = (
+                                counters.get("constraint_mismatches", 0) + 1
+                            )
+                            try:
+                                memory.record_url_pattern_outcome(
+                                    str(result["url"]),
+                                    success=False,
+                                    reason="; ".join(mm.get("mismatches") or [])[:200],
+                                )
+                            except Exception:
+                                pass
+                            # Persist param semantics globally (cross-task)
+                            for flag in mm.get("semantic_flags") or []:
+                                try:
+                                    memory.record_param_warning(
+                                        str(result["url"]),
+                                        param=str(flag.get("param") or ""),
+                                        kind=str(flag.get("kind") or ""),
+                                        detail=str(flag.get("detail") or "")[:300],
+                                    )
+                                except Exception:
+                                    pass
+                            result_for_context = dict(
+                                result_for_context
+                                if isinstance(result_for_context, dict)
+                                else result
+                            )
+                            result_for_context["constraint_mismatch"] = True
+                            result_for_context["constraint_mismatches"] = mm.get(
+                                "mismatches"
+                            )
+                            result_for_context["param_semantics"] = mm.get(
+                                "semantic_flags"
+                            )
+                            result_for_context["advice"] = mm.get("advice")
+                            h_mm = host_of(str(result.get("url"))) or pre_host
+                            has_prices = bool(
+                                isinstance(result, dict) and result.get("price_hints")
+                            )
+                            # Soft abandon: keep host usable if page still has deals
+                            # or we already shortlisted from it. Hard-block only when
+                            # the rewrite left an empty/useless shell.
+                            if h_mm and not has_prices and h_mm not in host_shortlist_hits:
+                                host_blocked.add(h_mm)
+                                counters["host_abandons"] = (
+                                    counters.get("host_abandons", 0) + 1
+                                )
+                                print(
+                                    f"[agent] [{session_label}] Constraint mismatch on "
+                                    f"{h_mm} — host abandoned (no price signals)"
+                                )
+                            else:
+                                print(
+                                    f"[agent] [{session_label}] Constraint mismatch on "
+                                    f"{h_mm or '?'} — soft (keep page; "
+                                    f"{'recon learn only' if is_recon else 'partial OK'})"
+                                )
+                                if is_recon:
+                                    result_for_context["system_nudge"] = (
+                                        "RECON: params were rewritten. Note the final URL "
+                                        "shape and param semantics in your summary; "
+                                        "do not add candidates. Move to next host when done."
+                                    )
+                                elif has_prices and not load_shortlist(run_dir):
+                                    result_for_context["system_nudge"] = (
+                                        "Constraint params were rewritten, but prices are "
+                                        "visible. Call add_to_shortlist with match_status="
+                                        "partial and honest unmatched/unknown before leaving."
+                                    )
+
+                    # Empty inventory budget: stop thrashing hosts that return 0 results
+                    if (
+                        name == "browser_open"
+                        and isinstance(result, dict)
+                        and not result.get("error")
+                    ):
+                        h_empty = host_of(str(result.get("url") or arguments.get("url") or ""))
+                        if h_empty and _page_looks_empty_inventory(result):
+                            host_empty_inventory[h_empty] = (
+                                host_empty_inventory.get(h_empty, 0) + 1
+                            )
+                            n_empty = host_empty_inventory[h_empty]
+                            result_for_context = dict(
+                                result_for_context
+                                if isinstance(result_for_context, dict)
+                                else result
+                            )
+                            if n_empty >= max_empty_inventory:
+                                host_blocked.add(h_empty)
+                                counters["host_abandons"] = (
+                                    counters.get("host_abandons", 0) + 1
+                                )
+                                result_for_context["empty_inventory"] = True
+                                result_for_context["advice"] = (
+                                    f"Host {h_empty}: {n_empty} opens with empty inventory "
+                                    "(0 results / no prices). Host done for this session — "
+                                    "try another primary source or RESEARCH_COMPLETE."
+                                )
+                                print(
+                                    f"[agent] [{session_label}] Empty inventory cap on "
+                                    f"{h_empty} ({n_empty}) — host abandoned"
+                                )
+                            elif n_empty == 1:
+                                result_for_context["empty_inventory"] = True
+                                result_for_context["system_nudge"] = (
+                                    "0 results / no price signals. One more attempt allowed "
+                                    "with *fewer* filters (broader dates or fewer constraints). "
+                                    "If still empty, leave this host."
+                                )
+                                print(
+                                    f"[agent] [{session_label}] Empty inventory on "
+                                    f"{h_empty} (1/{max_empty_inventory}) — prune filters once"
+                                )
+
+                    # Soft nudge: prices visible but shortlist still empty after invariant
+                    if (
+                        not is_recon
+                        and name.startswith("browser_")
                         and isinstance(result_for_context, dict)
                         and result_for_context.get("price_hints")
                         and not load_shortlist(run_dir)
                     ):
                         result_for_context = dict(result_for_context)
                         result_for_context["system_nudge"] = (
-                            "You are seeing price-like signals on this page and the "
-                            "structured shortlist is still empty. Call add_to_shortlist "
-                            "for concrete candidates (name + price and/or detail URL) before "
-                            "further navigation."
+                            "Price-like signals are visible but no structured candidates "
+                            "were auto-harvested (extract may lack clear hotel names next "
+                            "to prices). Prefer browser_extract_text / scroll / wait, then "
+                            "call add_to_shortlist yourself with name + price + constraints, "
+                            "or move host if the list is only destinations/filters."
                         )
+                    elif (
+                        not is_recon
+                        and name.startswith("browser_")
+                        and isinstance(result_for_context, dict)
+                        and result_for_context.get("harvest_invariant")
+                    ):
+                        result_for_context = dict(result_for_context)
+                        n_auto = (
+                            (result_for_context["harvest_invariant"] or {}).get("added") or 0
+                        )
+                        if n_auto:
+                            result_for_context["system_nudge"] = (
+                                f"Runtime auto-added {n_auto} observed candidate(s) from this "
+                                "page (match_status=observed_only). You may enrich them via "
+                                "add_to_shortlist with better detail URLs and constraints_check; "
+                                "do not claim full verification without evidence."
+                            )
 
                     append_conversation(
                         run_dir,
@@ -1238,6 +1934,26 @@ def main() -> int:
             "per sub-task (flush), synthesize report from notes at the end"
         ),
     )
+    parser.add_argument(
+        "--browser-backend",
+        choices=("playwright", "browser_use"),
+        default=None,
+        help=(
+            "Browser execution backend for A/B tests: "
+            "playwright (built-in click/type) or browser_use (high-level agent tool). "
+            "Default from config tools.browser.backend or playwright."
+        ),
+    )
+    parser.add_argument(
+        "--run-kind",
+        choices=("research", "recon"),
+        default="research",
+        help=(
+            "research = fulfill the task (shortlist + report). "
+            "recon = learn host mechanisms only (no shortlist; nothing enters ranking). "
+            "Use recon first on new hosts, then research with the same task file."
+        ),
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -1246,6 +1962,14 @@ def main() -> int:
     task_text = load_task(args.task)
     verbose = args.verbose or bool(config.get("verbose"))
     planned = bool(args.planned)
+    run_kind = str(args.run_kind or "research").strip().lower()
+    browser_backend = (
+        args.browser_backend
+        or ((config.get("tools") or {}).get("browser") or {}).get("backend")
+        or "playwright"
+    )
+    browser_backend = str(browser_backend).strip().lower()
+    active_tools = tool_definitions_for_backend(browser_backend)
 
     mem_cfg = config.get("memory") or {}
     memory = MemoryStore(config.get("storage", {}).get("memory_dir", "memory"))
@@ -1259,7 +1983,11 @@ def main() -> int:
     else:
         memory_block = ""
 
-    system_prompt = load_system_prompt(memory_block=memory_block)
+    system_prompt = load_system_prompt(
+        memory_block=memory_block,
+        browser_backend=browser_backend,
+        run_kind=run_kind,
+    )
 
     llm_cfg = config.get("llm", {})
     limits = config.get("limits", {})
@@ -1283,6 +2011,9 @@ def main() -> int:
     print(f"[agent] Timeout: {client.timeout}s")
     print(f"[agent] Task loaded ({len(task_text)} chars)")
     print(f"[agent] Mode: {'planned (planner/executor/critic)' if planned else 'single session'}")
+    print(f"[agent] Run kind: {run_kind}"
+          + (" (learning only — shortlist disabled)" if run_kind == "recon" else " (task delivery)"))
+    print(f"[agent] Browser backend: {browser_backend} ({len(active_tools)} tools exposed)")
     if mem_cfg.get("enabled", True):
         print(f"[agent] Memory: {memory.root} (tactics+strategies loaded)")
 
@@ -1293,6 +2024,11 @@ def main() -> int:
         "tool_calls": 0,
         "search_calls": 0,
         "notes_count": 0,
+        "shortlist_adds": 0,
+        "constraint_mismatches": 0,
+        "sessions_skipped": 0,
+        "memory_first_rejects": 0,
+        "host_abandons": 0,
     }
     max_runtime = limits.get("max_runtime_minutes", 120) * 60
     status = "running"
@@ -1306,6 +2042,8 @@ def main() -> int:
             "type": "run_start",
             "model": client.model,
             "mode": "planned" if planned else "single",
+            "run_kind": run_kind,
+            "browser_backend": browser_backend,
             "task_preview": task_text[:300],
         },
     )
@@ -1314,6 +2052,7 @@ def main() -> int:
         {
             "status": "running",
             "mode": "planned" if planned else "single",
+            "run_kind": run_kind,
             "llm_calls": 0,
             "tool_calls": 0,
             "sources_count": 0,
@@ -1339,6 +2078,23 @@ def main() -> int:
                     status = "timeout_runtime"
                     stop_reason = "limit"
                     break
+                # After phase 1: if shortlist still empty, skip further executor
+                # phases (they would re-do discovery). Critic will explain gaps.
+                if i > 1 and not load_shortlist(run_dir):
+                    print(
+                        f"[agent] Skipping session sub{i}/{len(subtasks)} — "
+                        "shortlist empty after phase 1 (no candidates to verify)"
+                    )
+                    append_conversation(
+                        run_dir,
+                        {
+                            "type": "session_skipped",
+                            "session": f"sub{i}",
+                            "reason": "empty_shortlist_after_phase1",
+                        },
+                    )
+                    counters["sessions_skipped"] = counters.get("sessions_skipped", 0) + 1
+                    continue
                 label = f"sub{i}"
                 print(f"\n[agent] === Executor session {i}/{len(subtasks)} ===")
                 user_content = build_subtask_prompt(
@@ -1365,6 +2121,8 @@ def main() -> int:
                     verbose=verbose,
                     session_label=label,
                     session_llm_budget=per_sub_budget,
+                    active_tools=active_tools,
+                    run_kind=run_kind,
                 )
                 last_messages = result.get("messages") or []
                 # Handoff: compact notes from this session for the next phase
@@ -1391,14 +2149,27 @@ def main() -> int:
 
             # Critic / synthesis — always from notes (flush-safe)
             print("\n[agent] === Critic: synthesize from notes ===")
-            forced = try_forced_report(client, run_dir, task_text, system_prompt)
-            if forced:
-                final_report = forced
-                status = "completed" if stop_reason is None else f"{stop_reason}+forced_report"
+            if run_kind == "recon":
+                # No research ranking — write mechanism summary only
+                learnings = memory.summarize_host_learnings()
+                final_report = (
+                    "RECON_COMPLETE\n\n"
+                    "# Host mechanism learning (not a research delivery)\n\n"
+                    "This run was `--run-kind recon`. No shortlist candidates. "
+                    "Transport knowledge is stored in global memory for later research runs.\n\n"
+                    + (learnings.get("text") or "(no host learnings yet)\n")
+                )
+                status = "completed" if stop_reason is None else f"{stop_reason}+recon_report"
+                print("[agent] Recon report from host_learnings (shortlist skipped)")
             else:
-                status = status if status != "running" else "error"
-                if stop_reason is None:
-                    stop_reason = "critic_failed"
+                forced = try_forced_report(client, run_dir, task_text, system_prompt)
+                if forced:
+                    final_report = forced
+                    status = "completed" if stop_reason is None else f"{stop_reason}+forced_report"
+                else:
+                    status = status if status != "running" else "error"
+                    if stop_reason is None:
+                        stop_reason = "critic_failed"
         else:
             result = run_session(
                 client=client,
@@ -1407,6 +2178,7 @@ def main() -> int:
                 user_content=task_text,
                 run_dir=run_dir,
                 memory=memory,
+                active_tools=active_tools,
                 mem_cfg=mem_cfg,
                 sources=sources,
                 counters=counters,
@@ -1415,6 +2187,7 @@ def main() -> int:
                 max_runtime=max_runtime,
                 verbose=verbose,
                 session_label="main",
+                run_kind=run_kind,
             )
             last_messages = result.get("messages") or []
             status = result["status"]
@@ -1464,20 +2237,61 @@ def main() -> int:
     )
 
     shortlist_n = len(load_shortlist(run_dir))
+    tool_calls_n = counters["tool_calls"]
+    useful = counters.get("shortlist_adds", 0)
+
+    # Global host learnings (cross-task) — always write so the operator sees the loop
+    learnings = memory.summarize_host_learnings()
+    learnings_path = run_dir / "host_learnings.md"
+    try:
+        learnings_path.write_text(learnings.get("text") or "", encoding="utf-8")
+    except Exception as e:
+        print(f"[agent] Warning: could not write host_learnings.md: {e}")
+
+    # Recon must never leave research candidates
+    if run_kind == "recon":
+        try:
+            sl_path = run_dir / "shortlist.json"
+            if sl_path.exists():
+                sl_path.write_text("[]\n", encoding="utf-8")
+        except Exception:
+            pass
+        if not final_report.startswith("RECON"):
+            learnings = memory.summarize_host_learnings()
+            final_report = (
+                "RECON_COMPLETE\n\n"
+                "# Host mechanism learning (not a research delivery)\n\n"
+                + (learnings.get("text") or "")
+            )
+            save_report(run_dir, final_report)
+
     metadata = {
         "run_id": run_dir.name,
         "status": status,
         "mode": "planned" if planned else "single",
+        "run_kind": run_kind,
+        "browser_backend": browser_backend,
         "model": client.model,
         "started_at": datetime.fromtimestamp(start_time, tz=timezone.utc).isoformat(),
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "elapsed_seconds": round(elapsed, 1),
         "llm_calls": counters["llm_calls"],
-        "tool_calls": counters["tool_calls"],
+        "tool_calls": tool_calls_n,
         "search_calls": counters["search_calls"],
         "sources_count": len(sources),
         "notes_count": counters["notes_count"],
         "shortlist_count": shortlist_n,
+        "shortlist_adds": useful,
+        "constraint_mismatches": counters.get("constraint_mismatches", 0),
+        "sessions_skipped": counters.get("sessions_skipped", 0),
+        "memory_first_rejects": counters.get("memory_first_rejects", 0),
+        "host_abandons": counters.get("host_abandons", 0),
+        "useful_actions": useful,
+        "useful_action_ratio": (
+            round(useful / tool_calls_n, 3) if tool_calls_n else 0.0
+        ),
+        "host_domains_touched": learnings.get("domains") or [],
+        "human_setup_candidates": learnings.get("human_setup_candidates") or [],
         "limits": limits,
     }
     save_metadata(run_dir, metadata)
@@ -1487,10 +2301,19 @@ def main() -> int:
     print(f"[agent] Report written to: {run_dir / 'report.md'}")
     print(
         f"[agent] Duration: {elapsed/60:.1f} min | LLM: {counters['llm_calls']} | "
-        f"Tools: {counters['tool_calls']} | Notes: {counters['notes_count']} | "
-        f"Shortlist: {shortlist_n}"
+        f"Tools: {tool_calls_n} | Notes: {counters['notes_count']} | "
+        f"Shortlist: {shortlist_n} | useful_ratio={metadata['useful_action_ratio']}"
     )
     print(f"[agent] Memory tactics: {memory.tactics_path}")
+    print(f"[agent] Memory recipes: {memory.recipes_path}")
+    print(f"[agent] Host learnings: {learnings_path}")
+    human = learnings.get("human_setup_candidates") or []
+    if human:
+        print(
+            "[agent] HUMAN_SETUP candidates (global): "
+            + ", ".join(human)
+            + " — see host_learnings.md"
+        )
 
     return 0 if status == "completed" or status.endswith("+forced_report") else 1
 

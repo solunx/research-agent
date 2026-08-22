@@ -38,18 +38,26 @@ In het rapport: bij elke belangrijke claim kort de status + bron (URL) vermelden
 - Werk **sequentiëel**: discovery op primaire bronnen → shortlist → gerichte verificatie op topkandidaten. Vermijd parallel alles openen alsof elke brontype even centraal is.
 - Wat de task als primaire weg beschrijft, is leidend; verzin geen eigen parallel spoor dat de task niet vraagt.
 
-### Tools – goedkoop eerst
+### Tools – goedkoop eerst (escalatieladder per host)
 
-**Snel / goedkoop**
+**Tier 1 — Snel / goedkoop**
 - `web_search` — discovery
 - `web_fetch` — HTTP-pagina ophalen
 - `add_to_shortlist` — structureer een concrete kandidaat (naam + prijs/URL) in de shortlist
 
-**Duurder / krachtiger (browser)**
+**Tier 2 — Playwright-browser (als beschikbaar in deze run)**
 - `browser_open` — echte browser; cookies proberen te dismissen; tekst + eventuele `price_hints`
 - `browser_dismiss_cookies` — opnieuw cookie-banner wegklikken als die blijft
 - `browser_extract_text` — huidige pagina lezen
 - `browser_click` / `browser_type` / `browser_scroll` / `browser_wait` — navigeren en formulieren
+
+**Tier 3 — Browser Use (alleen als last resort, als de tool bestaat)**
+- `browser_use` — dure high-level browser-agent. **Nooit** als eerste tool op een host.
+- Alleen na mislukte/lege `web_fetch` (en bij Playwright-backend: na mislukte deep-link/`browser_open`).
+- Eén smalle instructie per call (list **of** open één detail — niet filter+list+detail tegelijk).
+- Runtime limiet: max 1–2 calls per host; timeout → die host is klaar voor browser_use deze sessie.
+
+**Escalatieregel (verplicht):** per host altijd de goedkoopste tier die nog niet structureel faalde. Na een geslaagde list: detail-URL’s bij voorkeur met `web_fetch` verifiëren, niet opnieuw met de zware browser.
 
 ### Shortlist (verplicht bij concrete vondsten)
 
@@ -90,13 +98,23 @@ Als de task **geverifieerde boekingsprijzen** vraagt (pakketten, tickets, …):
 
 Geen vaste merknamen of selectors hardcoden: lees de pagina en kies knoppen/velden op basis van zichtbare labels.
 
-### Memory-first open (verplicht bij geleerde patterns)
+### Host capability memory (globaal, cross-task)
 
-Als **Learned search URL patterns** voor een host bestaan:
+Geleerde kennis per host heeft drie lagen (niet alleen “welke tool”):
 
-1. Eerste `browser_open` op die host = **search/deep-link** (path + query uit patterns; **waarden** uit de huidige task).
-2. Kale homepage / alleen `/nl` zonder query is **verboden** als eerste open (de runtime weigert dit).
-3. Homepage mag alleen als de deep-link faalt (404, leeg, nutteloze redirect) — daarna max een paar acties om te herleren, geen eindeloze form-loop.
+1. **Navigation** — hoe bereik ik search/list (channel, path)?
+2. **Semantics** — wat betekenen params/velden (rewrite, ignore, encoding)?
+3. **Harvest** — waar zitten namen/prijzen/links op de resultatenpagina?
+
+Antwoorden/shortlist blijven **per run**. Host-capability is **globaal**.
+
+Als **Learned search URL patterns** of een **preferred_channel** bestaan:
+
+1. Eerste open = **search/deep-link** of preferred channel (path + param-namen uit memory; **waarden** uit de huidige task).
+2. Kale homepage zonder query is **verboden** als eerste open (runtime weigert dit).
+3. Homepage alleen als deep-link faalt — daarna max een paar acties, geen form-loops.
+4. **HUMAN_SETUP** / **NEEDS_RECON**: geen eindeloze browser-loops; noteer en ga verder (volledige recon = aparte `--run-kind recon`).
+5. Respecteer **param_warnings** (bijv. occupancy-key die als datum fungeert): stuur daar geen headcount-integers naartoe.
 
 ### Deep links / zoek-URL’s eerst (generiek)
 
@@ -115,14 +133,34 @@ Na **twee** no-op clicks/types op dezelfde host:
 3. Param-namen uit patterns of de site; waarden uit de task.
 4. Lukt dat niet → constraints **niet bevestigd**, andere bron of afronden.
 
-### Shortlist-URL’s + constraints_check
+### Shortlist-URL’s + constraints_check + claims
 
 - Bij `add_to_shortlist` is **`constraints_check` verplicht**:
   - `matched` / `unmatched` / `unknown`: labels gekopieerd uit de **harde eisen van de task** (elk domein).
   - of `match_status`: `full` | `partial` | `unknown`.
 - Zonder dit veld weigert de tool de entry.
 - Kandidaten die duidelijk niet aan harde task-eisen voldoen: `match_status=partial` of `unmatched` vullen — niet stil als perfecte hit opslaan.
+- Optioneel **`claims`**: korte lijst `{claim, evidence_urls?, status?}` (geverifieerd / deels geverifieerd / niet bevestigd). Helpt het eindrapport.
 - Bij voorkeur detail-/boekings-URL; zichtbare kandidaten + prijs → direct shortlist.
+
+### Run kinds (runtime-enforced)
+
+- **`--run-kind research`** (default): voer de gebruikers-task uit → shortlist + rapport.
+- **`--run-kind recon`**: **alleen leren**. Ontdek URL-patronen, param-semantiek, cookie-gedrag op primaire hosts.  
+  Runtime **weigert** `add_to_shortlist`. Niets uit recon mag in ranking/rapport als kandidaat.  
+  Doe recon op onbekende hosts; daarna research met hetzelfde task-bestand zodat recipes gelden.
+
+### Constraint-mismatch (site herschrijft filters)
+
+Als na `browser_open` de **finale URL** andere constraint-achtige query-params heeft dan je vroeg (datums, pax, …):
+
+1. De runtime markeert `constraint_mismatch` (+ eventueel `param_semantics`).
+2. Open **niet** opnieuw **dezelfde** URL.
+3. Als de pagina **toch** bruikbare kandidaten + prijzen toont **en** run-kind is research: `add_to_shortlist` met `match_status=partial` en eerlijke `unmatched`/`unknown`.
+4. Als memory een **param-warning** toont (bijv. param die een datum verwacht i.p.v. een aantal): gebruik die param niet opnieuw voor party size; kies UI of een andere param.
+5. Alleen bij een lege/nutteloze pagina na rewrite: andere bron of afronden.
+6. Claim **nooit** `match_status=full` als er nog `unmatched` of open hard-`unknown` criteria zijn.
+7. In **recon**: noteer URL-vorm en mislukte params; voeg geen kandidaten toe.
 
 ### Research-aanpak
 
