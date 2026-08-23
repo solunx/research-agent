@@ -48,17 +48,21 @@ Weak research yields often mean: navigation OK, semantics/harvest weak.
 |--------|----------|-----------------|
 | **Navigation** | How do I reach a useful search/list surface? | preferred_channel, path hints, failed tiers |
 | **Semantics** | What does each field/param *mean*? | rewrites, ignored keys, “count looks like date” |
-| **Harvest** | Where are names, prices, links on the page? | price_hints signal, extract hints |
+| **Harvest** | Can we extract *relational* evidence? | `price_signals` (discovery only), `relationships_extractable` (unknown\|partial\|ok\|failed), success/fail counts |
 
 ```
 HOST MEMORY
 ├── navigation
 ├── semantics
 └── harvest
+    ├── price_signals          ← discovery only
+    ├── relationships_extractable
+    └── success_count / failure_count
 ```
 
 Recon success ≠ “found a deal”.  
-Recon success = enough of the three layers to **replay cheaply** on the next research task.
+Recon success = enough of the three layers to **replay cheaply** on the next research task.  
+**`price_signals=true` does not imply relationships are extractable.**
 
 ---
 
@@ -105,26 +109,108 @@ Cheap verify (fetch or browser_open)
 
 ---
 
-## 4b. Harvest pipeline (code, not LLM)
+## 4b. Retrieval evidence contract (code-first)
 
 ```
-PAGE TEXT
-    ↓  (deterministic)
-AMOUNT scan + nearby title lines
-    ↓
-EAV observations → observations.jsonl   ← ALL signals (noise OK)
-    ↓  gates: primary + entity_score + marketing_penalty + no query mismatch
-SHORTLIST                         ← only plausible product candidates
-    ↓  constraints_check / rankable
-CRITIC REPORT
+Discovery signals (price_hints, raw text)
+        ↓
+PageState          match + page_role + usable_for_task
+        ↓ usable_for_task?  /  page_role=landing?
+   no → observations only
+   yes↓
+Structural regions / clusters
+        ↓
+EAV observations → observations.jsonl
+        ↓  scope classification (primary|group|related|chrome|element)
+Evidence buffer → evidence.jsonl + shortlist layer=evidence
+        ↓  ConstraintResults (matched/unmatched/unknown)
+Eligibility policy (eligible | ineligible | uncertain)
+        ↓  rankable only if eligible AND scope∈{primary,group} AND layer≠evidence-only
+Ranked candidates (report shortlist)
 ```
 
-- **No travel-specific product word lists** in the extractor.
-- Marketing slogans, filter UI amounts, discounts stay in **observations**.
-- Query-state mismatch pages: **observations only** — never shortlist pollution.
-- Optional later: structure-aware clusters (cards/tables/lists) + small model only on ambiguous pairs.
+**Hard separations**
 
----
+| Object | Answers |
+|--------|---------|
+| **PageState** | Where is the site relative to the request? What *kind* of surface (`page_role`)? |
+| **Evidence** | What does the page claim about a subject (entity + value_role + **scope**)? |
+| **ConstraintResult** | Facts vs task hard criteria (matched / unmatched / unknown) |
+| **Eligibility** | Policy over ConstraintResults + scope + page usable — may this enter ranking? |
+| **RankedCandidate** | Eligible evidence only; report ranks this set |
+
+### PageState schema
+```
+{
+  requested_url, observed_url,
+  match: full | partial | mismatch | unknown,
+  page_role: unknown | landing | list | detail,
+  usable_for_task: bool,
+  mismatches: [...],
+  semantic_flags: [...],
+  provenance: { method, ... }
+}
+```
+- `page_role` is structural (path/query/title heuristics). **unknown is valid.**
+- `landing` → observations only (no evidence-buffer promote).
+- `detail` → prefer scope=`primary`; low-score neighbors → `related` (not top-level).
+- `list` → scope=`group` for offer cards.
+- Mismatch / `usable_for_task=false` → observations only.
+
+### Evidence scope
+```
+primary   main subject on a detail surface
+group     offer-level row on a list surface
+related   secondary subject on detail (similar items) — not top-level
+chrome    UI / amenity / marketing copy next to prices — observations only
+element   line-item / SKU under an offer — observations only
+```
+
+### Evidence schema
+```
+{
+  observed: {
+    entity, value, value_role, scope,
+    confidence, confidence_breakdown: { entity, value, relationship, state, overall },
+    entity_score, marketing_penalty, source_url, raw_evidence
+  },
+  verified: {},
+  unknown: [...],
+  page_state_ref: { match, usable_for_task, page_role },
+  provenance: { source_url, extraction_method, raw_evidence }
+}
+```
+
+### Dataflow layers (iter 2)
+| Store | Content |
+|-------|---------|
+| `observations.jsonl` | Raw EAV signals (all scopes) |
+| `evidence.jsonl` | Gated evidence rows (primary/group) awaiting constraints |
+| `shortlist.json` | Mixed buffer; rows carry `layer=evidence\|candidate` |
+| Ranked view | `filter_rankable_shortlist` — eligibility + scope + layer gates |
+
+### ConstraintResult vs Eligibility
+- **ConstraintResult** = factual match status.
+- **Eligibility** = policy gate (`eligible` | `ineligible` | `uncertain`).
+- Runtime harvest always: `layer=evidence`, `eligibility=ineligible`, `rankable=false`.
+- LLM `add_to_shortlist` → `layer=candidate`; eligibility from ConstraintResults via policy — **not** a free-form LLM “is this a candidate?” decision.
+- Default ineligible: observed_only, chrome/related/element scope, landing page_role, mismatch page.
+
+### Harvest capability subscores (host memory)
+```
+harvest:
+  has_price_signals: bool
+  relationships_extractable: unknown | partial | ok | failed
+  success_count / failure_count
+```
+- `price_signals=true` ≠ relationships extractable.
+
+### Invariants
+- Harvest reconstructs structural entity↔attribute↔value links — **not** vertical product detection.
+- chrome / related / element → never top-level ranked candidates.
+- Auto-harvest never sets `rankable=true`.
+- **No product-vertical word lists.**
+- Inline recon: memory only; clear `needs_recon` only without severe param rewrite.
 
 ## 5. Web capability ladder (per host)
 

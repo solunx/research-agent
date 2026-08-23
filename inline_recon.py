@@ -157,7 +157,8 @@ def run_inline_recon_burst(
             except Exception:
                 pass
             learned.append(f"prices_visible on {final_url[:80]}")
-        # Compare query rewrite (generic)
+        # Compare query rewrite (generic) — discovery ≠ resolved query state
+        rewrite_keys: list[str] = []
         try:
             rq = parse_qs(urlparse(url).query)
             fq = parse_qs(urlparse(final_url).query)
@@ -165,6 +166,7 @@ def run_inline_recon_burst(
                 if k in fq and fq[k] != vals:
                     detail = f"{k}: requested={vals[0][:40]} final={fq[k][0][:40]}"
                     learned.append(f"param_rewrite {detail}")
+                    rewrite_keys.append(k.lower())
                     try:
                         memory.record_param_warning(
                             host,
@@ -176,16 +178,43 @@ def run_inline_recon_burst(
                         pass
         except Exception:
             pass
+        results[-1]["rewrite_keys"] = rewrite_keys
 
-    # Clear needs_recon only if we got at least one clean open with prices
+    # Clear needs_recon ONLY when a probe has no structural rewrite on
+    # date/occupancy-like keys. price_hints alone are discovery, not success.
+    def _severe_rewrite(keys: list[str]) -> bool:
+        for k in keys:
+            if any(
+                s in k
+                for s in (
+                    "date",
+                    "depart",
+                    "participant",
+                    "adult",
+                    "child",
+                    "pax",
+                    "room",
+                    "person",
+                )
+            ):
+                return True
+        return False
+
     cleared = False
-    if any(r.get("price_hints_n", 0) > 0 and not r.get("error") for r in results):
+    clean_probe = any(
+        not r.get("error")
+        and not _severe_rewrite(list(r.get("rewrite_keys") or []))
+        for r in results
+    )
+    if clean_probe:
         try:
             memory.clear_needs_recon(host)
             cleared = True
-            learned.append("cleared_needs_recon")
+            learned.append("cleared_needs_recon (no severe param rewrite)")
         except Exception:
             pass
+    else:
+        learned.append("kept_needs_recon (rewrite or no clean probe)")
 
     summary = {
         "ok": True,

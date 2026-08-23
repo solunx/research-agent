@@ -582,15 +582,24 @@ def add_to_shortlist(
             for k, v in extra.items():
                 if isinstance(v, (str, int, float, bool, list, dict)):
                     entry[k] = v
+        if "layer" not in entry:
+            # LLM / manual adds are candidate-layer; harvest sets layer=evidence explicitly
+            entry["layer"] = "candidate"
         if line_item:
             entry["is_line_item"] = True
             entry["rankable"] = False
+            entry["scope"] = entry.get("scope") or "element"
+            entry["eligibility"] = "ineligible"
         elif "rankable" not in entry:
             entry["rankable"] = compute_rankable(entry)
         else:
             # Still run gate (e.g. NIET BRUIKBAAR in details)
             if entry.get("rankable") is not False:
                 entry["rankable"] = compute_rankable(entry)
+        if "eligibility" not in entry:
+            entry["eligibility"] = (
+                "eligible" if entry.get("rankable") else "ineligible"
+            )
         items.append(entry)
 
     save_shortlist(run_dir, items)
@@ -606,7 +615,13 @@ def shortlist_as_prompt_text(run_dir: Path, max_chars: int = 6000) -> str:
     items = load_shortlist(run_dir)
     if not items:
         return "(shortlist empty)"
-    lines = [f"Shortlist ({len(items)} unique candidates):"]
+    rankable_items = [it for it in items if compute_rankable(it)]
+    evidence_n = sum(1 for it in items if it.get("layer") == "evidence")
+    lines = [
+        f"Buffer: {len(items)} rows "
+        f"(evidence_layer={evidence_n}, rankable={len(rankable_items)}). "
+        f"RANK only rankable items."
+    ]
     total = 0
     for i, it in enumerate(items, 1):
         urls = it.get("source_urls") or ([it.get("source_url")] if it.get("source_url") else [])
@@ -615,11 +630,15 @@ def shortlist_as_prompt_text(run_dir: Path, max_chars: int = 6000) -> str:
         observed = it.get("observed_at") or it.get("updated_at") or ""
         origin = it.get("origin") or ""
         rankable = compute_rankable(it)
+        layer = it.get("layer") or ("evidence" if origin == "harvest_invariant" else "candidate")
+        scope = it.get("scope") or ""
         rank_tag = "" if rankable else " | NOT_RANKABLE"
         line = (
             f"{i}. {it.get('name')}"
             f" | match={ms}"
             f"{rank_tag}"
+            f" | layer={layer}"
+            f"{(' | scope=' + scope) if scope else ''}"
             f" | price={it.get('price') or '—'}"
             f" | observed={observed[:19] if observed else '—'}"
             f"{' | auto' if origin == 'harvest_invariant' else ''}"
@@ -653,23 +672,247 @@ def shortlist_as_prompt_text(run_dir: Path, max_chars: int = 6000) -> str:
 
 
 
+def infer_page_role(
+    *,
+    url: str = "",
+    title: str = "",
+    text: str = "",
+) -> str:
+    """
+    Structural page role — generic, not vertical-specific.
+
+    unknown | landing | list | detail
+
+    Uses path shape, query density, and light title/text cues.
+    unknown is a valid outcome (do not force a role).
+    """
+    from urllib.parse import urlparse, parse_qs
+
+    u = (url or "").strip()
+    title_l = (title or "").lower()
+    text_l = (text or "")[:4000].lower()
+    if not u and not title_l and not text_l:
+        return "unknown"
+
+    try:
+        parsed = urlparse(u)
+        path = (parsed.path or "/").lower().rstrip("/") or "/"
+        segments = [s for s in path.split("/") if s]
+        qs = parse_qs(parsed.query or "")
+    except Exception:
+        path, segments, qs = "/", [], {}
+
+    n_seg = len(segments)
+    n_q = len(qs)
+
+    # Detail: deep path with id-like tail or singular resource segment
+    detail_path_tokens = (
+        "detail",
+        "product",
+        "item",
+        "offer",
+        "hotel",
+        "property",
+        "listing",
+        "pakket",
+        "vacancy",
+        "deal",
+    )
+    list_path_tokens = (
+        "search",
+        "zoeken",
+        "results",
+        "resultaten",
+        "list",
+        "lijst",
+        "vakanties",
+        "vakantie",
+        "packages",
+        "offers",
+        "aanbiedingen",
+        "category",
+        "categorie",
+    )
+    landing_path_tokens = (
+        "all-inclusive",
+        "inspiratie",
+        "inspiration",
+        "home",
+        "index",
+    )
+
+    path_join = "/" + "/".join(segments)
+    qstr = ""
+    try:
+        qstr = parsed.query or ""
+    except Exception:
+        qstr = ""
+    has_idish = bool(
+        re.search(r"(?:_hid-|/id/|id=|hid=|/p/\d+|[-_]\d{4,})", path_join + "?" + qstr, re.I)
+    ) or bool(re.search(r"[-_]\d{5,}", path_join))
+
+    # Explicit list signals in path or query
+    if any(t in segments for t in list_path_tokens) or any(
+        k.lower() in ("sort", "offset", "page", "limit", "searchmode", "pagetype")
+        for k in qs
+    ):
+        # Deep path with resource id still wins as detail
+        if n_seg >= 3 and has_idish:
+            return "detail"
+        return "list"
+
+    if n_seg >= 3 and (has_idish or any(t in segments for t in detail_path_tokens)):
+        return "detail"
+
+    if n_seg <= 2 and (any(t in segments for t in landing_path_tokens) or n_q == 0):
+        # Landing unless text is clearly a result grid
+        price_hits = len(re.findall(r"€\s*[\d.,]+", text_l))
+        if price_hits >= 6 and n_seg >= 1:
+            return "list"
+        if n_seg <= 1 and n_q == 0:
+            return "landing"
+        if any(t in segments for t in landing_path_tokens):
+            return "landing"
+
+    if n_q >= 3 and n_seg <= 3:
+        return "list"
+
+    if n_seg >= 4:
+        return "detail" if has_idish else "list"
+
+    # Title cues (language-light)
+    if any(x in title_l for x in ("zoekresultaten", "search results", "results for", "pakketten", "packages")):
+        return "list"
+    if price_hits := len(re.findall(r"€\s*[\d.,]+", text_l)):
+        if price_hits >= 8:
+            return "list"
+        if price_hits <= 2 and n_seg >= 3:
+            return "detail"
+
+    return "unknown"
+
+
+def build_page_state(
+    *,
+    requested_url: str = "",
+    final_url: str = "",
+    mismatches: list[str] | None = None,
+    semantic_flags: list[dict[str, Any]] | None = None,
+    title: str = "",
+    text: str = "",
+    page_role: str | None = None,
+) -> dict[str, Any]:
+    """
+    First-class page state: where the site is vs what was requested,
+    plus structural page_role (what kind of surface this is).
+
+    match: full | partial | mismatch | unknown
+    page_role: unknown | landing | list | detail
+    usable_for_task: False when high-severity query rewrites make the page
+    unsuitable as a source of rankable candidates for the requested constraints.
+    """
+    mm = [str(x) for x in (mismatches or []) if x]
+    flags = list(semantic_flags or [])
+    req = (requested_url or "").strip()
+    fin = (final_url or "").strip() or req
+
+    if not req and not fin:
+        match = "unknown"
+    elif not mm:
+        match = "full"
+    else:
+        # Any date/occupancy-like rewrite → mismatch (not merely partial)
+        severe = False
+        for m in mm:
+            ml = m.lower()
+            if any(
+                k in ml
+                for k in (
+                    "date",
+                    "depart",
+                    "participant",
+                    "adult",
+                    "child",
+                    "pax",
+                    "room",
+                    "person",
+                )
+            ):
+                severe = True
+                break
+        match = "mismatch" if severe else "partial"
+
+    usable = match in ("full", "partial") and match != "mismatch"
+    if match == "mismatch":
+        usable = False
+
+    role = (page_role or "").strip().lower()
+    if role not in ("unknown", "landing", "list", "detail"):
+        role = infer_page_role(url=fin or req, title=title or "", text=text or "")
+
+    return {
+        "requested_url": req[:800],
+        "observed_url": fin[:800],
+        "match": match,
+        "page_role": role,
+        "mismatches": mm[:12],
+        "semantic_flags": flags[:8],
+        "usable_for_task": usable,
+        "provenance": {
+            "method": "url_param_compare+role_heuristic",
+            "requested_url": req[:500],
+            "observed_url": fin[:500],
+        },
+    }
+
+
 def compute_rankable(item: dict[str, Any]) -> bool:
     """
-    Runtime gate: is this shortlist entry eligible for ranking?
-    Critic must not act as garbage filter — only rank rankable items.
-    Generic signals only (no product-vertical hardcoding).
+    Eligibility gate for ranking (not the same as 'observed').
+
+    Policy over ConstraintResults + structural scope/page_role.
+    Evidence buffer rows (layer=evidence, observed_only, chrome/related) → not rankable.
     """
     if not isinstance(item, dict):
         return False
     if item.get("rankable") is False:
         return False
+    # Layer: evidence buffer is never the ranked shortlist
+    if item.get("layer") == "evidence":
+        return False
+    # Eligibility: never rank pure observations
+    ms = str(
+        (item.get("constraints_check") or {}).get("match_status")
+        or item.get("match_status")
+        or ""
+    ).lower()
+    if ms in ("observed_only", "observed", "mismatch"):
+        return False
+    if item.get("eligibility") == "ineligible":
+        return False
+    # Scope: only primary (or legacy group) may rank; chrome/related/element never
+    scope = str(item.get("scope") or "").lower()
+    if scope in ("element", "filter", "chrome", "related"):
+        return False
+    # page_role landing → marketing surface; not rankable without verification
+    ps = item.get("page_state") or {}
+    if isinstance(ps, dict) and ps.get("page_role") == "landing":
+        if item.get("origin") == "harvest_invariant":
+            return False
+
     cc = item.get("constraints_check") or {}
     if not isinstance(cc, dict):
         cc = {}
     unmatched = [str(u) for u in (cc.get("unmatched") or [])]
     if any(u.startswith("query_state_mismatch") for u in unmatched):
         return False
-    # Explicit human/LLM unusable markers in notes/details
+
+    ps = item.get("page_state") or {}
+    if isinstance(ps, dict) and ps.get("usable_for_task") is False:
+        return False
+    if isinstance(ps, dict) and ps.get("match") == "mismatch":
+        return False
+
     blob = " ".join(
         [
             str(cc.get("notes") or ""),
@@ -687,7 +930,7 @@ def compute_rankable(item: dict[str, Any]) -> bool:
     ):
         if marker in blob:
             return False
-    # Weak auto-harvest without verification and with many unmatched → exclude
+
     matched = cc.get("matched") or []
     if (
         item.get("origin") == "harvest_invariant"
@@ -695,7 +938,10 @@ def compute_rankable(item: dict[str, Any]) -> bool:
         and len(matched) == 0
     ):
         return False
-    # Low multi-signal confidence from harvest
+    # Auto-harvest without human/LLM constraint verification → not rankable yet
+    if item.get("origin") == "harvest_invariant" and ms in ("", "observed_only", "unknown"):
+        return False
+
     eav_c = item.get("eav_confidence")
     if eav_c is not None:
         try:
@@ -710,14 +956,21 @@ def compute_rankable(item: dict[str, Any]) -> bool:
                 return False
         except (TypeError, ValueError):
             pass
-    # Empty name
-    if not str(item.get("name") or "").strip():
+
+    name = str(item.get("name") or "").strip()
+    if not name:
         return False
-    # Configuration / SKU lines are never rankable top-level candidates
-    if _is_line_item_entity(str(item.get("name") or "")):
+    if _is_line_item_entity(name):
         return False
     if item.get("is_line_item"):
         return False
+    if _AMENITY_CHROME_RE.search(name):
+        return False
+    # Feature/option labels in parentheses without multi-token proper name shape
+    if re.search(r"\([^)]{2,24}\)\s*$", name) and len(name.split()) <= 4:
+        # e.g. "Balkon of terras (zitje)" — config amenity, not top-level offer
+        if not re.search(r"[A-ZÁÉÍÓÚ][a-záéíóú]+(?:\s+[A-ZÁÉÍÓÚ][a-záéíóú]+){1,}", name):
+            return False
     return True
 
 
@@ -1301,6 +1554,40 @@ def append_observation(run_dir: Path, observation: dict[str, Any]) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+def append_evidence(run_dir: Path, evidence_row: dict[str, Any]) -> None:
+    """
+    Evidence buffer (iter 2): structured entity↔value rows, separate from ranked shortlist.
+
+    observations.jsonl = raw EAV signals
+    evidence.jsonl     = gated evidence (scope primary/group) awaiting ConstraintResults
+    shortlist.json     = mixed legacy store; rankable view filters layer/eligibility
+    """
+    epath = run_dir / "evidence.jsonl"
+    row = dict(evidence_row)
+    row.setdefault("ts", datetime.now(timezone.utc).isoformat())
+    row.setdefault("layer", "evidence")
+    with open(epath, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def load_evidence(run_dir: Path) -> list[dict[str, Any]]:
+    epath = run_dir / "evidence.jsonl"
+    if not epath.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    try:
+        for ln in epath.read_text(encoding="utf-8").splitlines():
+            if not ln.strip():
+                continue
+            try:
+                out.append(json.loads(ln))
+            except Exception:
+                continue
+    except Exception:
+        return []
+    return out
+
+
 def observations_as_prompt_text(run_dir: Path, max_chars: int = 3000) -> str:
     path = run_dir / "observations.jsonl"
     if not path.exists():
@@ -1334,6 +1621,7 @@ def harvest_invariant_from_browser_result(
     *,
     session: str = "",
     constraint_mismatches: list[str] | None = None,
+    page_state: dict[str, Any] | None = None,
     candidate_confidence_min: float = 0.72,
     entity_score_min: float = 0.62,
     max_auto_candidates_per_page: int = 5,
@@ -1341,15 +1629,10 @@ def harvest_invariant_from_browser_result(
     """
     Runtime harvest (retrieval only) — pure code, no LLM:
 
-    1) Extract EAV observations from page text (all rows → observations.jsonl).
-    2) Promote to shortlist ONLY when:
-       - amount_role == primary
-       - entity looks like a product title (entity_score / marketing gates)
-       - confidence high enough
-       - NO structural query-state mismatches on this page
-    3) Mismatches / slogans / low-conf stay in observations only — never shortlist.
-
-    Shortlist is the evidence buffer for ranking; observations are the raw layer.
+    Discovery (price_hints / EAV rows) → observations always.
+    Promote toward shortlist only when page_state.usable_for_task and
+    structural gates pass. Auto-promoted rows stay observed_only + rankable=False
+    until constraint verification (LLM or later phase) upgrades eligibility.
     """
     if not isinstance(result, dict):
         return {"ok": False, "observations": 0, "added": 0, "updated": 0, "candidates": []}
@@ -1367,6 +1650,22 @@ def harvest_invariant_from_browser_result(
 
     hints = result.get("price_hints") if isinstance(result.get("price_hints"), list) else []
     url = str(result.get("url") or "")
+    req_url = str(result.get("requested_url") or result.get("request_url") or "")
+    mismatches = [str(x) for x in (constraint_mismatches or result.get("constraint_mismatches") or []) if x]
+
+    ps = page_state if isinstance(page_state, dict) else result.get("page_state")
+    if not isinstance(ps, dict):
+        ps = build_page_state(
+            requested_url=req_url,
+            final_url=url,
+            mismatches=mismatches,
+            semantic_flags=result.get("param_semantics")
+            if isinstance(result.get("param_semantics"), list)
+            else None,
+            title=str(result.get("title") or ""),
+            text=text[:6000],
+        )
+
     eavs = extract_eav_observations(
         text, price_hints=hints, source_url=url, max_items=24
     )
@@ -1379,13 +1678,14 @@ def harvest_invariant_from_browser_result(
                 **eav,
                 "session": session,
                 "page_url": url,
+                "page_state_match": ps.get("match"),
+                "page_state_usable": ps.get("usable_for_task"),
             },
         )
         n_obs += 1
 
-    mismatches = [str(x) for x in (constraint_mismatches or []) if x]
-    # Structural query mismatch → learn from observations only; never pollute shortlist
-    if mismatches:
+    # Query-state mismatch or unusable page → observations only
+    if mismatches or ps.get("usable_for_task") is False or ps.get("match") == "mismatch":
         return {
             "ok": True,
             "observations": n_obs,
@@ -1395,43 +1695,135 @@ def harvest_invariant_from_browser_result(
             "candidates": [],
             "promoted": 0,
             "skipped_low_conf": n_obs,
-            "skipped_reason": "query_state_mismatch",
+            "skipped_reason": "page_state_not_usable",
             "mismatches": mismatches[:6],
+            "page_state": ps,
         }
 
-    # Promote: primary + strong multi-signal confidence (observations still keep all).
-    # Never promote line-item / SKU / room-config strings as top-level candidates.
+    def _region_has_line_item(eav: dict[str, Any]) -> bool:
+        raw = str(eav.get("raw_evidence") or "")
+        return bool(_LINE_ITEM_RE.search(raw) or _is_line_item_entity(raw))
+
+    def _classify_scope(eav: dict[str, Any]) -> str:
+        """
+        Evidence scope (iter 1): primary | related | chrome | element | group
+
+        chrome  = UI / amenity / marketing copy next to prices
+        element = line-item / SKU under an offer
+        related = secondary subject on a detail page (not page primary)
+        primary = main subject on detail; group = list-card offer
+        """
+        ent = str(eav.get("entity") or "").strip()
+        raw = str(eav.get("raw_evidence") or "")
+        if not ent or eav.get("is_line_item") or _is_line_item_entity(ent):
+            return "element"
+        if _region_has_line_item(eav):
+            return "element"
+        if _AMENITY_CHROME_RE.search(ent) or _SLOGAN_SHAPE_RE.search(ent):
+            return "chrome"
+        if re.search(r"\([^)]{2,24}\)\s*$", ent) and len(ent.split()) <= 4:
+            if not re.search(
+                r"[A-ZÁÉÍÓÚ][a-záéíóú]+(?:\s+[A-ZÁÉÍÓÚ][a-záéíóú]+){1,}", ent
+            ):
+                return "chrome"
+        chrome_blob = f"{ent} {raw}".lower()
+        for marker in (
+            "personaliseer",
+            "per kamer",
+            "per nacht",
+            "vanafprijs",
+            "veelgestelde vragen",
+            "faq ",
+            "sorteer op",
+            "bekijk onze",
+            "book now",
+            "betaal later",
+        ):
+            if marker in chrome_blob and len(ent.split()) <= 5:
+                return "chrome"
+        role = str(ps.get("page_role") or "unknown")
+        if role == "landing":
+            return "chrome"
+        if role == "detail":
+            if float(eav.get("entity_score") or 0) < 0.55:
+                return "related"
+            return "primary"
+        if role == "list":
+            return "group"
+        return "group"
+
+    def _entity_ok_for_evidence(eav: dict[str, Any], scope: str) -> bool:
+        """Only primary/group scopes enter the evidence buffer as rows."""
+        ent = str(eav.get("entity") or "").strip()
+        if not ent or len(ent.split()) < 2:
+            return False
+        if scope in ("chrome", "element", "related"):
+            return False
+        return True
+
+    page_role = str(ps.get("page_role") or "unknown")
+    scoped: list[tuple[dict[str, Any], str]] = [(e, _classify_scope(e)) for e in eavs]
+    skipped_scope = sum(
+        1
+        for e, sc in scoped
+        if e.get("amount_role") == "primary" and sc in ("chrome", "element", "related")
+    )
+
+    # Landing pages: observations only (marketing surface)
+    if page_role == "landing":
+        return {
+            "ok": True,
+            "observations": n_obs,
+            "added": 0,
+            "updated": 0,
+            "count": len(load_shortlist(run_dir)),
+            "candidates": [],
+            "promoted": 0,
+            "skipped_low_conf": n_obs,
+            "skipped_scope": skipped_scope,
+            "skipped_reason": "page_role_landing",
+            "page_state": ps,
+        }
+
     promotable = [
-        e
-        for e in eavs
+        (e, sc)
+        for e, sc in scoped
         if e.get("amount_role") == "primary"
-        and (e.get("entity") or "").strip()
-        and not e.get("is_line_item")
-        and not _is_line_item_entity(str(e.get("entity") or ""))
+        and _entity_ok_for_evidence(e, sc)
         and float(e.get("entity_score") or 0) >= entity_score_min
         and float(e.get("confidence") or 0) >= candidate_confidence_min
         and float(e.get("marketing_penalty") or 0) < 0.30
-        and len((e.get("entity") or "").split()) >= 2
-        and not _SLOGAN_SHAPE_RE.search(str(e.get("entity") or ""))
-        and not _AMENITY_CHROME_RE.search(str(e.get("entity") or ""))
     ]
-    promotable.sort(key=lambda x: float(x.get("confidence") or 0), reverse=True)
+    promotable.sort(key=lambda x: float(x[0].get("confidence") or 0), reverse=True)
     promotable = promotable[:max_auto_candidates_per_page]
 
     added = 0
     updated = 0
     entries: list[dict[str, Any]] = []
 
-    for eav in promotable:
+    for eav, scope in promotable:
         unknown = [
             "task hard criteria not fully checked by runtime harvest",
         ]
+        ent_c = float(eav.get("entity_score") or 0)
+        val_c = 0.85 if eav.get("value") is not None else 0.0
+        rel_c = float(eav.get("confidence") or 0)
+        state_c = 1.0 if ps.get("usable_for_task") else 0.0
+        overall_c = float(eav.get("confidence") or 0)
         evidence = {
             "observed": {
                 "entity": eav.get("entity"),
                 "value": eav.get("value"),
-                "amount_role": eav.get("amount_role"),
-                "confidence": eav.get("confidence"),
+                "value_role": eav.get("amount_role") or "primary",
+                "scope": scope,
+                "confidence": overall_c,
+                "confidence_breakdown": {
+                    "entity": ent_c,
+                    "value": val_c,
+                    "relationship": rel_c,
+                    "state": state_c,
+                    "overall": overall_c,
+                },
                 "entity_score": eav.get("entity_score"),
                 "marketing_penalty": eav.get("marketing_penalty"),
                 "source_url": eav.get("source_url") or url,
@@ -1439,30 +1831,64 @@ def harvest_invariant_from_browser_result(
             },
             "verified": {},
             "unknown": unknown,
+            "page_state_ref": {
+                "match": ps.get("match"),
+                "usable_for_task": ps.get("usable_for_task"),
+                "page_role": page_role,
+            },
+            "provenance": {
+                "source_url": url[:500],
+                "extraction_method": "eav_cluster",
+                "raw_evidence": (eav.get("raw_evidence") or "")[:300],
+            },
         }
+        append_evidence(
+            run_dir,
+            {
+                "entity": eav.get("entity"),
+                "value": eav.get("value"),
+                "scope": scope,
+                "page_role": page_role,
+                "confidence": overall_c,
+                "source_url": eav.get("source_url") or url,
+                "raw_evidence": (eav.get("raw_evidence") or "")[:300],
+                "page_state_ref": evidence["page_state_ref"],
+                "session": session,
+                "layer": "evidence",
+            },
+        )
         res = add_to_shortlist(
             run_dir,
             name=str(eav.get("entity") or "").strip(),
             source_url=str(eav.get("source_url") or url),
             price=eav.get("value"),
-            details=f"[auto-candidate conf={eav.get('confidence')}] {eav.get('raw_evidence') or ''}"[
-                :500
-            ],
+            details=(
+                f"[evidence scope={scope} conf={eav.get('confidence')}] "
+                f"{eav.get('raw_evidence') or ''}"
+            )[:500],
             session=session,
             constraints_check={
                 "match_status": "observed_only",
                 "matched": [],
                 "unmatched": [],
                 "unknown": unknown,
-                "notes": "Runtime EAV harvest (not LLM). Rank only after constraint verification.",
+                "notes": (
+                    "Runtime EAV harvest → evidence buffer (layer=evidence). "
+                    "Eligibility=ineligible until ConstraintResults + policy."
+                ),
             },
             extra={
                 "origin": "harvest_invariant",
+                "layer": "evidence",
                 "evidence": evidence,
                 "eav_confidence": eav.get("confidence"),
                 "entity_score": eav.get("entity_score"),
                 "amount_role": eav.get("amount_role"),
-                "rankable": True,  # no mismatch; still observed_only until phase-2 verifies
+                "value_role": eav.get("amount_role") or "primary",
+                "scope": scope,
+                "page_state": ps,
+                "eligibility": "ineligible",
+                "rankable": False,
             },
         )
         if res.get("ok"):
@@ -1470,7 +1896,7 @@ def harvest_invariant_from_browser_result(
                 added += 1
             else:
                 updated += 1
-            entries.append(res.get("entry") or eav)
+            entries.append(res.get("entry") or {})
 
     return {
         "ok": True,
@@ -1484,11 +1910,16 @@ def harvest_invariant_from_browser_result(
                 "price": e.get("price"),
                 "confidence": e.get("eav_confidence"),
                 "rankable": e.get("rankable"),
+                "eligibility": e.get("eligibility"),
+                "scope": e.get("scope"),
+                "layer": e.get("layer"),
             }
             for e in entries
         ],
         "promoted": len(promotable),
-        "skipped_low_conf": max(0, n_obs - len(promotable)),
+        "skipped_low_conf": max(0, n_obs - len(promotable) - skipped_scope),
+        "skipped_scope": skipped_scope,
+        "page_state": ps,
     }
 
 

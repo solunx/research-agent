@@ -31,6 +31,7 @@ from storage import (
     add_to_shortlist,
     append_conversation,
     append_note,
+    build_page_state,
     compact_session_handoff,
     create_run_dir,
     filter_rankable_shortlist,
@@ -1624,18 +1625,18 @@ def run_session(
                                 entry["price_hints"] = result["price_hints"][:15]
                             sources.append(entry)
 
-                    # Constraint mismatch first (so harvest can tag candidates)
+                    # PageState + constraint mismatch first (harvest uses usable_for_task)
                     page_mismatches: list[str] = []
+                    page_state: dict[str, Any] | None = None
                     if (
                         name == "browser_open"
                         and isinstance(result, dict)
                         and isinstance(arguments.get("url"), str)
                         and isinstance(result.get("url"), str)
                     ):
-                        mm = detect_constraint_mismatch(
-                            str(arguments["url"]),
-                            str(result["url"]),
-                        )
+                        req_u = str(arguments["url"])
+                        fin_u = str(result["url"])
+                        mm = detect_constraint_mismatch(req_u, fin_u)
                         if mm:
                             page_mismatches = list(mm.get("mismatches") or [])
                             counters["constraint_mismatches"] = (
@@ -1643,7 +1644,7 @@ def run_session(
                             )
                             try:
                                 memory.record_url_pattern_outcome(
-                                    str(result["url"]),
+                                    fin_u,
                                     success=False,
                                     reason="; ".join(page_mismatches)[:200],
                                 )
@@ -1652,20 +1653,34 @@ def run_session(
                             for flag in mm.get("semantic_flags") or []:
                                 try:
                                     memory.record_param_warning(
-                                        str(result["url"]),
+                                        fin_u,
                                         param=str(flag.get("param") or ""),
                                         kind=str(flag.get("kind") or ""),
                                         detail=str(flag.get("detail") or "")[:300],
                                     )
                                 except Exception:
                                     pass
-                            if isinstance(result, dict):
-                                result = dict(result)
-                                result["constraint_mismatch"] = True
-                                result["constraint_mismatches"] = page_mismatches
-                                result["param_semantics"] = mm.get("semantic_flags")
-                                result["advice"] = mm.get("advice")
+                            result = dict(result)
+                            result["constraint_mismatch"] = True
+                            result["constraint_mismatches"] = page_mismatches
+                            result["param_semantics"] = mm.get("semantic_flags")
+                            result["advice"] = mm.get("advice")
+                            result["requested_url"] = req_u
+                        page_state = build_page_state(
+                            requested_url=req_u,
+                            final_url=fin_u,
+                            mismatches=page_mismatches,
+                            semantic_flags=(mm or {}).get("semantic_flags")
+                            if mm
+                            else None,
+                            title=str(result.get("title") or ""),
+                            text=str(result.get("text") or "")[:6000],
+                        )
+                        result = dict(result)
+                        result["page_state"] = page_state
+                        result["requested_url"] = req_u
 
+                        if mm:
                             h_mm = host_of(str(result.get("url"))) or pre_host
                             has_prices = bool(result.get("price_hints"))
                             if is_recon:
@@ -1683,7 +1698,7 @@ def run_session(
                                     f"{h_mm} — host abandoned (no price signals)"
                                 )
                             elif h_mm:
-                                # Retrieval: structural filter rewrite → one harvest, then stop UI
+                                # Retrieval: structural rewrite → harvest once, stop UI
                                 try:
                                     memory.mark_needs_recon(
                                         h_mm,
@@ -1701,16 +1716,18 @@ def run_session(
                                 print(
                                     f"[agent] [{session_label}] Constraint mismatch on "
                                     f"{h_mm} — needs_recon + host done for retrieval "
-                                    f"(no further UI; harvest once if prices visible)"
+                                    f"(page_state={page_state.get('match')}; "
+                                    f"no further UI; harvest observations only)"
                                 )
                                 result["advice"] = (
-                                    f"Structural query mismatch on {h_mm}. "
+                                    f"Structural query mismatch on {h_mm} "
+                                    f"(page_state.match={page_state.get('match')}). "
                                     "Do not click forms to 'fix' filters in retrieval. "
-                                    "Host marked needs_recon. Use auto-candidates if any, "
-                                    "then move to another primary source."
+                                    "Host marked needs_recon. Observations only — "
+                                    "no rankable promote from this page. "
+                                    "Move to another primary source."
                                 )
-                                # Inline recon skeleton: separate process, memory-only,
-                                # invisible to retrieval LLM (no messages appended).
+                                # Inline recon: memory-only; clear only if no severe rewrite
                                 if h_mm not in inline_recon_done:
                                     inline_recon_done.add(h_mm)
                                     try:
@@ -1721,7 +1738,11 @@ def run_session(
                                                 {"url": u},
                                                 config,
                                             )
-                                            return res if isinstance(res, dict) else {"error": str(res)}
+                                            return (
+                                                res
+                                                if isinstance(res, dict)
+                                                else {"error": str(res)}
+                                            )
 
                                         ir = run_inline_recon_burst(
                                             host=h_mm,
@@ -1739,7 +1760,6 @@ def run_session(
                                             f"cleared={ir.get('cleared_needs_recon')} "
                                             f"(memory only; shortlist untouched)"
                                         )
-                                        # One retrieval retry allowed after recon learned
                                         if ir.get("cleared_needs_recon"):
                                             host_blocked.discard(h_mm)
                                             result["advice"] = (
@@ -1774,6 +1794,9 @@ def run_session(
                                 result,
                                 session=session_label,
                                 constraint_mismatches=page_mismatches or None,
+                                page_state=page_state
+                                if isinstance(page_state, dict)
+                                else result.get("page_state"),
                             )
                             n_obs = int(hv.get("observations") or 0)
                             if n_obs or hv.get("added") or hv.get("updated"):
@@ -1795,7 +1818,9 @@ def run_session(
                                     + int(hv.get("added") or 0)
                                 )
                                 refresh_host_shortlist_hits()
-                            if isinstance(result, dict) and (n_obs or hv.get("added")):
+                            if isinstance(result, dict) and (
+                                n_obs or hv.get("added") or hv.get("skipped_reason")
+                            ):
                                 result = dict(result)
                                 result["harvest_invariant"] = {
                                     "observations": n_obs,
@@ -1803,6 +1828,9 @@ def run_session(
                                     "updated": hv.get("updated"),
                                     "candidates": hv.get("candidates"),
                                     "skipped_low_conf": hv.get("skipped_low_conf"),
+                                    "skipped_reason": hv.get("skipped_reason"),
+                                    "promoted": hv.get("promoted"),
+                                    "page_state": hv.get("page_state"),
                                 }
                         except Exception as _hv_err:
                             print(
@@ -1856,12 +1884,35 @@ def run_session(
                                     channel="browser_open",
                                     path_hint=path or None,
                                 )
-                            if result.get("price_hints"):
+                            # Harvest capability: price_signals ≠ relationships
+                            if result.get("price_hints") or result.get("harvest_invariant"):
+                                hi = result.get("harvest_invariant") or {}
+                                n_prom = int(hi.get("added") or 0) + int(hi.get("updated") or 0)
+                                n_obs = int(hi.get("observations") or 0)
+                                skipped = str(hi.get("skipped_reason") or "")
+                                rel: str | None = None
+                                success: bool | None = None
+                                if n_prom > 0:
+                                    rel = "ok" if n_prom >= 2 else "partial"
+                                    success = True
+                                elif skipped == "page_state_not_usable":
+                                    # Prices may be visible but state blocks pairing for task
+                                    rel = "failed"
+                                    success = False
+                                elif n_obs > 0:
+                                    rel = "partial"
+                                hint = (
+                                    "list/detail yields price_hints + EAV"
+                                    if n_obs or n_prom
+                                    else "list/detail page yields price_hints in extract"
+                                )
                                 memory.record_harvest_hint(
                                     str(result["url"]),
-                                    hint="list/detail page yields price_hints in extract",
-                                    has_price_signals=True,
+                                    hint=hint,
+                                    has_price_signals=bool(result.get("price_hints")),
                                     has_name_list=None,
+                                    relationships_extractable=rel,
+                                    success=success,
                                 )
                         except Exception:
                             pass

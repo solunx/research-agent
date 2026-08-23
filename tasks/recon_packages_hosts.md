@@ -11,27 +11,53 @@ docker compose run --rm research-agent python agent.py --planned \
 
 ## Goal of this run
 
-Discover **how** these hosts work (search URL shapes, query param names/semantics,
-cookie walls, empty vs non-empty inventory). Store that in global memory.
+Build a **host capability model** (not a vacation shortlist):
 
-**Do not** build a vacation shortlist. **Do not** rank hotels for a user.
+1. **Navigation** — how to reach search/list (channel, path)
+2. **Semantics** — what params/fields mean (rewrites, ignored keys, encodings)
+3. **Harvest** — whether results show names + prices (and roughly how)
 
-## Hosts to probe (primary)
+Optimize for **learnable structure at low cost**.  
+Success can mean: “we understand the interface” even with **zero** bookable deals.
 
-1. nl.lastminute.com / lastminute.be — package / vacation search
-2. sunweb.be — all-inclusive search
-3. corendon.be — package search
+**Do not** `add_to_shortlist`. **Do not** rank products for a user. **Do not** go to checkout.
 
-## Learning approach (generic)
+## Hosts to probe (dev list)
 
-1. Prefer deep-link / search URLs over bare homepages when patterns exist.
-2. First successful results page matters more than strict filters: use simpler
-   combinations if needed so a list page appears (learning, not the final task).
-3. Note which params the site rewrites or ignores.
-4. Stop per host after a working pattern is clear OR empty-inventory budget is hit.
-5. Output RESEARCH_COMPLETE with a per-host mechanism summary only.
+1. nl.lastminute.com / lastminute.be — package search surface  
+2. sunweb.be — all-inclusive search surface  
+3. corendon.be — package search surface  
+
+(This file is a **dev helper**. Production recon should take hosts from flags / primary sources of a research task — no domain logic in core code.)
+
+## Probe approach (generic)
+
+Prefer **several small probes** over one “complete easy booking”:
+
+1. Open a deep-link / search URL (not bare homepage if patterns exist).
+2. Change **one** dimension when possible (destination *or* dates *or* pax *or* meal-like filter).
+3. Compare **requested URL vs final URL** after load.
+4. Note ignored / rewritten params (especially occupancy vs date-like keys).
+5. Confirm a **results list** can show names + price signals (broader values OK for learning).
+6. Optional: one detail page — stop before booking.
+7. Stop per host when navigation + key semantics + harvest signal are clear, or empty/no-op budgets hit.
+
+## Output
+
+`RESEARCH_COMPLETE` with a **per-host mechanism summary** only:
+
+- navigation: channel / paths  
+- semantics: param findings  
+- harvest: price/name signals or “not observed”  
+- failures / needs human setup  
 
 ## After recon
 
-Run the real task with `--run-kind research` (default) so recipes/param_warnings
-from this run are reused without rediscovery.
+```bash
+docker compose run --rm research-agent python agent.py --planned \
+  --run-kind research \
+  --task tasks/compare_packages_dec2026.md \
+  --browser-backend playwright
+```
+
+Research should reuse global memory without rediscovering the same host from scratch.

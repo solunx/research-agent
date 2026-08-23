@@ -523,25 +523,37 @@ class MemoryStore:
         hint: str,
         has_price_signals: bool | None = None,
         has_name_list: bool | None = None,
+        relationships_extractable: str | None = None,
+        success: bool | None = None,
     ) -> None:
         """
-        Recon/research: how results appear on list/detail pages (task-agnostic).
+        Recon/retrieval: harvest capability is multi-field, not binary.
+
+        price_signals = discovery only (amounts visible).
+        relationships_extractable = unknown|partial|ok|failed — entity↔value pairing.
         """
         domain = self.touch_domain(domain_or_url)
         hint = (hint or "").strip()
-        if not domain or not hint:
+        if not domain:
             return
         recipes = self.load_recipes()
         entry = recipes.get(domain) or self._empty_recipe_entry()
         har = dict(entry.get("harvest") or {})
         hints = list(har.get("hints") or [])
-        if hint[:240] not in hints:
+        if hint and hint[:240] not in hints:
             hints.insert(0, hint[:240])
         har["hints"] = hints[:12]
         if has_price_signals is not None:
             har["has_price_signals"] = bool(has_price_signals)
         if has_name_list is not None:
             har["has_name_list"] = bool(has_name_list)
+        if relationships_extractable in ("unknown", "partial", "ok", "failed"):
+            har["relationships_extractable"] = relationships_extractable
+        # Empirical counters (experience, not truth)
+        if success is True:
+            har["success_count"] = int(har.get("success_count") or 0) + 1
+        elif success is False:
+            har["failure_count"] = int(har.get("failure_count") or 0) + 1
         har["last_probe"] = _now()
         entry["harvest"] = har
         self._refresh_capability_score(entry)
@@ -552,8 +564,9 @@ class MemoryStore:
             {
                 "type": "harvest_hint",
                 "domain": domain,
-                "hint": hint[:200],
+                "hint": (hint or "")[:200],
                 "has_price_signals": has_price_signals,
+                "relationships_extractable": har.get("relationships_extractable"),
             }
         )
 
@@ -636,9 +649,13 @@ class MemoryStore:
         if sem.get("ignored_or_unsafe_params") or len(sem.get("param_notes") or []) >= 2:
             s += 1
         h = 0
+        # price_signals alone → at most 1; relationships ok → full harvest score
         if har.get("has_price_signals") or har.get("hints"):
             h += 1
-        if har.get("has_name_list") or len(har.get("hints") or []) >= 2:
+        rel = str(har.get("relationships_extractable") or "")
+        if rel == "ok" or har.get("has_name_list"):
+            h += 1
+        elif rel == "partial" and h < 1:
             h += 1
         entry["capability_score"] = {
             "navigation": min(2, n),

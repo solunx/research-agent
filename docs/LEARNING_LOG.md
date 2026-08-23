@@ -217,3 +217,81 @@ Format per entry: **date → hypothesis → result → decision**.
 ### Still open
 - Location-vs-hotel title disambiguation on list pages.
 - Full relationship graph (price vs discount vs nights) beyond cluster pairing.
+
+---
+
+## 2026-08-23 — PageState + eligibility + harvest subscores (post run 10-07-03)
+
+### Run lesson
+- Navigation OK; yield limited by **state → relations → eligibility**.
+- Sunweb: URL rewrite → needs_recon; inline recon must **not** clear on price_hints alone.
+- Corendon: LLM found Grand Park Lara; harvest promoted **“Balkon of terras (zitje)”** as rankable — fixed by eligibility + line-item region gate.
+- Memory `harvest=1` from price_signals alone was too optimistic.
+
+### Implemented
+- **PageState** (`build_page_state`): match full|partial|mismatch|unknown; `usable_for_task`.
+- Mismatch / unusable pages → observations only, no rankable promote.
+- **Eligibility**: `observed_only` never rankable; scope element/filter; amenity/parenthetical feature labels blocked.
+- Auto-harvest writes `eligibility=ineligible`, `rankable=False`.
+- **Inline recon**: clear `needs_recon` only without severe date/occupancy rewrite.
+- **Harvest memory**: `relationships_extractable` + success/failure counts; capability score no longer treats price_signals as full harvest.
+
+### Still open
+- List-page structure (hotel title vs location vs filter chrome) for higher recall without LLM.
+- UI occupancy vs URL adults (Corendon “2 Personen” while URL says 3).
+- Multi-confidence fields on evidence (entity/value/relationship/state).
+
+---
+
+## 2026-08-23 — Evidence multi-confidence + harvest subscore feedback loop
+
+### Contract refinement (ChatGPT review → implement)
+- Evidence now carries `confidence_breakdown`: entity / value / relationship / state / overall.
+  - Keeps overall for legacy thresholds; breakdown supports future critic weighting.
+- `page_state_ref` remains on every promoted evidence row.
+- Agent → memory: after harvest, set `relationships_extractable` from outcome:
+  - promote ≥1 → partial|ok + success
+  - `page_state_not_usable` → failed + not success
+  - observations only → partial
+- `harvest_invariant` always carries `skipped_reason` / `page_state` when relevant so learning sees the gate.
+
+### Docs
+- METHODOLOGY §4b expanded to full minimal contract: PageState schema, Evidence schema, ConstraintResult vs Eligibility, harvest capability subscores, invariants.
+
+### Still open
+- List-page structure (hotel title vs location vs filter chrome) for higher recall without LLM.
+- UI occupancy vs URL adults (Corendon “2 Personen” while URL says 3).
+- Critic using confidence_breakdown (optional; thresholds still use overall).
+
+---
+
+## 2026-08-23 — Iter 1+2: page_role + evidence scope + layer dataflow
+
+### Trigger
+Run 12-33-37: shortlist=25, rankable=1, precision=0.04. Diagnosis: different semantic objects (destination cards, chrome, related hotels, real offers) shared one buffer — not only a weak extractor.
+
+### Iter 1 — Page role + evidence scope
+- `infer_page_role` / `PageState.page_role`: `unknown | landing | list | detail` (structural path/query/title; unknown valid).
+- Evidence **scope**: `primary | group | related | chrome | element`.
+- chrome / related / element → observations only (no evidence-buffer promote).
+- landing → no promote (`skipped_reason=page_role_landing`).
+- detail low entity_score → `related` (neighbor cards).
+
+### Iter 2 — Hard dataflow
+```
+observations → evidence (layer=evidence) → ConstraintResults → eligibility → ranked
+```
+- `evidence.jsonl` parallel store for gated primary/group rows.
+- Harvest always `layer=evidence`, `eligibility=ineligible`, `rankable=false`.
+- LLM adds default `layer=candidate`.
+- `compute_rankable`: blocks layer=evidence, scope chrome/related/element, landing harvest rows.
+- Shortlist prompt shows evidence_layer vs rankable counts.
+
+### Explicitly not in this patch
+- value unit/qualifier schema (iter 3)
+- depth/control budget (iter 4)
+- tighter entity_score / harvest precision (iter 5)
+- LLM-as-eligibility-decider (rejected; policy over ConstraintResults)
+
+### Genericity
+Harvest still reconstructs entity↔value structure only — no product-vertical word lists. Same contract for any list/detail surface.

@@ -35,7 +35,7 @@ docker compose run --rm research-agent python agent.py --planned \
 
 ### Self-learning host capability (global, cross-task)
 - `memory/site_tactics.json` – preferred tool / tier outcomes
-- `memory/site_recipes.json` – channels + **navigation / semantics / harvest** + `needs_recon` + `human_setup_needed`
+- `memory/site_recipes.json` – channels + **navigation / semantics / harvest** (`price_signals`, `relationships_extractable`, counts) + `needs_recon` + `human_setup_needed`
 - `memory/site_url_patterns.json` – deep-link/param shapes
 - `memory/general_strategies.json` – pattern rules (incl. recon probe tactics)
 - `memory/events.jsonl` – success/fail log
@@ -59,9 +59,11 @@ docker compose run --rm research-agent python agent.py --planned \
 - **Honest browser**: no anti-detect / webdriver cloaking (Playwright may be recognized as automation)
 - **CAPTCHA / bot-wall**: `policy_stop` → host abandoned for the session (no bypass)
 - **`web_policy`**: rolling per-host rate limits + cooldown after 403/429/CAPTCHA (`memory/domain_policy.json`)
-- Harvest promotes only high-confidence entity↔price pairs; `query_state_mismatch` → not rankable
-
-## Run
+- **PageState** (`match` + `page_role`: landing|list|detail|unknown) + **eligibility** policy
+- **Evidence scope**: primary|group|related|chrome|element — chrome/related/element never rankable
+- **Layers**: observations → evidence buffer → ranked candidates (only when eligible)
+- Harvest: structural entity↔value; multi-confidence; no product-vertical word lists
+- Host harvest subscore: `price_signals` ≠ `relationships_extractable`
 
 ## Run
 
