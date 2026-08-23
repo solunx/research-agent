@@ -63,3 +63,11 @@ safety:
   # Set env ALLOW_HOST_RUN=1 to bypass for local debug
 
 verbose: false
+
+
+# Cross-run domain hygiene (persistent in memory/domain_policy.json)
+web_policy:
+  enabled: true
+  requests_per_hour: 40
+  browser_actions_per_hour: 24
+  cooldown_seconds_after_block: 1800

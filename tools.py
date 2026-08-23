@@ -11,6 +11,8 @@ from __future__ import annotations
 import time
 from typing import Any, Callable
 
+from pathlib import Path
+
 from web import web_search, web_fetch
 from browser import (
     browser_open,
@@ -21,6 +23,7 @@ from browser import (
     browser_scroll,
     browser_wait,
 )
+import web_policy
 
 # Low-level Playwright tools (excluded when --browser-backend browser_use)
 _PLAYWRIGHT_TOOL_NAMES = frozenset(
@@ -357,6 +360,23 @@ def tool_definitions_for_backend(backend: str = "playwright") -> list[dict[str, 
     return out
 
 
+def _memory_dir(config: dict[str, Any]) -> Path:
+    return Path((config.get("storage") or {}).get("memory_dir") or "memory")
+
+
+def _policy_deny(check: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "error": f"web_policy denied: {check.get('reason')}",
+        "blocked": True,
+        "policy_stop": True,
+        "policy_reason": check.get("reason"),
+        "host": check.get("host"),
+        "text": "",
+        "url": "",
+    }
+
+
 def execute_tool(
     name: str,
     arguments: dict[str, Any],
@@ -364,23 +384,36 @@ def execute_tool(
     prefer_browser_for_url: Callable[[str], bool] | None = None,
 ) -> tuple[Any, float]:
     t0 = time.perf_counter()
+    mem = _memory_dir(config)
+    policy_on = bool((config.get("web_policy") or {}).get("enabled", True))
 
     if name == "browser_use":
         from browser_use_bridge import run_browser_use_task
 
+        start_url = str(arguments["start_url"]) if arguments.get("start_url") else None
+        if policy_on and start_url:
+            chk = web_policy.check_access(mem, start_url, kind="browser", config=config)
+            if not chk.get("ok"):
+                return _policy_deny(chk), (time.perf_counter() - t0) * 1000
         bu_cfg = (config.get("tools") or {}).get("browser_use") or {}
         llm_cfg = config.get("llm") or {}
         result = run_browser_use_task(
             str(arguments.get("instruction") or ""),
-            start_url=(str(arguments["start_url"]) if arguments.get("start_url") else None),
+            start_url=start_url,
             model=bu_cfg.get("model") or llm_cfg.get("model"),
             base_url=bu_cfg.get("base_url") or llm_cfg.get("base_url"),
             max_steps=int(bu_cfg.get("max_steps", 25)),
             timeout_seconds=int(bu_cfg.get("timeout_seconds", 180)),
         )
+        if policy_on and start_url:
+            web_policy.record_access(mem, start_url, kind="browser")
+            sig = web_policy.apply_result_signals(mem, start_url, result, config=config)
+            if sig.get("result") is not None:
+                result = sig["result"]
         return result, (time.perf_counter() - t0) * 1000
 
     if name == "web_search":
+        # Search engines are not domain-target rate limited the same way
         search_cfg = config.get("tools", {}).get("web_search", {})
         result = web_search(
             query=arguments["query"],
@@ -392,6 +425,10 @@ def execute_tool(
     if name == "web_fetch":
         fetch_cfg = config.get("tools", {}).get("web_fetch", {})
         url = arguments["url"]
+        if policy_on:
+            chk = web_policy.check_access(mem, url, kind="request", config=config)
+            if not chk.get("ok"):
+                return _policy_deny(chk), (time.perf_counter() - t0) * 1000
         prefer = bool(prefer_browser_for_url and prefer_browser_for_url(url))
         result = web_fetch(
             url=url,
@@ -401,6 +438,11 @@ def execute_tool(
             max_retries=fetch_cfg.get("max_retries", 2),
             prefer_browser_hint=prefer,
         )
+        if policy_on:
+            web_policy.record_access(mem, url, kind="request")
+            sig = web_policy.apply_result_signals(mem, url, result, config=config)
+            if sig.get("result") is not None:
+                result = sig["result"]
         return result, (time.perf_counter() - t0) * 1000
 
     browser_cfg = config.get("tools", {}).get("browser", {})
@@ -409,13 +451,23 @@ def execute_tool(
     max_chars = browser_cfg.get("max_chars", 15000)
 
     if name == "browser_open":
+        url = arguments["url"]
+        if policy_on:
+            chk = web_policy.check_access(mem, url, kind="browser", config=config)
+            if not chk.get("ok"):
+                return _policy_deny(chk), (time.perf_counter() - t0) * 1000
         result = browser_open(
-            url=arguments["url"],
+            url=url,
             wait_seconds=browser_cfg.get("wait_seconds", 3.0),
             headless=headless,
             user_agent=ua,
             max_chars=max_chars,
         )
+        if policy_on:
+            web_policy.record_access(mem, url, kind="browser")
+            sig = web_policy.apply_result_signals(mem, url, result, config=config)
+            if sig.get("result") is not None:
+                result = sig["result"]
         return result, (time.perf_counter() - t0) * 1000
 
     if name == "browser_dismiss_cookies":
@@ -424,10 +476,23 @@ def execute_tool(
 
     if name == "browser_extract_text":
         result = browser_extract_text(max_chars=max_chars)
+        if policy_on and isinstance(result, dict) and result.get("url"):
+            sig = web_policy.apply_result_signals(
+                mem, str(result.get("url")), result, config=config
+            )
+            if sig.get("result") is not None:
+                result = sig["result"]
         return result, (time.perf_counter() - t0) * 1000
 
     if name == "browser_click":
         result = browser_click(selector=arguments["selector"], max_chars=10000)
+        if policy_on and isinstance(result, dict) and result.get("url"):
+            web_policy.record_access(mem, str(result.get("url")), kind="browser")
+            sig = web_policy.apply_result_signals(
+                mem, str(result.get("url")), result, config=config
+            )
+            if sig.get("result") is not None:
+                result = sig["result"]
         return result, (time.perf_counter() - t0) * 1000
 
     if name == "browser_type":
@@ -437,6 +502,8 @@ def execute_tool(
             press_enter=bool(arguments.get("press_enter", False)),
             max_chars=8000,
         )
+        if policy_on and isinstance(result, dict) and result.get("url"):
+            web_policy.record_access(mem, str(result.get("url")), kind="browser")
         return result, (time.perf_counter() - t0) * 1000
 
     if name == "browser_scroll":

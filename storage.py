@@ -568,9 +568,19 @@ def shortlist_as_prompt_text(run_dir: Path, max_chars: int = 6000) -> str:
         ms = it.get("match_status") or (it.get("constraints_check") or {}).get("match_status") or "?"
         observed = it.get("observed_at") or it.get("updated_at") or ""
         origin = it.get("origin") or ""
+        rankable = it.get("rankable", True)
+        cc = it.get("constraints_check") or {}
+        has_qsm = any(
+            str(u).startswith("query_state_mismatch")
+            for u in (cc.get("unmatched") or [])
+        )
+        if has_qsm:
+            rankable = False
+        rank_tag = "" if rankable else " | NOT_RANKABLE"
         line = (
             f"{i}. {it.get('name')}"
             f" | match={ms}"
+            f"{rank_tag}"
             f" | price={it.get('price') or '—'}"
             f" | observed={observed[:19] if observed else '—'}"
             f"{' | auto' if origin == 'harvest_invariant' else ''}"
@@ -602,143 +612,315 @@ def shortlist_as_prompt_text(run_dir: Path, max_chars: int = 6000) -> str:
     return "\n".join(lines)
 
 
-# --- P0 Harvest invariant: observe name+price without waiting for the LLM ---
 
-_PRICE_LINE_RE = re.compile(
-    r"(?:€|eur|euro)\s*([\d]{1,3}(?:[.\s]\d{3})*(?:[.,]\d{1,2})?|\d+)",
+
+def filter_rankable_shortlist(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Candidates eligible for report ranking (no structural query_state mismatch)."""
+    out: list[dict[str, Any]] = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        if it.get("rankable") is False:
+            continue
+        cc = it.get("constraints_check") or {}
+        unmatched = cc.get("unmatched") or []
+        if any(str(u).startswith("query_state_mismatch") for u in unmatched):
+            continue
+        out.append(it)
+    return out
+
+# --- Harvest: observation → EAV → candidate (domain-agnostic) ---
+#
+# Observation = raw signal (may be noise).
+# Candidate   = entity + primary value with enough structural confidence.
+# Shortlist   = candidates only (not every observation).
+#
+# No site- or domain-specific word lists for products (hotels, cars, …).
+# Structural cues only: amount role, proximity, title-like lines, confidence.
+
+_AMOUNT_RE = re.compile(
+    r"(?<![A-Za-z])([+\-−–]?)\s*(?:€|eur|euro|\$|£)\s*([\d]{1,3}(?:[.\s]\d{3})*(?:[.,]\d{1,2})?|\d+)",
     re.I,
 )
-_PRICE_HINT_NOISE = re.compile(
-    r"(tot\s*€|van\s*€\s*0|korting|bespaar|belastingen|toeslagen|"
-    r"prijs\s*per\s*persoon\s*tussen|filter|budget\s*€)",
+# UI chrome / navigation — language-light structural patterns
+_UI_CHROME_RE = re.compile(
+    r"^(home|menu|login|register|cookie|accept|search|filter|sort|budget|"
+    r"next|prev|more|less|back|close|ok|cancel)\b",
     re.I,
 )
-_NAME_NOISE = re.compile(
-    r"^(ga naar|bekijk|sorteer|alle filters|budget|sterren|faciliteiten|"
-    r"maaltijden|type accommodatie|gastbeoordeling|bel om te boeken|"
-    r"kies je|personaliseer|pakketten|vlucht\s*\+|home|menu|"
-    r"cookie|aanvaarden|meer opties|toon meer|last minute|"
-    r"heen- en terug|kleine tassen|boek nu|pp\.?$|p\.p\.?$)",
-    re.I,
+# Structural non-entity lines (distance-only, filter class labels, pure category chrome)
+_NON_ENTITY_STRUCT_RE = re.compile(
+    r"(?:"
+    r"^\\d+[.,]?\\d*\\s*km\\b|"  # distance-only line
+    r"^[·•\\-–—]\\s*|"
+    r"^[A-ZÁÉÍÓÚÄËÏÖÜ]{3,}(?:\\s+[A-ZÁÉÍÓÚÄËÏÖÜ]{2,}){0,2}$|"  # short ALL-CAPS
+    r"^\\W*$"
+    r")"
 )
-_NAME_SKIP_BODY = re.compile(
-    r"(reviews?|nachten in het hotel|reizigers|enkel kamer|alleen kamer|"
-    r"room only|ontbijt|breakfast|half.?board|halfpension|volpension|"
-    r"all.?inclusive|ultra all|van het strand|van het centrum|"
-    r"van de stad|km van|m van het|boek nu|betaal later|pakket bekijken|"
-    r"bespaar €|belastingen|toeslagen|nazomer|last minute-deals|"
-    r"welnesshotel|strandhotel|^\d+[.,]\d+$|^\d+$)",
-    re.I,
-)
-
-
-def _looks_like_entity_name(line: str) -> bool:
-    s = (line or "").strip()
-    if len(s) < 6 or len(s) > 90:
-        return False
-    if _NAME_NOISE.search(s):
-        return False
-    if _NAME_SKIP_BODY.search(s):
-        return False
-    if re.match(r"^[\d€$£.,\s]+$", s):
-        return False
-    if s.count(" ") > 12:
-        return False
-    letters = sum(1 for c in s if c.isalpha())
-    if letters < 5:
-        return False
-    if letters < 8 and " " not in s:
-        return False
-    # Prefer multi-word or CapWord hotel-style names
-    if not re.search(r"[A-Za-zÁÉÍÓÚÄÖÜáéíóúäöü]", s):
-        return False
-    return True
-
-
-def extract_observed_candidates(
-    text: str,
-    *,
-    price_hints: list[Any] | None = None,
-    source_url: str = "",
-    max_candidates: int = 8,
-) -> list[dict[str, Any]]:
+# Language-light closed-class tokens (NL/EN/FR/DE mix) — structural, not product-vertical
+_CLOSED_CLASS = frozenset(
     """
-    Conservative heuristic: pair nearby entity-like lines with concrete € prices.
-    Skips marketing/filter noise. Does not invent names.
-    """
-    raw = text or ""
-    lines = [ln.strip() for ln in raw.replace("\r", "\n").split("\n") if ln.strip()]
-    # Also split on | which some extractors use
+    de het een en van voor met op aan tot uit bij na over onder tussen
+    the a an of to from with and or for on in at by as
+    le la les un une des du au aux et ou de à
+    der die das und oder mit von zu dem den
+    vanaf vanuit richting inclusief exclusief gratis
+    flight hotel package deal offer save bespaar boek book
+    heen terug vlucht kamer personen
+    """.split()
+)
+
+_FILTER_RANGE_RE = re.compile(
+    r"(between|tot\s*€|van\s*€\s*\d|min\s*€|max\s*€|€\s*\d+\s*[-–]\s*€|"
+    r"price\s*per\s*\w+\s*between|slider)",
+    re.I,
+)
+
+
+def _split_extract_lines(text: str) -> list[str]:
+    lines = [ln.strip() for ln in (text or "").replace("\r", "\n").split("\n") if ln.strip()]
     expanded: list[str] = []
     for ln in lines:
         if " | " in ln and len(ln) > 40:
             expanded.extend(p.strip() for p in ln.split("|") if p.strip())
         else:
             expanded.append(ln)
-    lines = expanded
+    return expanded
 
-    found: list[dict[str, Any]] = []
-    seen_keys: set[str] = set()
 
-    def _add(name: str, price_s: str, evidence: str) -> None:
-        key = _norm_name(name)
-        if not key or key in seen_keys:
-            return
-        num = _parse_price_hint(price_s)
-        # Package pp prices usually 50–2500; drop extremes (fees / total-group)
-        if num is not None and (num < 40 or num > 3500):
-            return
-        seen_keys.add(key)
-        found.append(
-            {
-                "name": name.strip()[:120],
-                "price": price_s.strip()[:40],
-                "source_url": (source_url or "")[:500],
-                "raw_evidence": evidence[:400],
-            }
-        )
+def _classify_amount_role(line: str, signed_prefix: str, value: float) -> str:
+    """
+    Generic amount role from structure — not product-domain vocabulary.
+    primary | adjustment | filter_ui | noise
+    """
+    s = line or ""
+    if _FILTER_RANGE_RE.search(s):
+        return "filter_ui"
+    # Explicit +/- before currency → relative adjustment (discount/surcharge delta)
+    if signed_prefix in ("+", "-", "−", "–"):
+        return "adjustment"
+    if re.search(r"(^|\s)[+\-−–]\s*(?:€|\$|£)", s):
+        return "adjustment"
+    # Savings / discount wording next to amount (generic commerce, not vertical-specific)
+    if re.search(r"\b(bespaar|save|savings|discount|korting|rabatt|promo)\b", s, re.I):
+        return "adjustment"
+    # Tiny amounts often UI noise or deltas when no entity context
+    if value < 15:
+        return "noise"
+    if value > 50000:
+        return "noise"
+    return "primary"
+
+
+def _entity_score(line: str) -> float:
+    """
+    Structural likelihood that a line is a product/entity title (0–1).
+    Domain-agnostic: length, letters, word count, capitalization — not vertical keywords.
+    """
+    s = (line or "").strip()
+    if len(s) < 4 or len(s) > 100:
+        return 0.0
+    if _UI_CHROME_RE.search(s):
+        return 0.0
+    if _NON_ENTITY_STRUCT_RE.search(s):
+        return 0.05
+    if re.match(r"^[\d€$£.,+\-\s]+$", s):
+        return 0.0
+    if _AMOUNT_RE.search(s) and len(s) < 25:
+        return 0.15  # mostly a price line
+    # Distance / map chrome embedded in line (generic)
+    if re.search(r"\d+[.,]?\d*\s*km\b", s, re.I) and len(s) < 60:
+        # Location crumb, not a product title
+        if not re.search(r"[A-Za-zÁÉÍÓÚ]{4,}.+[A-Za-zÁÉÍÓÚ]{4,}", s):
+            return 0.1
+    letters = sum(1 for c in s if c.isalpha())
+    if letters < 4:
+        return 0.0
+    words = [w for w in re.split(r"\s+", s) if w]
+    if len(words) > 14:
+        return 0.2
+    # Mostly very short tokens → UI fragment
+    short_tok = sum(1 for w in words if len(re.sub(r"\W", "", w)) <= 3)
+    if words and short_tok / len(words) >= 0.6:
+        return 0.15
+    # High closed-class ratio → instruction / chrome / marketing line, not a product title
+    norm_words = [re.sub(r"[^\w]", "", w).lower() for w in words]
+    norm_words = [w for w in norm_words if w]
+    if norm_words:
+        closed = sum(1 for w in norm_words if w in _CLOSED_CLASS)
+        if closed / len(norm_words) >= 0.5:
+            return 0.2
+        if closed >= 1 and len(norm_words) <= 3:
+            return 0.25
+    score = 0.35
+    # Multi-word titles score higher
+    if len(words) >= 2:
+        score += 0.2
+    if len(words) >= 3:
+        score += 0.1
+    # Capitalized tokens (Latin scripts) — weak but domain-free signal
+    caps = sum(1 for w in words if w[:1].isupper() and len(w) > 1)
+    if caps >= 2:
+        score += 0.2
+    elif caps == 1 and len(words) >= 2:
+        score += 0.1
+    # Single short token → weak entity
+    if len(words) == 1 and letters < 10:
+        score -= 0.25
+    # ALL-CAPS multi-word labels (filter headings)
+    alpha_words = [w for w in words if any(c.isalpha() for c in w)]
+    if alpha_words and all(w.isupper() for w in alpha_words if len(w) > 2):
+        score -= 0.35
+    # Line is mostly digits/symbols
+    if letters / max(len(s), 1) < 0.4:
+        score -= 0.2
+    # Middle-dot location crumbs (City·distance)
+    if "·" in s and re.search(r"km", s, re.I):
+        score -= 0.35
+    return max(0.0, min(1.0, score))
+
+
+def extract_eav_observations(
+    text: str,
+    *,
+    price_hints: list[Any] | None = None,
+    source_url: str = "",
+    max_items: int = 24,
+) -> list[dict[str, Any]]:
+    """
+    Build entity–attribute–value observations with confidence.
+    Does not invent entities; pairs nearby high-scoring title lines with amounts.
+    """
+    lines = _split_extract_lines(text)
+    obs: list[dict[str, Any]] = []
 
     for i, ln in enumerate(lines):
-        if _PRICE_HINT_NOISE.search(ln):
-            continue
-        m = _PRICE_LINE_RE.search(ln)
-        if not m:
-            continue
-        price_s = f"€{m.group(1).replace(' ', '')}"
-        # Search upward for entity name
-        name = ""
-        for j in range(i - 1, max(-1, i - 8), -1):
-            cand = lines[j]
-            if _PRICE_LINE_RE.search(cand) or _PRICE_HINT_NOISE.search(cand):
+        for m in _AMOUNT_RE.finditer(ln):
+            sign, raw_num = m.group(1) or "", m.group(2)
+            try:
+                value = float(raw_num.replace(" ", "").replace(".", "").replace(",", "."))
+                # Heuristic: if original had thousand dots like 1.104,00 — best effort
+                if "," in raw_num and "." in raw_num:
+                    value = float(raw_num.replace(".", "").replace(",", "."))
+                elif "," in raw_num:
+                    value = float(raw_num.replace(",", "."))
+                else:
+                    value = float(raw_num.replace(" ", ""))
+            except ValueError:
                 continue
-            if _looks_like_entity_name(cand):
-                name = cand
-                break
-        if not name:
-            continue
-        window = " | ".join(lines[max(0, i - 3) : i + 2])
-        _add(name, price_s, window)
-        if len(found) >= max_candidates:
-            break
+            role = _classify_amount_role(ln, sign, value)
+            price_s = f"{'−' if sign in ('-', '−', '–') else ''}€{raw_num.replace(' ', '')}"
 
-    # Fallback: if text failed but price_hints look concrete and a title-like line exists
-    if not found and price_hints:
-        for ph in price_hints[:12]:
+            # Best entity upward: highest score; ties → more words / longer title
+            best_name = ""
+            best_es = 0.0
+            best_key: tuple[float, int, int] = (0.0, 0, 0)
+            for j in range(i - 1, max(-1, i - 8), -1):
+                cand = lines[j].strip()
+                es = _entity_score(cand)
+                words_n = len([w for w in cand.split() if w])
+                key = (es, words_n, len(cand))
+                if key > best_key:
+                    best_key = key
+                    best_es = es
+                    best_name = cand
+
+            # Pairing confidence
+            conf = 0.2
+            if best_es >= 0.5:
+                conf += 0.35
+            elif best_es >= 0.35:
+                conf += 0.15
+            if role == "primary":
+                conf += 0.3
+            elif role == "adjustment":
+                conf -= 0.25
+            elif role in ("filter_ui", "noise"):
+                conf -= 0.35
+            # Prefer amounts not tiny relative to typical offers (generic band)
+            if role == "primary" and 30 <= value <= 20000:
+                conf += 0.1
+            conf = max(0.0, min(1.0, conf))
+
+            window = " | ".join(lines[max(0, i - 3) : i + 2])
+            obs.append(
+                {
+                    "entity": best_name[:120] if best_name else "",
+                    "entity_score": round(best_es, 3),
+                    "attribute": "offer_price" if role == "primary" else f"amount:{role}",
+                    "value": price_s[:40],
+                    "value_num": value,
+                    "amount_role": role,
+                    "confidence": round(conf, 3),
+                    "source_url": (source_url or "")[:500],
+                    "raw_evidence": window[:400],
+                }
+            )
+            if len(obs) >= max_items:
+                return obs
+
+    # Optional: scan price_hints as extra amount signals without inventing entities
+    if price_hints and len(obs) < max_items:
+        for ph in price_hints[:15]:
             phs = str(ph)
-            if _PRICE_HINT_NOISE.search(phs):
-                continue
-            m = _PRICE_LINE_RE.search(phs)
+            m = _AMOUNT_RE.search(phs)
             if not m:
                 continue
-            # Try first entity-like line in body
-            for ln in lines[:40]:
-                if _looks_like_entity_name(ln):
-                    _add(ln, f"€{m.group(1).replace(' ', '')}", phs[:200])
-                    break
-            if found:
-                break
+            sign, raw_num = m.group(1) or "", m.group(2)
+            try:
+                value = float(re.sub(r"[^\d.]", "", raw_num.replace(",", ".")) or "0")
+            except ValueError:
+                continue
+            role = _classify_amount_role(phs, sign, value)
+            obs.append(
+                {
+                    "entity": "",
+                    "entity_score": 0.0,
+                    "attribute": f"amount:{role}",
+                    "value": f"€{raw_num.replace(' ', '')}"[:40],
+                    "value_num": value,
+                    "amount_role": role,
+                    "confidence": 0.15 if role != "primary" else 0.25,
+                    "source_url": (source_url or "")[:500],
+                    "raw_evidence": phs[:200],
+                }
+            )
+    return obs[:max_items]
 
-    return found[:max_candidates]
+
+def append_observation(run_dir: Path, observation: dict[str, Any]) -> None:
+    path = run_dir / "observations.jsonl"
+    row = dict(observation)
+    row.setdefault("ts", datetime.now(timezone.utc).isoformat())
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def observations_as_prompt_text(run_dir: Path, max_chars: int = 3000) -> str:
+    path = run_dir / "observations.jsonl"
+    if not path.exists():
+        return "(no observations)"
+    lines: list[str] = []
+    total = 0
+    try:
+        raw_lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return "(observations unreadable)"
+    for ln in raw_lines[-40:]:
+        try:
+            o = json.loads(ln)
+        except Exception:
+            continue
+        s = (
+            f"- conf={o.get('confidence')} role={o.get('amount_role')} "
+            f"entity={o.get('entity') or '—'} value={o.get('value')} "
+            f"[{str(o.get('raw_evidence') or '')[:80]}]"
+        )
+        if total + len(s) > max_chars:
+            break
+        lines.append(s)
+        total += len(s)
+    return "\n".join(lines) if lines else "(no observations)"
 
 
 def harvest_invariant_from_browser_result(
@@ -746,60 +928,116 @@ def harvest_invariant_from_browser_result(
     result: dict[str, Any],
     *,
     session: str = "",
+    constraint_mismatches: list[str] | None = None,
+    candidate_confidence_min: float = 0.62,
+    max_auto_candidates_per_page: int = 5,
 ) -> dict[str, Any]:
     """
-    P0: If browser extract shows entity-like names + prices, write observed
-    shortlist entries. Independent of the LLM calling add_to_shortlist.
+    Runtime harvest (research only):
+    1) Write all EAV rows to observations.jsonl (never lost).
+    2) Promote to shortlist only high-confidence primary entity↔price pairs.
+    3) Optional constraint_mismatches → candidate not rankable as full match.
     """
     if not isinstance(result, dict):
-        return {"ok": False, "added": 0, "updated": 0, "candidates": []}
+        return {"ok": False, "observations": 0, "added": 0, "updated": 0, "candidates": []}
 
     text = str(result.get("text") or "")
-    # Some tools put a shorter summary in other fields — prefer full text
-    if len(text) < 80 and result.get("error"):
-        return {"ok": True, "added": 0, "updated": 0, "candidates": [], "skipped": "error"}
+    if len(text) < 40 and result.get("error"):
+        return {
+            "ok": True,
+            "observations": 0,
+            "added": 0,
+            "updated": 0,
+            "candidates": [],
+            "skipped": "error",
+        }
 
     hints = result.get("price_hints") if isinstance(result.get("price_hints"), list) else []
     url = str(result.get("url") or "")
-    candidates = extract_observed_candidates(
-        text, price_hints=hints, source_url=url, max_candidates=8
+    eavs = extract_eav_observations(
+        text, price_hints=hints, source_url=url, max_items=24
     )
-    if not candidates:
-        return {"ok": True, "added": 0, "updated": 0, "candidates": []}
 
+    n_obs = 0
+    for eav in eavs:
+        append_observation(
+            run_dir,
+            {
+                **eav,
+                "session": session,
+                "page_url": url,
+            },
+        )
+        n_obs += 1
+
+    # Promote: primary amount + strong entity + confidence gate (observations still keep all)
+    promotable = [
+        e
+        for e in eavs
+        if e.get("amount_role") == "primary"
+        and (e.get("entity") or "").strip()
+        and float(e.get("entity_score") or 0) >= 0.55
+        and float(e.get("confidence") or 0) >= candidate_confidence_min
+        and len((e.get("entity") or "").split()) >= 2
+    ]
+    # Prefer higher confidence, cap per page
+    promotable.sort(key=lambda x: float(x.get("confidence") or 0), reverse=True)
+    promotable = promotable[:max_auto_candidates_per_page]
+
+    mismatches = [str(x) for x in (constraint_mismatches or []) if x]
     added = 0
     updated = 0
     entries: list[dict[str, Any]] = []
-    for c in candidates:
+
+    for eav in promotable:
+        unknown = [
+            "task hard criteria not fully checked by runtime harvest",
+        ]
+        unmatched: list[str] = []
+        match_status = "observed_only"
+        if mismatches:
+            # Generic: param rewrites → not fully matched to requested query state
+            match_status = "partial"
+            unmatched = [f"query_state_mismatch: {m}" for m in mismatches[:6]]
+            unknown.append(
+                "page may not reflect requested filters (see unmatched query_state_mismatch)"
+            )
+
         evidence = {
             "observed": {
-                "name": c["name"],
-                "price": c["price"],
-                "source_url": c.get("source_url") or url,
-                "raw_evidence": c.get("raw_evidence") or "",
+                "entity": eav.get("entity"),
+                "value": eav.get("value"),
+                "amount_role": eav.get("amount_role"),
+                "confidence": eav.get("confidence"),
+                "source_url": eav.get("source_url") or url,
+                "raw_evidence": eav.get("raw_evidence") or "",
             },
             "verified": {},
-            "unknown": ["task hard criteria not yet checked by agent"],
+            "unknown": unknown,
         }
         res = add_to_shortlist(
             run_dir,
-            name=c["name"],
-            source_url=c.get("source_url") or url,
-            price=c["price"],
-            details=f"[auto-observed] {c.get('raw_evidence') or ''}"[:500],
+            name=str(eav.get("entity") or "").strip(),
+            source_url=str(eav.get("source_url") or url),
+            price=eav.get("value"),
+            details=f"[auto-candidate conf={eav.get('confidence')}] {eav.get('raw_evidence') or ''}"[
+                :500
+            ],
             session=session,
             constraints_check={
-                "match_status": "observed_only",
+                "match_status": match_status,
                 "matched": [],
-                "unmatched": [],
-                "unknown": [
-                    "all hard criteria — runtime harvest only; verify before ranking as full match"
-                ],
-                "notes": "Created by harvest_invariant (not LLM).",
+                "unmatched": unmatched,
+                "unknown": unknown,
+                "notes": "Runtime EAV harvest (not LLM). Rank only after constraint verification.",
             },
             extra={
                 "origin": "harvest_invariant",
                 "evidence": evidence,
+                "eav_confidence": eav.get("confidence"),
+                "amount_role": eav.get("amount_role"),
+                # Structural query mismatch → keep for transparency, exclude from ranking
+                "rankable": not bool(mismatches),
             },
         )
         if res.get("ok"):
@@ -807,11 +1045,49 @@ def harvest_invariant_from_browser_result(
                 added += 1
             else:
                 updated += 1
-            entries.append(res.get("entry") or c)
+            entries.append(res.get("entry") or eav)
+
     return {
         "ok": True,
+        "observations": n_obs,
         "added": added,
         "updated": updated,
         "count": len(load_shortlist(run_dir)),
-        "candidates": [{"name": e.get("name"), "price": e.get("price")} for e in entries],
+        "candidates": [
+            {"name": e.get("name"), "price": e.get("price"), "confidence": e.get("eav_confidence")}
+            for e in entries
+        ],
+        "promoted": len(promotable),
+        "skipped_low_conf": max(0, n_obs - len(promotable)),
     }
+
+
+# Back-compat alias used by older call sites / tests
+def extract_observed_candidates(
+    text: str,
+    *,
+    price_hints: list[Any] | None = None,
+    source_url: str = "",
+    max_candidates: int = 8,
+) -> list[dict[str, Any]]:
+    eavs = extract_eav_observations(
+        text, price_hints=price_hints, source_url=source_url, max_items=max_candidates * 3
+    )
+    out: list[dict[str, Any]] = []
+    for e in eavs:
+        if e.get("amount_role") != "primary" or not e.get("entity"):
+            continue
+        if float(e.get("confidence") or 0) < 0.55:
+            continue
+        out.append(
+            {
+                "name": e["entity"],
+                "price": e["value"],
+                "source_url": e.get("source_url") or "",
+                "raw_evidence": e.get("raw_evidence") or "",
+                "confidence": e.get("confidence"),
+            }
+        )
+        if len(out) >= max_candidates:
+            break
+    return out

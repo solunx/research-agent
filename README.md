@@ -52,9 +52,15 @@ docker compose run --rm research-agent python agent.py --planned \
 - `--planned`: split task into ≤5 independent sub-tasks, **fresh LLM context per sub-task** (flush), shared `notes.jsonl`, final synthesis from notes only
 - Default remains single-session (same as before)
 
-### Safety
+### Safety / web policy
 - Refuses host run if `/.dockerenv` missing (`safety.require_docker`)
 - Override: `ALLOW_HOST_RUN=1` or `require_docker: false`
+- **Honest browser**: no anti-detect / webdriver cloaking (Playwright may be recognized as automation)
+- **CAPTCHA / bot-wall**: `policy_stop` → host abandoned for the session (no bypass)
+- **`web_policy`**: rolling per-host rate limits + cooldown after 403/429/CAPTCHA (`memory/domain_policy.json`)
+- Harvest promotes only high-confidence entity↔price pairs; `query_state_mismatch` → not rankable
+
+## Run
 
 ## Run
 

@@ -71,14 +71,13 @@ def _ensure_browser(headless: bool = True, user_agent: str | None = None):
     from playwright.sync_api import sync_playwright
 
     _playwright = sync_playwright().start()
+    # Honest automation: no anti-detect / stealth scripts.
+    # Sites that refuse bots surface as capability boundaries (needs_recon / policy stop).
     _browser = _playwright.chromium.launch(
         headless=headless,
         args=[
-            "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-dev-shm-usage",
-            "--disable-infobars",
-            "--disable-extensions",
             "--disable-gpu",
             "--window-size=1280,900",
         ],
@@ -94,18 +93,6 @@ def _ensure_browser(headless: bool = True, user_agent: str | None = None):
             "Accept-Language": "nl-BE,nl;q=0.9,fr-BE;q=0.8,en-US;q=0.7,en;q=0.6",
             "DNT": "1",
         },
-    )
-    _context.add_init_script(
-        """
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        window.chrome = window.chrome || { runtime: {} };
-        Object.defineProperty(navigator, 'languages', {
-          get: () => ['nl-BE', 'nl', 'fr-BE', 'en-US', 'en']
-        });
-        Object.defineProperty(navigator, 'plugins', {
-          get: () => [1, 2, 3, 4, 5]
-        });
-        """
     )
     _page = _context.new_page()
     _page.set_default_timeout(45000)
@@ -188,6 +175,16 @@ def _price_hints(text: str, limit: int = 15) -> list[str]:
     return hints
 
 
+# Generic challenge / bot-wall signals (no bypass — agent must stop)
+_BOT_WALL_RE = re.compile(
+    r"(?:\bcaptcha\b|\brecaptcha\b|\bhcaptcha\b|\bturnstile\b|"
+    r"cf-browser-verification|challenge-platform|attention required|"
+    r"access denied|verify you are human|are you a robot|security check|"
+    r"automated (?:traffic|access)|bot detection)",
+    re.I,
+)
+
+
 def _snapshot(
     page,
     max_chars: int = 12000,
@@ -204,6 +201,12 @@ def _snapshot(
         hints = _price_hints(text)
         if hints:
             out["price_hints"] = hints
+    # Flag only — never solve or retry around challenges
+    sample = f"{title}\n{text}"[:6000]
+    if _BOT_WALL_RE.search(sample):
+        out["policy_stop"] = True
+        out["policy_reason"] = "bot_wall_or_captcha_signal"
+        out["blocked"] = True
     return out
 
 

@@ -33,6 +33,7 @@ from storage import (
     append_note,
     compact_session_handoff,
     create_run_dir,
+    filter_rankable_shortlist,
     harvest_invariant_from_browser_result,
     load_notes,
     load_shortlist,
@@ -162,17 +163,16 @@ def run_kind_prompt_addon(run_kind: str) -> str:
         "(recipes, param_warnings, URL patterns) from prior recon.\n"
         "\n"
         "**Harvest (runtime + you):**\n"
-        "- Runtime may auto-add **observed_only** candidates when extract shows name+price "
-        "(harvest invariant). Treat those as evidence buffer, not full verification.\n"
-        "- Enrich with `add_to_shortlist` (detail URL, constraints_check). "
-        "Never invent hotels; never upgrade observed→full without evidence.\n"
-        "- Evidence model: observed (name/price/url) vs verified (task criteria). "
-        "Report only claims you verified.\n"
+        "- Runtime writes **observations** (raw EAV signals) and only **promotes** high-confidence "
+        "entity↔primary-price pairs to the shortlist. Adjustments/deltas/filter amounts stay observations.\n"
+        "- Enrich promoted rows with `add_to_shortlist` + constraints_check. "
+        "Never invent entities; never upgrade to full match without evidence.\n"
+        "- Rank from shortlist after constraint honesty — not from raw observations.\n"
         "\n"
         "**Production stop boundary (no mini-recon):**\n"
-        "- Recipe/deep-link → list with prices → harvest → next candidate or next host.\n"
-        "- Structural fail (UI no-ops on pax/filters, broken params, empty after valid deep-link): "
-        "host is marked needs_recon — **stop form-learning**, move to next primary source.\n"
+        "- Deep-link → list → harvest once → next host or RESEARCH_COMPLETE.\n"
+        "- Query-param rewrite vs request, UI no-ops, or empty after valid deep-link: "
+        "`needs_recon` + **stop form clicks** on that host; move on.\n"
         "- Do **not** rediscover hosts from the homepage when recipes exist.\n"
         "Full recon is only `--run-kind recon` (separate capability).\n"
     )
@@ -606,22 +606,37 @@ def try_forced_report(
     system_prompt: str,
 ) -> str | None:
     """Synthesize primarily from shortlist.json; notes only as supporting evidence."""
+    all_items = load_shortlist(run_dir)
+    rankable_items = filter_rankable_shortlist(all_items)
+    excluded_n = max(0, len(all_items) - len(rankable_items))
+    # Prompt text still shows full shortlist, with NOT_RANKABLE tags
     shortlist_text = shortlist_as_prompt_text(run_dir, max_chars=8000)
-    shortlist_items = load_shortlist(run_dir)
+    shortlist_items = all_items
     notes = load_notes(run_dir, limit=80)
     notes_text = notes_as_prompt_text(notes, max_chars=6000, prioritize=True)
 
-    ranking_rule = (
-        "The SHORTLIST below is authoritative for Ranking. "
-        "If it is non-empty, you MUST rank those items; "
-        "you MUST NOT claim that no candidates were found.\n"
-        if shortlist_items
-        else (
-            "The SHORTLIST is empty. You may conclude that no concrete candidates "
-            "were structured. Use notes/events only to explain limitations "
-            "(failed sites, timeouts, 404s) — do not invent names.\n"
+    if rankable_items:
+        ranking_rule = (
+            "RANK only items that are NOT marked NOT_RANKABLE and that do not carry "
+            "query_state_mismatch. Those are the only candidates eligible for the top table. "
+            f"({len(rankable_items)} rankable / {len(all_items)} total"
+            + (f", {excluded_n} excluded for structural mismatch" if excluded_n else "")
+            + "). "
+            "Do NOT claim excluded items 'meet hard criteria'. "
+            "Partial matches may appear in Ranking only with explicit partial status. "
+            "Never claim full compliance when all-inclusive/pax/date remain unverified.\n"
         )
-    )
+    elif all_items:
+        ranking_rule = (
+            "All shortlist rows are NOT_RANKABLE (e.g. query_state_mismatch) or observed-only noise. "
+            "Do NOT invent a ranking of compliant deals. Explain limitations; list excluded "
+            "rows only under Uncertainties if useful.\n"
+        )
+    else:
+        ranking_rule = (
+            "The SHORTLIST is empty. Conclude that no concrete candidates were structured. "
+            "Use notes only to explain limitations — do not invent names.\n"
+        )
 
     force_messages = [
         {"role": "system", "content": system_prompt},
@@ -635,7 +650,7 @@ def try_forced_report(
                 "Rules:\n"
                 f"- {ranking_rule}"
                 "- Use ONLY facts from shortlist + notes. Invent nothing.\n"
-                "- Every ranked item must come from the shortlist when it is non-empty.\n"
+                "- Every ranked item must come from the shortlist when rankable items exist.\n"
                 "- Mark verification status honestly from the evidence you have.\n"
                 "- When shortlist items have observed_at / claims, cite them "
                 "(when verified, and on which date if present).\n"
@@ -648,7 +663,7 @@ def try_forced_report(
     try:
         print(
             f"[agent] Forced report (shortlist={len(shortlist_items)} items, "
-            f"notes={len(notes)})..."
+            f"rankable={len(rankable_items)}, notes={len(notes)})..."
         )
         append_conversation(
             run_dir,
@@ -1342,8 +1357,28 @@ def run_session(
                             "start_url"
                         )
                         err = result.get("error")
-                        blocked = bool(result.get("blocked"))
+                        blocked = bool(result.get("blocked") or result.get("policy_stop"))
                         ok = not err or (result.get("text") and not blocked)
+                        # Web policy / CAPTCHA: stop host for this research session
+                        if result.get("policy_stop") and url:
+                            ph = host_of(str(url))
+                            if ph:
+                                host_blocked.add(ph)
+                                print(
+                                    f"[agent] [{session_label}] Policy stop on {ph}: "
+                                    f"{result.get('policy_reason') or 'blocked'}"
+                                )
+                                if mem_cfg.get("enabled", True):
+                                    try:
+                                        memory.mark_needs_recon(
+                                            ph,
+                                            reason=str(
+                                                result.get("policy_reason")
+                                                or "policy_stop"
+                                            )[:200],
+                                        )
+                                    except Exception:
+                                        pass
                     if name == "web_search":
                         ok = isinstance(result, list) and len(result) > 0
                         if isinstance(result, list) and result:
@@ -1579,7 +1614,93 @@ def run_session(
                                 entry["price_hints"] = result["price_hints"][:15]
                             sources.append(entry)
 
-                    # P0 harvest invariant: structure name+price without LLM gate
+                    # Constraint mismatch first (so harvest can tag candidates)
+                    page_mismatches: list[str] = []
+                    if (
+                        name == "browser_open"
+                        and isinstance(result, dict)
+                        and isinstance(arguments.get("url"), str)
+                        and isinstance(result.get("url"), str)
+                    ):
+                        mm = detect_constraint_mismatch(
+                            str(arguments["url"]),
+                            str(result["url"]),
+                        )
+                        if mm:
+                            page_mismatches = list(mm.get("mismatches") or [])
+                            counters["constraint_mismatches"] = (
+                                counters.get("constraint_mismatches", 0) + 1
+                            )
+                            try:
+                                memory.record_url_pattern_outcome(
+                                    str(result["url"]),
+                                    success=False,
+                                    reason="; ".join(page_mismatches)[:200],
+                                )
+                            except Exception:
+                                pass
+                            for flag in mm.get("semantic_flags") or []:
+                                try:
+                                    memory.record_param_warning(
+                                        str(result["url"]),
+                                        param=str(flag.get("param") or ""),
+                                        kind=str(flag.get("kind") or ""),
+                                        detail=str(flag.get("detail") or "")[:300],
+                                    )
+                                except Exception:
+                                    pass
+                            if isinstance(result, dict):
+                                result = dict(result)
+                                result["constraint_mismatch"] = True
+                                result["constraint_mismatches"] = page_mismatches
+                                result["param_semantics"] = mm.get("semantic_flags")
+                                result["advice"] = mm.get("advice")
+
+                            h_mm = host_of(str(result.get("url"))) or pre_host
+                            has_prices = bool(result.get("price_hints"))
+                            if is_recon:
+                                print(
+                                    f"[agent] [{session_label}] Constraint mismatch on "
+                                    f"{h_mm or '?'} — soft (keep page; recon learn only)"
+                                )
+                            elif h_mm and not has_prices and h_mm not in host_shortlist_hits:
+                                host_blocked.add(h_mm)
+                                counters["host_abandons"] = (
+                                    counters.get("host_abandons", 0) + 1
+                                )
+                                print(
+                                    f"[agent] [{session_label}] Constraint mismatch on "
+                                    f"{h_mm} — host abandoned (no price signals)"
+                                )
+                            elif h_mm:
+                                # Research: structural filter rewrite → one harvest, then stop UI
+                                try:
+                                    memory.mark_needs_recon(
+                                        h_mm,
+                                        reason=(
+                                            "query params rewritten vs request: "
+                                            + "; ".join(page_mismatches)[:180]
+                                        ),
+                                    )
+                                except Exception:
+                                    pass
+                                host_blocked.add(h_mm)
+                                counters["host_abandons"] = (
+                                    counters.get("host_abandons", 0) + 1
+                                )
+                                print(
+                                    f"[agent] [{session_label}] Constraint mismatch on "
+                                    f"{h_mm} — needs_recon + host done for research "
+                                    f"(no further UI; harvest once if prices visible)"
+                                )
+                                result["advice"] = (
+                                    f"Structural query mismatch on {h_mm}. "
+                                    "Do not click forms to 'fix' filters in research. "
+                                    "Host marked needs_recon. Use auto-candidates if any, "
+                                    "then move to another primary source."
+                                )
+
+                    # Harvest: observations always; shortlist only high-conf primary EAV
                     if (
                         not is_recon
                         and name
@@ -1596,32 +1717,40 @@ def run_session(
                     ):
                         try:
                             hv = harvest_invariant_from_browser_result(
-                                run_dir, result, session=session_label
+                                run_dir,
+                                result,
+                                session=session_label,
+                                constraint_mismatches=page_mismatches or None,
                             )
+                            n_obs = int(hv.get("observations") or 0)
+                            if n_obs or hv.get("added") or hv.get("updated"):
+                                print(
+                                    f"[agent] [{session_label}] Harvest: "
+                                    f"obs={n_obs} promoted=+{hv.get('added', 0)} "
+                                    f"~{hv.get('updated', 0)} "
+                                    f"(shortlist={hv.get('count')}, "
+                                    f"low_conf_skipped={hv.get('skipped_low_conf', 0)})"
+                                )
                             if hv.get("added") or hv.get("updated"):
                                 counters["shortlist_adds"] = (
                                     counters.get("shortlist_adds", 0)
                                     + int(hv.get("added") or 0)
                                 )
+                                # useful = promoted candidates only (not raw observations)
                                 counters["useful_actions"] = (
                                     counters.get("useful_actions", 0)
                                     + int(hv.get("added") or 0)
-                                    + int(hv.get("updated") or 0)
                                 )
-                                print(
-                                    f"[agent] [{session_label}] Harvest invariant: "
-                                    f"+{hv.get('added', 0)} observed, "
-                                    f"~{hv.get('updated', 0)} merged "
-                                    f"(shortlist={hv.get('count')})"
-                                )
-                                if isinstance(result, dict):
-                                    result = dict(result)
-                                    result["harvest_invariant"] = {
-                                        "added": hv.get("added"),
-                                        "updated": hv.get("updated"),
-                                        "candidates": hv.get("candidates"),
-                                    }
                                 refresh_host_shortlist_hits()
+                            if isinstance(result, dict) and (n_obs or hv.get("added")):
+                                result = dict(result)
+                                result["harvest_invariant"] = {
+                                    "observations": n_obs,
+                                    "added": hv.get("added"),
+                                    "updated": hv.get("updated"),
+                                    "candidates": hv.get("candidates"),
+                                    "skipped_low_conf": hv.get("skipped_low_conf"),
+                                }
                         except Exception as _hv_err:
                             print(
                                 f"[agent] [{session_label}] Harvest invariant error: "
@@ -1631,6 +1760,22 @@ def run_session(
                     result_for_context = truncate_tool_result(
                         name, result, max_chars=max_tool_result_chars
                     )
+                    if (
+                        isinstance(result, dict)
+                        and result.get("constraint_mismatch")
+                        and isinstance(result_for_context, dict)
+                    ):
+                        result_for_context = dict(result_for_context)
+                        result_for_context["constraint_mismatch"] = True
+                        result_for_context["constraint_mismatches"] = result.get(
+                            "constraint_mismatches"
+                        )
+                        result_for_context["advice"] = result.get("advice")
+                        if is_recon:
+                            result_for_context["system_nudge"] = (
+                                "RECON: params rewritten. Record final URL + param semantics; "
+                                "no shortlist. Next host when done."
+                            )
 
                     # Learn search URL patterns + capability layers (generic)
                     if (
@@ -1667,88 +1812,6 @@ def run_session(
                                 )
                         except Exception:
                             pass
-
-                    # Constraint mismatch: requested deep-link params rewritten by site
-                    if (
-                        name == "browser_open"
-                        and isinstance(result, dict)
-                        and isinstance(arguments.get("url"), str)
-                        and isinstance(result.get("url"), str)
-                    ):
-                        mm = detect_constraint_mismatch(
-                            str(arguments["url"]),
-                            str(result["url"]),
-                        )
-                        if mm:
-                            counters["constraint_mismatches"] = (
-                                counters.get("constraint_mismatches", 0) + 1
-                            )
-                            try:
-                                memory.record_url_pattern_outcome(
-                                    str(result["url"]),
-                                    success=False,
-                                    reason="; ".join(mm.get("mismatches") or [])[:200],
-                                )
-                            except Exception:
-                                pass
-                            # Persist param semantics globally (cross-task)
-                            for flag in mm.get("semantic_flags") or []:
-                                try:
-                                    memory.record_param_warning(
-                                        str(result["url"]),
-                                        param=str(flag.get("param") or ""),
-                                        kind=str(flag.get("kind") or ""),
-                                        detail=str(flag.get("detail") or "")[:300],
-                                    )
-                                except Exception:
-                                    pass
-                            result_for_context = dict(
-                                result_for_context
-                                if isinstance(result_for_context, dict)
-                                else result
-                            )
-                            result_for_context["constraint_mismatch"] = True
-                            result_for_context["constraint_mismatches"] = mm.get(
-                                "mismatches"
-                            )
-                            result_for_context["param_semantics"] = mm.get(
-                                "semantic_flags"
-                            )
-                            result_for_context["advice"] = mm.get("advice")
-                            h_mm = host_of(str(result.get("url"))) or pre_host
-                            has_prices = bool(
-                                isinstance(result, dict) and result.get("price_hints")
-                            )
-                            # Soft abandon: keep host usable if page still has deals
-                            # or we already shortlisted from it. Hard-block only when
-                            # the rewrite left an empty/useless shell.
-                            if h_mm and not has_prices and h_mm not in host_shortlist_hits:
-                                host_blocked.add(h_mm)
-                                counters["host_abandons"] = (
-                                    counters.get("host_abandons", 0) + 1
-                                )
-                                print(
-                                    f"[agent] [{session_label}] Constraint mismatch on "
-                                    f"{h_mm} — host abandoned (no price signals)"
-                                )
-                            else:
-                                print(
-                                    f"[agent] [{session_label}] Constraint mismatch on "
-                                    f"{h_mm or '?'} — soft (keep page; "
-                                    f"{'recon learn only' if is_recon else 'partial OK'})"
-                                )
-                                if is_recon:
-                                    result_for_context["system_nudge"] = (
-                                        "RECON: params were rewritten. Note the final URL "
-                                        "shape and param semantics in your summary; "
-                                        "do not add candidates. Move to next host when done."
-                                    )
-                                elif has_prices and not load_shortlist(run_dir):
-                                    result_for_context["system_nudge"] = (
-                                        "Constraint params were rewritten, but prices are "
-                                        "visible. Call add_to_shortlist with match_status="
-                                        "partial and honest unmatched/unknown before leaving."
-                                    )
 
                     # Empty inventory budget: stop thrashing hosts that return 0 results
                     if (
@@ -1794,7 +1857,7 @@ def run_session(
                                     f"{h_empty} (1/{max_empty_inventory}) — prune filters once"
                                 )
 
-                    # Soft nudge: prices visible but shortlist still empty after invariant
+                    # Soft nudge: prices visible but nothing promoted to shortlist
                     if (
                         not is_recon
                         and name.startswith("browser_")
@@ -1804,11 +1867,11 @@ def run_session(
                     ):
                         result_for_context = dict(result_for_context)
                         result_for_context["system_nudge"] = (
-                            "Price-like signals are visible but no structured candidates "
-                            "were auto-harvested (extract may lack clear hotel names next "
-                            "to prices). Prefer browser_extract_text / scroll / wait, then "
-                            "call add_to_shortlist yourself with name + price + constraints, "
-                            "or move host if the list is only destinations/filters."
+                            "Price-like signals exist but no high-confidence entity↔price "
+                            "pair was promoted (observations may still be in observations.jsonl). "
+                            "Scroll/extract for clearer product titles next to primary prices, "
+                            "or call add_to_shortlist yourself with evidence — "
+                            "do not invent entities."
                         )
                     elif (
                         not is_recon
@@ -1817,15 +1880,13 @@ def run_session(
                         and result_for_context.get("harvest_invariant")
                     ):
                         result_for_context = dict(result_for_context)
-                        n_auto = (
-                            (result_for_context["harvest_invariant"] or {}).get("added") or 0
-                        )
+                        hi = result_for_context["harvest_invariant"] or {}
+                        n_auto = hi.get("added") or 0
                         if n_auto:
                             result_for_context["system_nudge"] = (
-                                f"Runtime auto-added {n_auto} observed candidate(s) from this "
-                                "page (match_status=observed_only). You may enrich them via "
-                                "add_to_shortlist with better detail URLs and constraints_check; "
-                                "do not claim full verification without evidence."
+                                f"Runtime promoted {n_auto} candidate(s) "
+                                f"(obs={hi.get('observations')}). Enrich via add_to_shortlist "
+                                "with constraints_check; do not treat observed_only as full match."
                             )
 
                     append_conversation(

@@ -49,6 +49,18 @@ Format per entry: **date → hypothesis → result → decision**.
 
 ---
 
+## 2026-08-22 — Observation ≠ candidate (generic EAV)
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| Auto-shortlist every € + nearby line | Shortlist=23 noise (discounts, airport deltas) | **observations.jsonl** vs promoted candidates |
+| Fix with travel-specific regex | Would hardcode the vertical | Structural **amount_role** + **entity_score** + confidence gate |
+| Soft mismatch + keep clicking | Mini-recon on Sunweb | Research: mismatch → needs_recon + host block after one harvest |
+
+**Code shipped:** `extract_eav_observations`, promotion only primary+conf≥0.55; mismatch tags on candidates; useful_actions = promotions only.
+
+---
+
 ## Browser backends (A/B)
 
 | Backend | Finding | Status |
@@ -125,3 +137,21 @@ Format per entry: **date → hypothesis → result → decision**.
 
 - If a technique is **Abandoned** / **Rejected**, do not reintroduce without new evidence.
 - Prefer updating this file after each meaningful run with: metrics (duration, shortlist_count, useful_ratio) + one-line lesson.
+
+## 2026-08-22 — Web policy + harvest quality + honest ranking
+
+### Ethics / safety
+- Removed Playwright anti-detect (`AutomationControlled`, `navigator.webdriver` override, fake plugins).
+- Browser remains a normal Chromium automation client (Chrome-like UA kept; not stealth).
+- CAPTCHA / bot-wall signals → `policy_stop` + host abandoned for the session; no bypass.
+- New `web_policy.py`: thin gate before fetch/browser with rolling per-host hourly budgets and cooldown after 403/429/CAPTCHA. State in `memory/domain_policy.json`.
+
+### Harvest / ranking
+- Stricter structural entity score (ALL-CAPS labels, distance crumbs, short-token UI lines).
+- Promote thresholds: entity_score ≥ 0.55, confidence ≥ 0.62, ≥ 2 tokens.
+- `query_state_mismatch` → `rankable=false` (kept for transparency, excluded from ranking).
+- Forced report instructed to rank only rankable items; no “meets hard criteria” for partial/unverified AI/pax.
+
+### Not done (intentionally)
+- Full robots.txt engine / whitelist-only mode.
+- Site-specific product word lists.
