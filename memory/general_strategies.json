@@ -2,7 +2,7 @@
   "strategies": [
     {
       "trigger": "HTTP 403, blocked, or empty body from web_fetch",
-      "tactic": "Retry same URL with browser_open",
+      "tactic": "Escalate one tier: browser_open (Playwright) if available, else one narrow browser_use on a deep-link — never homepage-first",
       "efficiency_gain": "Avoids repeated failed fetches"
     },
     {
@@ -14,7 +14,92 @@
       "trigger": "Enough candidates with sources already collected",
       "tactic": "Stop extra searches; write RESEARCH_COMPLETE report",
       "efficiency_gain": "Prevents context bloat and LLM timeouts"
+    },
+    {
+      "trigger": "Learned URL patterns exist for a host",
+      "tactic": "First browser_open on that host must be a search/deep-link URL (path+params from memory, values from task); never site root first",
+      "efficiency_gain": "Skips homepage form thrash and cookie walls"
+    },
+    {
+      "trigger": "Two form click/type no-ops on same host",
+      "tactic": "Stop UI clicks; one browser_open with a different search URL (query params), not another homepage; then abandon if that fails",
+      "efficiency_gain": "URL-param recovery before permanent block"
+    },
+    {
+      "trigger": "Deep-link/search URL returns 404 or empty after patterns were used",
+      "tactic": "Brief homepage relearn (few actions only); update url_patterns; do not enter long form loops",
+      "efficiency_gain": "Recovers from stale patterns without wasting the session"
+    },
+    {
+      "trigger": "Adding a candidate to the shortlist",
+      "tactic": "Always include constraints_check (matched/unmatched/unknown from task hard requirements) so partial matches are explicit",
+      "efficiency_gain": "Prevents silent junk shortlist entries"
+    },
+    {
+      "trigger": "After browser_open, final URL query params differ structurally from requested (e.g. date/pax filters rewritten by the site)",
+      "tactic": "Do not reopen the same URL. If the page still shows names+prices, shortlist with match_status=partial and honest unmatched/unknown; only leave the host when the page is empty of candidates",
+      "efficiency_gain": "Keeps partial deals instead of abandoning a useful list page"
+    },
+    {
+      "trigger": "Phase-1 shortlist is empty after primary sources were tried",
+      "tactic": "Skip broad verification phase; document limitations and synthesize",
+      "efficiency_gain": "Avoids a second discovery loop with no candidates"
+    },
+    {
+      "trigger": "browser_use timed out or returned error on a host",
+      "tactic": "Do not retry browser_use on that host this session; web_fetch any known detail URLs, try another primary source, or RESEARCH_COMPLETE",
+      "efficiency_gain": "Prevents 3+ minute repeated timeouts with zero yield"
+    },
+    {
+      "trigger": "Need Browser Use (tier 3) after cheaper tools failed",
+      "tactic": "One narrow instruction only: list visible packages OR open one detail page — never filter+list+detail in one call; always pass a deep-link start_url",
+      "efficiency_gain": "Raises success rate and keeps sessions under timeout"
+    },
+    {
+      "trigger": "Global site recipe exists for a host (preferred_channel set)",
+      "tactic": "Use that channel first on every task that hits this host — do not rediscover from the homepage",
+      "efficiency_gain": "Cross-task reuse of transport knowledge"
+    },
+    {
+      "trigger": "Host marked human_setup_needed",
+      "tactic": "Skip expensive browser loops; document limitation; operator may add API/deep-link to memory later",
+      "efficiency_gain": "Stops burning compute on structurally blocked hosts"
+    },
+    {
+      "trigger": "All automated tiers failed on a host",
+      "tactic": "Mark host exhausted for this session; move to next source; learnings are saved globally for the next task",
+      "efficiency_gain": "Fail fast and improve the system over runs"
+    },
+    {
+      "trigger": "Param warning: small integer request became a date-like final value",
+      "tactic": "That query key is not occupancy/count — stop sending party size there; set travelers via visible UI controls or a different param from patterns",
+      "efficiency_gain": "Avoids repeating the same broken deep-link encoding"
+    },
+    {
+      "trigger": "Repeated browser_open with 0 results / no price signals on a host",
+      "tactic": "After one empty page, retry once with fewer filters; if still empty, abandon host for this session",
+      "efficiency_gain": "Stops inventory thrashing that burns Ollama context"
+    },
+    {
+      "trigger": "Run kind is recon (learning)",
+      "tactic": "Never call add_to_shortlist; never rank task candidates. Optimize for interface learning (navigation + semantics + harvest probes), not for finishing a user booking. RESEARCH_COMPLETE = mechanism summary only",
+      "efficiency_gain": "Keeps learning runs out of research deliverables"
+    },
+    {
+      "trigger": "Recon: learn a host interface",
+      "tactic": "Run small probes (one dimension at a time when possible): destination/date/pax/filter → compare final URL; note ignored/rewritten params; confirm results list shows names+prices. Stop at list/detail — never checkout",
+      "efficiency_gain": "Builds reusable capability model instead of one-off trajectories"
+    },
+    {
+      "trigger": "Research: known recipe structurally fails (param rewrite, ignored filter, empty after valid deep-link)",
+      "tactic": "Do not rediscover from homepage thrash. Note needs_recon for that host, document limitation, move to next primary source. Full recon is a separate run",
+      "efficiency_gain": "Protects research budget; improves next recon pass"
+    },
+    {
+      "trigger": "Recon capability incomplete (navigation ok, semantics or harvest weak)",
+      "tactic": "Prefer more probes on missing layer only — do not re-solve navigation. Harvest: open one results page and note where prices/names appear",
+      "efficiency_gain": "Fills the gap that caused weak research yields"
     }
   ],
-  "updated_at": "2026-08-19T00:00:00+00:00"
+  "updated_at": "2026-08-22T09:20:14.631350+00:00"
 }

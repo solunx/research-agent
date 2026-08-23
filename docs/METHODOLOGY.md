@@ -1,7 +1,16 @@
-# Methodology — how this agent learns and researches
+# Methodology — how this agent learns and retrieves
 
 This document is the **mental model**: one simple picture of process steps.
 Implementation details live in code; experiment history lives in `LEARNING_LOG.md`.
+
+**Naming:** the whole system is the **research agent**. Inside it, web work splits into:
+
+| Name | CLI | Role |
+|------|-----|------|
+| **Recon** | `--run-kind recon` | Learn *how* hosts work |
+| **Retrieval** | `--run-kind retrieval` (alias: `research`) | Fetch & structure evidence for a task |
+
+Reasoning / critic / report sit *above* retrieval. Do not call the delivery web phase “research” in new docs — that word means the whole agent.
 
 ---
 
@@ -9,16 +18,16 @@ Implementation details live in code; experiment history lives in `LEARNING_LOG.m
 
 ```
 ┌─────────────────────┐         ┌─────────────────────┐
-│  RECON (learning)   │         │  RESEARCH (delivery)│
-│  --run-kind recon   │         │  --run-kind research│
+│  RECON (learning)   │         │  RETRIEVAL (delivery)│
+│  --run-kind recon   │         │  --run-kind retrieval│
 ├─────────────────────┤         ├─────────────────────┤
-│ Learn HOW hosts     │  ──►    │ Answer the USER task│
-│ work (capability)   │ memory  │ using memory first  │
-│                     │         │                     │
-│ NO shortlist        │         │ shortlist + report  │
-│ NO ranking          │         │ honest constraints  │
-│ Goal = interface    │         │ Goal = verified     │
-│ intelligence        │         │ candidates          │
+│ Learn HOW hosts     │  ──►    │ Answer the USER task │
+│ work (capability)   │ memory  │ using memory first   │
+│                     │         │                      │
+│ NO shortlist        │         │ shortlist + report   │
+│ NO ranking          │         │ honest constraints   │
+│ Goal = interface    │         │ Goal = verified      │
+│ intelligence        │         │ candidates           │
 └─────────────────────┘         └─────────────────────┘
          │                                │
          └──────── global memory ─────────┘
@@ -26,7 +35,8 @@ Implementation details live in code; experiment history lives in `LEARNING_LOG.m
 ```
 
 - **Recon** optimizes for **learnable structure**, not finishing a booking.
-- **Research** executes recipes and verifies claims. Runtime **blocks** `add_to_shortlist` in recon.
+- **Retrieval** executes recipes and verifies claims. Runtime **blocks** `add_to_shortlist` in recon.
+- Legacy alias: `--run-kind research` → same as `retrieval`.
 
 ---
 
@@ -71,7 +81,7 @@ Dev helper: `tasks/recon_*.md` may list hosts. Core logic stays domain-agnostic.
 
 ---
 
-## 4. Research: execute, don’t rediscover
+## 4. Retrieval: execute, don’t rediscover
 
 ```
 Memory-first deep-link / preferred channel
@@ -86,11 +96,33 @@ Cheap verify (fetch or browser_open)
    shortlist   next host / later recon
 ```
 
-- Tier 3 (Browser Use) is **not** the default research path.
+- Tier 3 (Browser Use) is **not** the default retrieval path.
 - Structural fail (broken param encoding, ignored critical filter) ≠ empty inventory.
-- Empty inventory after a *correct* search is a valid research outcome.
+- Empty inventory after a *correct* search is a valid retrieval outcome.
+- URL rewrite by the site is usually **normal app routing / defaults**, not “bot detection”.
 
-**Future:** optional inline recon burst on `needs_recon` (still no shortlist), then one research retry.
+**Future:** optional inline recon burst on `needs_recon` (still no shortlist), then one retrieval retry.
+
+---
+
+## 4b. Harvest pipeline (code, not LLM)
+
+```
+PAGE TEXT
+    ↓  (deterministic)
+AMOUNT scan + nearby title lines
+    ↓
+EAV observations → observations.jsonl   ← ALL signals (noise OK)
+    ↓  gates: primary + entity_score + marketing_penalty + no query mismatch
+SHORTLIST                         ← only plausible product candidates
+    ↓  constraints_check / rankable
+CRITIC REPORT
+```
+
+- **No travel-specific product word lists** in the extractor.
+- Marketing slogans, filter UI amounts, discounts stay in **observations**.
+- Query-state mismatch pages: **observations only** — never shortlist pollution.
+- Optional later: structure-aware clusters (cards/tables/lists) + small model only on ambiguous pairs.
 
 ---
 

@@ -1,8 +1,11 @@
 {
   "sunweb.be": {
     "example_urls": [
-      "https://www.sunweb.be/nl/vakantie/all-inclusive?Mealplan[0]=…&Mealplan[1]=…&Duration[0]=…&DepartureDate[0]=…&DepartureDate[1]=…&Participants[0][0]=…&Participants[0][1]=…&Participants[0][2]=…&TransportType=…&limit=…&offset=…&sort=…",
-      "https://www.sunweb.be/nl/vakantie/all-inclusive?Mealplan[0]=…&Mealplan[1]=…&Duration[0]=…&DepartureDate[0]=…&DepartureDate[1]=…&Participants[0][0]=…&Participants[0][1]=…&TransportType=…&limit=…&offset=…&sort=…"
+      "https://www.sunweb.be/nl/vakantie/all-inclusive?Mealplan[0]=…&Duration[0]=…&DepartureDate[0]=…&DepartureDate[1]=…&Participants[0][1]=…&limit=…&offset=…&sort=…",
+      "https://www.sunweb.be/nl/vakantie/all-inclusive?Mealplan[0]=…&Mealplan[1]=…&Duration[0]=…&DepartureDate[0]=…&DepartureDate[1]=…&Participants[0][0]=…&Participants[0][1]=…&TransportType=…&limit=…&offset=…&sort=…",
+      "https://www.sunweb.be/nl/vakantie/all-inclusive?Mealplan[0]=…&Mealplan[1]=…&Duration[0]=…&DepartureDate[0]=…&DepartureDate[1]=…&Participants[0][0]=…&TransportType=…&limit=…&offset=…&sort=…",
+      "https://www.sunweb.be/nl/vakantie/all-inclusive?DepartureDate[0]=…&DepartureDate[1]=…&Duration[0]=…&Participants[0][1]=…",
+      "https://www.sunweb.be/nl/vakantie/all-inclusive?DepartureDate[0]=…&DepartureDate[1]=…&Duration[0]=…"
     ],
     "param_names": [
       "Mealplan[0]",
@@ -16,12 +19,141 @@
       "limit",
       "offset",
       "sort",
-      "Participants[0][2]"
+      "Participants[0][2]",
+      "Lastminute"
     ],
     "path_hints": [
       "/nl/vakantie/all-inclusive"
     ],
-    "success_count": 4,
-    "last_verified": "2026-08-20T17:06:20.588255+00:00"
+    "success_count": 47,
+    "last_verified": "2026-08-23T06:50:17.207901+00:00",
+    "failure_count": 19,
+    "last_failure": "2026-08-23T06:50:17.195857+00:00",
+    "last_failure_reason": "departuredate[0]: requested=2026-12-05 final=2026-08-24; departuredate[1]: requested=2026-12-12 final=2026-10-04"
+  },
+  "nl.lastminute.com": {
+    "example_urls": [
+      "https://nl.lastminute.com/s/tsx?destination=…&searchMode=…&pageType=…&origin=…&adults=…&children=…&rooms=…&dateFrom=…&dateTo=…&meal=…&sort=…&searchId=…&seed=…",
+      "https://nl.lastminute.com/s/tsx?seed=…&source=…&searchId=…&bfSubSource=…&destination=…&searchMode=…&pageType=…&origin=…&adults=…&children=…&rooms=…&dateFrom=…&dateTo=…&meal=…&sort=…",
+      "https://nl.lastminute.com/s/tsx?destination=…&searchMode=…&pageType=…&origin=…&adults=…&children=…&rooms=…&dateFrom=…&dateTo=…&meal=…&searchId=…&seed=…",
+      "https://nl.lastminute.com/s/tsx?destination=…&origin=…&adults=…&rooms=…&dateFrom=…&dateTo=…&searchMode=…&pageType=…&searchId=…&seed=…",
+      "https://nl.lastminute.com/s/tsx?destination=…&searchMode=…&pageType=…&origin=…&adults=…&rooms=…&dateFrom=…&dateTo=…&searchId=…&seed=…"
+    ],
+    "param_names": [
+      "departure",
+      "destination",
+      "date",
+      "nights",
+      "adults",
+      "children",
+      "return",
+      "rooms",
+      "meal",
+      "searchMode",
+      "pageType",
+      "origin",
+      "highlightHotelId",
+      "dateFrom",
+      "dateTo",
+      "searchId",
+      "seed",
+      "vcSearchId",
+      "source",
+      "bfSubSource",
+      "sort",
+      "extReferenceId"
+    ],
+    "path_hints": [
+      "/s/tsx",
+      "/vakanties"
+    ],
+    "success_count": 84,
+    "failure_count": 2,
+    "last_verified": "2026-08-23T06:49:11.549802+00:00",
+    "last_failure": "2026-08-22T09:20:55.009776+00:00",
+    "last_failure_reason": "datefrom: requested=2026-07-01 final=2026-08-29; dateto: requested=2026-07-08 final=2026-09-05"
+  },
+  "corendon.be": {
+    "example_urls": [
+      "https://www.corendon.be/vakanties?adults=…&children=…&rooms=…&dateFrom=…&dateTo=…&nights=…&meal=…",
+      "https://www.corendon.be/vakanties?departDate=…",
+      "https://www.corendon.be/vakanties?adults=…&rooms=…&dateFrom=…&dateTo=…&meal=…&sort=…",
+      "https://www.corendon.be/vakanties?adults=…&rooms=…&meal=…",
+      "https://www.corendon.be/vakanties?adults=…&rooms=…&departDate=…&meal=…"
+    ],
+    "param_names": [
+      "departure",
+      "destination",
+      "date",
+      "nights",
+      "adults",
+      "dateFrom",
+      "dateTo",
+      "children",
+      "rooms",
+      "meal",
+      "stars",
+      "departDate",
+      "sort"
+    ],
+    "path_hints": [
+      "/vakanties"
+    ],
+    "success_count": 52,
+    "failure_count": 0,
+    "last_verified": "2026-08-23T06:50:55.271410+00:00"
+  },
+  "booking.com": {
+    "example_urls": [
+      "https://www.booking.com/hotel/pt/pestana-vila-lido.nl.html?aid=…&label=…&came_from_hotel_review=…&keep_landing=…&sid=…&chal_t=…&force_referer=…"
+    ],
+    "param_names": [
+      "aid",
+      "label",
+      "came_from_hotel_review",
+      "keep_landing",
+      "sid",
+      "chal_t",
+      "force_referer"
+    ],
+    "path_hints": [
+      "/hotel/pt/pestana-vila-lido.nl.html"
+    ],
+    "success_count": 1,
+    "failure_count": 0,
+    "last_verified": "2026-08-21T06:11:43.313522+00:00"
+  },
+  "lastminute.be": {
+    "example_urls": [
+      "https://www.lastminute.be/s/tsx?destination=…&searchMode=…&pageType=…&origin=…&adults=…&rooms=…&dateFrom=…&dateTo=…&searchId=…&seed=…",
+      "https://www.lastminute.be/s/tsx?destination=…&searchMode=…&pageType=…&origin=…&adults=…&rooms=…&dateFrom=…&dateTo=…&meal=…&searchId=…&seed=…",
+      "https://www.lastminute.be/s/tsx?destination=…&searchMode=…&pageType=…&origin=…&dateFrom=…&dateTo=…&adults=…&rooms=…&searchId=…&seed=…",
+      "https://www.lastminute.be/s/tsx?searchMode=…&pageType=…&origin=…&destination=…&dateFrom=…&dateTo=…&adults=…&rooms=…&searchId=…&seed=…",
+      "https://www.lastminute.be/s/tsx?origin=…&searchMode=…&pageType=…&dateFrom=…&dateTo=…&destination=…&adults=…&rooms=…&searchId=…&seed=…"
+    ],
+    "param_names": [
+      "destination",
+      "pageType",
+      "searchMode",
+      "origin",
+      "adults",
+      "children",
+      "rooms",
+      "dateFrom",
+      "dateTo",
+      "meal",
+      "searchId",
+      "seed",
+      "date",
+      "nights"
+    ],
+    "path_hints": [
+      "/s/tsx"
+    ],
+    "success_count": 18,
+    "failure_count": 2,
+    "last_verified": "2026-08-23T05:53:14.756320+00:00",
+    "last_failure": "2026-08-22T09:20:48.947056+00:00",
+    "last_failure_reason": "datefrom: requested=2026-07-01 final=2026-08-29; dateto: requested=2026-07-08 final=2026-09-05"
   }
 }

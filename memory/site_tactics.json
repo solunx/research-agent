@@ -8,14 +8,14 @@
   "booking.com": {
     "preferred_tool": "browser_open",
     "reason": "HTTP fetch blocked or 403",
-    "last_verified": "2026-08-20T15:50:04.686346+00:00",
-    "success_count": 24
+    "last_verified": "2026-08-22T06:55:52.778542+00:00",
+    "success_count": 27
   },
   "tui.be": {
     "preferred_tool": "browser_open",
     "reason": "HTTP fetch blocked or 403",
-    "last_verified": "2026-08-20T17:02:58.627968+00:00",
-    "success_count": 8
+    "last_verified": "2026-08-21T06:09:01.539756+00:00",
+    "success_count": 14
   },
   "thomascook.com": {
     "preferred_tool": "browser_open",
@@ -50,7 +50,43 @@
   "vakantiediscounter.be": {
     "preferred_tool": "browser_open",
     "reason": "HTTP fetch blocked or 403",
-    "last_verified": "2026-08-20T17:01:47.444119+00:00",
+    "last_verified": "2026-08-21T06:09:35.806816+00:00",
+    "success_count": 9
+  },
+  "tripadvisor.com": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-21T06:16:28.453000+00:00",
     "success_count": 2
+  },
+  "nl.lastminute.com": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-23T06:49:03.251786+00:00",
+    "success_count": 45
+  },
+  "sunweb.be": {
+    "failed_tiers": [
+      "browser_use"
+    ],
+    "last_failure_tier": "browser_use",
+    "last_failure_reason": "browser_use timed out after 180s",
+    "last_verified": "2026-08-21T18:47:50.165202+00:00",
+    "failure_count": 2
+  },
+  "lastminute.be": {
+    "preferred_tool": "browser_open",
+    "reason": "HTTP fetch blocked or 403",
+    "last_verified": "2026-08-23T05:53:14.754281+00:00",
+    "success_count": 20
+  },
+  "corendon.be": {
+    "failed_tiers": [
+      "browser_use"
+    ],
+    "last_failure_tier": "browser_use",
+    "last_failure_reason": "browser_use timed out after 180s",
+    "last_verified": "2026-08-21T18:51:41.016257+00:00",
+    "failure_count": 2
   }
 }

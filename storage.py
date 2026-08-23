@@ -401,6 +401,15 @@ def add_to_shortlist(
     if not name:
         return {"ok": False, "error": "name is required"}
 
+    # Configuration/SKU lines are not top-level offers (generic structural gate)
+    line_item = _is_line_item_entity(name)
+    if line_item and (extra or {}).get("origin") == "harvest_invariant":
+        return {
+            "ok": False,
+            "error": "line_item_not_top_level",
+            "detail": "Configuration/SKU strings cannot be auto-promoted as candidates",
+        }
+
     # Allow match_status top-level as shorthand merged into constraints_check
     cc_in: Any = constraints_check
     if isinstance(cc_in, dict) and match_status and "match_status" not in cc_in:
@@ -520,10 +529,38 @@ def add_to_shortlist(
             "observed_at": old.get("observed_at") or now_iso,
             "updated_at": now_iso,
         }
+        # Preserve sticky fields from previous entry (rankable=False never upgrades silently)
+        for sticky in (
+            "origin",
+            "evidence",
+            "eav_confidence",
+            "entity_score",
+            "amount_role",
+        ):
+            if sticky in old and sticky not in entry:
+                entry[sticky] = old[sticky]
         if extra:
             for k, v in extra.items():
-                if k not in entry and isinstance(v, (str, int, float, bool, list, dict)):
+                if isinstance(v, (str, int, float, bool, list, dict)):
                     entry[k] = v
+        # Rankable: once False, stays False unless extra explicitly sets True after re-verify
+        old_rankable = old.get("rankable")
+        if extra and "rankable" in extra:
+            new_r = bool(extra["rankable"])
+            if old_rankable is False and new_r is True:
+                # Allow upgrade only when constraints improved (matched non-empty, no mismatch)
+                unmatched_n = cleaned_cc.get("unmatched") or []
+                has_mm = any(str(u).startswith("query_state_mismatch") for u in unmatched_n)
+                if has_mm or not (cleaned_cc.get("matched") or []):
+                    entry["rankable"] = False
+                else:
+                    entry["rankable"] = True
+            else:
+                entry["rankable"] = new_r and (old_rankable is not False)
+        elif old_rankable is False:
+            entry["rankable"] = False
+        else:
+            entry["rankable"] = compute_rankable(entry)
         items[matched_idx] = entry
         action = "updated"
     else:
@@ -543,8 +580,17 @@ def add_to_shortlist(
         }
         if extra:
             for k, v in extra.items():
-                if k not in entry and isinstance(v, (str, int, float, bool, list, dict)):
+                if isinstance(v, (str, int, float, bool, list, dict)):
                     entry[k] = v
+        if line_item:
+            entry["is_line_item"] = True
+            entry["rankable"] = False
+        elif "rankable" not in entry:
+            entry["rankable"] = compute_rankable(entry)
+        else:
+            # Still run gate (e.g. NIET BRUIKBAAR in details)
+            if entry.get("rankable") is not False:
+                entry["rankable"] = compute_rankable(entry)
         items.append(entry)
 
     save_shortlist(run_dir, items)
@@ -568,14 +614,7 @@ def shortlist_as_prompt_text(run_dir: Path, max_chars: int = 6000) -> str:
         ms = it.get("match_status") or (it.get("constraints_check") or {}).get("match_status") or "?"
         observed = it.get("observed_at") or it.get("updated_at") or ""
         origin = it.get("origin") or ""
-        rankable = it.get("rankable", True)
-        cc = it.get("constraints_check") or {}
-        has_qsm = any(
-            str(u).startswith("query_state_mismatch")
-            for u in (cc.get("unmatched") or [])
-        )
-        if has_qsm:
-            rankable = False
+        rankable = compute_rankable(it)
         rank_tag = "" if rankable else " | NOT_RANKABLE"
         line = (
             f"{i}. {it.get('name')}"
@@ -614,19 +653,80 @@ def shortlist_as_prompt_text(run_dir: Path, max_chars: int = 6000) -> str:
 
 
 
+def compute_rankable(item: dict[str, Any]) -> bool:
+    """
+    Runtime gate: is this shortlist entry eligible for ranking?
+    Critic must not act as garbage filter — only rank rankable items.
+    Generic signals only (no product-vertical hardcoding).
+    """
+    if not isinstance(item, dict):
+        return False
+    if item.get("rankable") is False:
+        return False
+    cc = item.get("constraints_check") or {}
+    if not isinstance(cc, dict):
+        cc = {}
+    unmatched = [str(u) for u in (cc.get("unmatched") or [])]
+    if any(u.startswith("query_state_mismatch") for u in unmatched):
+        return False
+    # Explicit human/LLM unusable markers in notes/details
+    blob = " ".join(
+        [
+            str(cc.get("notes") or ""),
+            str(item.get("details") or ""),
+            str(item.get("name") or ""),
+        ]
+    ).upper()
+    for marker in (
+        "NIET BRUIKBAAR",
+        "NOT_RANKABLE",
+        "NOT RANKABLE",
+        "NOT USABLE",
+        "NOT_USABLE",
+        "UNUSABLE",
+    ):
+        if marker in blob:
+            return False
+    # Weak auto-harvest without verification and with many unmatched → exclude
+    matched = cc.get("matched") or []
+    if (
+        item.get("origin") == "harvest_invariant"
+        and len(unmatched) >= 2
+        and len(matched) == 0
+    ):
+        return False
+    # Low multi-signal confidence from harvest
+    eav_c = item.get("eav_confidence")
+    if eav_c is not None:
+        try:
+            if float(eav_c) < 0.55:
+                return False
+        except (TypeError, ValueError):
+            pass
+    es = item.get("entity_score")
+    if es is not None:
+        try:
+            if float(es) < 0.45:
+                return False
+        except (TypeError, ValueError):
+            pass
+    # Empty name
+    if not str(item.get("name") or "").strip():
+        return False
+    # Configuration / SKU lines are never rankable top-level candidates
+    if _is_line_item_entity(str(item.get("name") or "")):
+        return False
+    if item.get("is_line_item"):
+        return False
+    return True
+
+
 def filter_rankable_shortlist(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Candidates eligible for report ranking (no structural query_state mismatch)."""
+    """Candidates eligible for report ranking (runtime gate, not critic cleanup)."""
     out: list[dict[str, Any]] = []
     for it in items or []:
-        if not isinstance(it, dict):
-            continue
-        if it.get("rankable") is False:
-            continue
-        cc = it.get("constraints_check") or {}
-        unmatched = cc.get("unmatched") or []
-        if any(str(u).startswith("query_state_mismatch") for u in unmatched):
-            continue
-        out.append(it)
+        if compute_rankable(it):
+            out.append(it)
     return out
 
 # --- Harvest: observation → EAV → candidate (domain-agnostic) ---
@@ -651,11 +751,23 @@ _UI_CHROME_RE = re.compile(
 # Structural non-entity lines (distance-only, filter class labels, pure category chrome)
 _NON_ENTITY_STRUCT_RE = re.compile(
     r"(?:"
-    r"^\\d+[.,]?\\d*\\s*km\\b|"  # distance-only line
-    r"^[·•\\-–—]\\s*|"
-    r"^[A-ZÁÉÍÓÚÄËÏÖÜ]{3,}(?:\\s+[A-ZÁÉÍÓÚÄËÏÖÜ]{2,}){0,2}$|"  # short ALL-CAPS
-    r"^\\W*$"
+    r"^\d+[.,]?\d*\s*km\b|"  # distance-only line
+    r"^[·•\-–—]\s*|"
+    r"^[A-ZÁÉÍÓÚÄËÏÖÜ]{3,}(?:\s+[A-ZÁÉÍÓÚÄËÏÖÜ]{2,}){0,2}$|"  # short ALL-CAPS
+    r"^\W*$"
     r")"
+)
+
+# Occupancy / meal-plan / duration chrome often adjacent to prices on list cards
+_OFFER_META_RE = re.compile(
+    r"(?:"
+    r"\b\d+\s*(persoon|personen|persons?|adults?|volwassenen|kinderen|kids?)\b|"
+    r"\b\d+\s*(dagen|nachten|nights?|days?)\b|"
+    r"\b(all\s*-?\s*inclusive|volpension|halfpension|logies|breakfast only)\b|"
+    r"\bvanaf\s+prijs\b|\bfrom\s+price\b|"
+    r"\b(za|zo|ma|di|wo|do|vr|sat|sun|mon|tue|wed|thu|fri)\b.+\b\d{1,2}\b"
+    r")",
+    re.I,
 )
 # Language-light closed-class tokens (NL/EN/FR/DE mix) — structural, not product-vertical
 _CLOSED_CLASS = frozenset(
@@ -667,12 +779,64 @@ _CLOSED_CLASS = frozenset(
     vanaf vanuit richting inclusief exclusief gratis
     flight hotel package deal offer save bespaar boek book
     heen terug vlucht kamer personen
+    jong oud kinderen kids family familie prachtig heerlijk ultiem
+    dagelijks daily weekly direct naar naar
     """.split()
+)
+
+# Structural marketing / slogan openers (language-light, not product-vertical).
+# Matches experience-copy that sits next to prices on list pages.
+_MARKETING_OPENER_RE = re.compile(
+    r"^(?:"
+    r"ontdek|discover|enjoy|geniet|beleef|experience|"
+    r"perfect|ideaal|ideal|ultiem|ultimate|heerlijk|"
+    r"direct|dagelijks|daily|nu\s+tot|op\s+zoek|"
+    r"activiteiten|activities|entertainment|ontspannen|relax|"
+    r"een\s+\w+\s+(all\s*)?inclusive|all\s*inclusive\s+vakantie|"
+    # Promo calendar openers ("From March 2026…") — structural, not product titles
+    r"vanaf\s+\w+\s+\d{4}|from\s+\w+\s+\d{4}|"
+    r"garantie|guaranteed|gegarandeerd"
+    r")\b",
+    re.I,
+)
+
+# Slogan / USP shape: ends with ! or is pure marketing claim without proper-name shape
+_SLOGAN_SHAPE_RE = re.compile(
+    r"(?:"
+    r"!$"  # trailing bang → almost always USP copy on list cards
+    r"|(?:gegarandeerd|guaranteed|must.?see|unmissable)\b"
+    r"|(?:voor\s+jong\s+en\s+oud|activiteiten\s+voor)\b"
+    r")",
+    re.I,
 )
 
 _FILTER_RANGE_RE = re.compile(
     r"(between|tot\s*€|van\s*€\s*\d|min\s*€|max\s*€|€\s*\d+\s*[-–]\s*€|"
     r"price\s*per\s*\w+\s*between|slider)",
+    re.I,
+)
+
+# Configuration / SKU / room-line under a product — not a top-level offer entity.
+# Structural (quantity × unit, room/cabin/seat config), not product-vertical word lists.
+_LINE_ITEM_RE = re.compile(
+    r"(?:"
+    r"^\s*\d+\s*[×xX]\s*"  # "1 × 2-persoonskamer", "2 x Double"
+    r"|\b\d+\s*[×xX]\s*\d+\s*-?\s*(persoons?|personen|persons?|adults?)\b"
+    r"|\b(standaard|standard|type\s*\d+)\s*(kamer|room|cabin|suite)?\b.*\b(max\s*\d+|geschikt)\b"
+    r"|\b(kamer|room|cabin)\s*(type|config|keuze|selection)\b"
+    r"|\b(prijsberekening|price\s*calculation|room\s*only)\b"
+    r")",
+    re.I,
+)
+
+# Generic amenity / transfer chrome often mistaken for product titles next to prices
+_AMENITY_CHROME_RE = re.compile(
+    r"^(?:"
+    r"luchthaven\s*transfer|airport\s*transfer|heen-?\s*en\s*terug|"
+    r"rechtstreekse\s*vlucht|direct\s*flight|inclusief\s*vlucht|"
+    r"boek\s*nu|book\s*now|betaal\s*later|pay\s*later|"
+    r"enkel\s*kamer|single\s*room|double\s*room"
+    r")\b",
     re.I,
 )
 
@@ -686,6 +850,79 @@ def _split_extract_lines(text: str) -> list[str]:
         else:
             expanded.append(ln)
     return expanded
+
+
+def _is_line_item_entity(name: str) -> bool:
+    """
+    True when the string looks like a configuration/SKU under a product,
+    not a top-level offer (e.g. '1 × 2-persoonskamer Standaard').
+    Domain-agnostic structural patterns only.
+    """
+    s = (name or "").strip()
+    if not s:
+        return True
+    if _LINE_ITEM_RE.search(s):
+        return True
+    # Leading quantity marker without a multi-token proper name
+    if re.match(r"^\d+\s*[×xX]\s*", s):
+        return True
+    return False
+
+
+def _cluster_lines(lines: list[str]) -> list[list[str]]:
+    """
+    Structure-aware blocks for candidate extraction.
+
+    Heuristic (generic, not card-only):
+    - Start a new cluster when a high-scoring title-like line appears after a price
+      or after a short amenity/chrome run.
+    - Keep price + nearby titles in the same cluster so pairing stays local.
+
+    Cards/tables/lists all benefit from local pairing; this is one strategy inside
+    structure-aware extraction, not a claim that every site uses cards.
+    """
+    if not lines:
+        return []
+    clusters: list[list[str]] = []
+    current: list[str] = []
+    last_had_price = False
+
+    for ln in lines:
+        es = _entity_score(ln)
+        has_price = bool(_AMOUNT_RE.search(ln))
+        is_chrome = bool(
+            _UI_CHROME_RE.search(ln)
+            or _AMENITY_CHROME_RE.search(ln)
+            or _is_line_item_entity(ln)
+        )
+
+        # Boundary: strong title after we already saw a price in this cluster
+        if (
+            current
+            and last_had_price
+            and es >= 0.55
+            and not has_price
+            and not is_chrome
+            and len(current) >= 2
+        ):
+            clusters.append(current)
+            current = [ln]
+            last_had_price = False
+            continue
+
+        current.append(ln)
+        if has_price:
+            last_had_price = True
+
+        # Soft cap: very long clusters → split after price+tail
+        if last_had_price and len(current) >= 12:
+            clusters.append(current)
+            current = []
+            last_had_price = False
+
+    if current:
+        clusters.append(current)
+    return clusters if clusters else [lines]
 
 
 def _classify_amount_role(line: str, signed_prefix: str, value: float) -> str:
@@ -712,25 +949,79 @@ def _classify_amount_role(line: str, signed_prefix: str, value: float) -> str:
     return "primary"
 
 
+def _marketing_penalty(line: str) -> float:
+    """
+    0–1 penalty: structural cues that a line is marketing/slogan copy, not a product name.
+    Domain-agnostic (no vertical product vocabulary).
+    """
+    s = (line or "").strip()
+    if not s:
+        return 1.0
+    pen = 0.0
+    if _MARKETING_OPENER_RE.search(s):
+        pen += 0.45
+    if _SLOGAN_SHAPE_RE.search(s):
+        pen += 0.5
+    words = [w for w in re.split(r"\s+", s) if w]
+    norm = [re.sub(r"[^\w]", "", w).lower() for w in words]
+    norm = [w for w in norm if w]
+    if norm:
+        closed = sum(1 for w in norm if w in _CLOSED_CLASS)
+        ratio = closed / len(norm)
+        if ratio >= 0.45:
+            pen += 0.35
+        elif ratio >= 0.3:
+            pen += 0.2
+    # Preposition-heavy short phrases ("X voor Y en Z") without multi-cap names
+    if re.search(r"\b(voor|van|met|aan|voor|for|with|from)\b", s, re.I):
+        caps = sum(1 for w in words if w[:1].isupper() and len(w) > 2 and not w.isupper())
+        if caps < 2:
+            pen += 0.25
+    # Sentence-like: comma or multiple clauses
+    if s.count(",") >= 1 and len(words) >= 5:
+        pen += 0.15
+    # All-lowercase multi-word line is rarely a product title on commercial list pages
+    if words and len(words) >= 3 and not any(w[:1].isupper() and len(w) > 2 for w in words):
+        pen += 0.2
+    return max(0.0, min(1.0, pen))
+
+
 def _entity_score(line: str) -> float:
     """
     Structural likelihood that a line is a product/entity title (0–1).
-    Domain-agnostic: length, letters, word count, capitalization — not vertical keywords.
+    Multi-signal, domain-agnostic: length, caps, closed-class, marketing penalty.
     """
     s = (line or "").strip()
     if len(s) < 4 or len(s) > 100:
         return 0.0
     if _UI_CHROME_RE.search(s):
         return 0.0
+    if _is_line_item_entity(s):
+        return 0.08  # config/SKU under a product — never top-level
+    if _AMENITY_CHROME_RE.search(s):
+        return 0.1
     if _NON_ENTITY_STRUCT_RE.search(s):
         return 0.05
     if re.match(r"^[\d€$£.,+\-\s]+$", s):
         return 0.0
     if _AMOUNT_RE.search(s) and len(s) < 25:
         return 0.15  # mostly a price line
+    # Meal/occupancy/duration chrome next to prices — not a product title
+    if _OFFER_META_RE.search(s) and len(s) < 80:
+        # Pure meta line (only meal/pax/duration words) → never a product entity
+        content_words = [
+            w for w in re.split(r"\s+", s)
+            if re.sub(r"\W", "", w) and re.sub(r"\W", "", w).lower() not in _CLOSED_CLASS
+        ]
+        meta_only = all(
+            _OFFER_META_RE.search(w) or w.lower() in ("ultra", "plus", "premium", "-", "–")
+            or re.match(r"^\d+$", w)
+            for w in content_words
+        ) if content_words else True
+        if meta_only or len(s) < 40:
+            return 0.12
     # Distance / map chrome embedded in line (generic)
     if re.search(r"\d+[.,]?\d*\s*km\b", s, re.I) and len(s) < 60:
-        # Location crumb, not a product title
         if not re.search(r"[A-Za-zÁÉÍÓÚ]{4,}.+[A-Za-zÁÉÍÓÚ]{4,}", s):
             return 0.1
     letters = sum(1 for c in s if c.isalpha())
@@ -739,45 +1030,163 @@ def _entity_score(line: str) -> float:
     words = [w for w in re.split(r"\s+", s) if w]
     if len(words) > 14:
         return 0.2
-    # Mostly very short tokens → UI fragment
     short_tok = sum(1 for w in words if len(re.sub(r"\W", "", w)) <= 3)
     if words and short_tok / len(words) >= 0.6:
         return 0.15
-    # High closed-class ratio → instruction / chrome / marketing line, not a product title
     norm_words = [re.sub(r"[^\w]", "", w).lower() for w in words]
     norm_words = [w for w in norm_words if w]
     if norm_words:
         closed = sum(1 for w in norm_words if w in _CLOSED_CLASS)
         if closed / len(norm_words) >= 0.5:
-            return 0.2
+            return 0.15
         if closed >= 1 and len(norm_words) <= 3:
-            return 0.25
+            return 0.2
     score = 0.35
-    # Multi-word titles score higher
     if len(words) >= 2:
         score += 0.2
     if len(words) >= 3:
         score += 0.1
-    # Capitalized tokens (Latin scripts) — weak but domain-free signal
     caps = sum(1 for w in words if w[:1].isupper() and len(w) > 1)
     if caps >= 2:
         score += 0.2
     elif caps == 1 and len(words) >= 2:
         score += 0.1
-    # Single short token → weak entity
     if len(words) == 1 and letters < 10:
         score -= 0.25
-    # ALL-CAPS multi-word labels (filter headings)
     alpha_words = [w for w in words if any(c.isalpha() for c in w)]
     if alpha_words and all(w.isupper() for w in alpha_words if len(w) > 2):
         score -= 0.35
-    # Line is mostly digits/symbols
     if letters / max(len(s), 1) < 0.4:
         score -= 0.2
-    # Middle-dot location crumbs (City·distance)
     if "·" in s and re.search(r"km", s, re.I):
         score -= 0.35
+    # Multi-signal: subtract marketing/slogan penalty
+    score -= 0.7 * _marketing_penalty(s)
     return max(0.0, min(1.0, score))
+
+
+def _url_detail_bonus(url: str) -> float:
+    """Higher when URL looks like a detail/product page vs search/list."""
+    low = (url or "").lower()
+    if not low:
+        return 0.0
+    listish = any(
+        x in low
+        for x in (
+            "/zoeken",
+            "/search",
+            "/results",
+            "/vakanties?",
+            "sort=",
+            "offset=",
+            "limit=",
+            "pageType=search",
+            "searchMode=",
+        )
+    )
+    if listish:
+        return 0.0
+    path = low.split("?")[0]
+    segments = [p for p in path.split("/") if p and p not in ("www", "http:", "https:")]
+    # Host + several path segments often = detail
+    if len(segments) >= 4:
+        return 0.15
+    if len(segments) >= 3:
+        return 0.08
+    return 0.0
+
+
+def _pairing_confidence(
+    *,
+    entity_score: float,
+    role: str,
+    value: float,
+    entity: str,
+    source_url: str,
+) -> float:
+    """
+    Multi-signal confidence that (entity, amount) is a real offer pair.
+    Not a single regex rule.
+    """
+    conf = 0.15
+    if entity_score >= 0.65:
+        conf += 0.4
+    elif entity_score >= 0.5:
+        conf += 0.25
+    elif entity_score >= 0.35:
+        conf += 0.1
+    else:
+        conf -= 0.15
+    if role == "primary":
+        conf += 0.25
+    elif role == "adjustment":
+        conf -= 0.3
+    elif role in ("filter_ui", "noise"):
+        conf -= 0.4
+    if role == "primary" and 30 <= value <= 20000:
+        conf += 0.1
+    conf += _url_detail_bonus(source_url)
+    # Marketing leftover on entity → cut confidence hard
+    conf -= 0.35 * _marketing_penalty(entity or "")
+    return max(0.0, min(1.0, conf))
+
+
+def _parse_amount(raw_num: str) -> float | None:
+    """
+    Parse currency amounts with EU/US thousand separators.
+    '2.328' / '2 328' → 2328; '2.328,50' → 2328.50; '2,328.50' → 2328.50.
+    """
+    try:
+        s = (raw_num or "").replace("\xa0", "").replace(" ", "").strip()
+        if not s:
+            return None
+        if "," in s and "." in s:
+            if s.rfind(",") > s.rfind("."):
+                return float(s.replace(".", "").replace(",", "."))
+            return float(s.replace(",", ""))
+        if "," in s:
+            parts = s.split(",")
+            if len(parts) == 2 and len(parts[1]) == 3 and parts[0].isdigit():
+                return float(parts[0] + parts[1])
+            return float(s.replace(",", "."))
+        if "." in s:
+            parts = s.split(".")
+            if (
+                len(parts) == 2
+                and len(parts[1]) == 3
+                and parts[0].isdigit()
+                and parts[1].isdigit()
+            ):
+                return float(parts[0] + parts[1])
+            if len(parts) > 2 and all(p.isdigit() for p in parts):
+                return float("".join(parts))
+            return float(s)
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _best_entity_in_window(window_lines: list[str]) -> tuple[str, float]:
+    """Highest-scoring non-line-item title in a local cluster window."""
+    best_name = ""
+    best_es = 0.0
+    best_key: tuple[float, int, int] = (0.0, 0, 0)
+    for cand in window_lines:
+        cand = cand.strip()
+        if not cand or _is_line_item_entity(cand):
+            continue
+        if _AMENITY_CHROME_RE.search(cand):
+            continue
+        es = _entity_score(cand)
+        if es < 0.35:
+            continue
+        words_n = len([w for w in cand.split() if w])
+        key = (es, words_n, len(cand))
+        if key > best_key:
+            best_key = key
+            best_es = es
+            best_name = cand
+    return best_name, best_es
 
 
 def extract_eav_observations(
@@ -789,60 +1198,53 @@ def extract_eav_observations(
 ) -> list[dict[str, Any]]:
     """
     Build entity–attribute–value observations with confidence.
-    Does not invent entities; pairs nearby high-scoring title lines with amounts.
+
+    Structure-aware: lines are grouped into clusters; entity↔price pairing prefers
+    the same cluster (local relationship), not arbitrary proximity across the page.
+    Line-item / SKU strings are never chosen as top-level entities.
     """
     lines = _split_extract_lines(text)
+    clusters = _cluster_lines(lines)
     obs: list[dict[str, Any]] = []
 
-    for i, ln in enumerate(lines):
+    # Flat index → (cluster_idx, offset_in_cluster) for window evidence
+    flat: list[tuple[int, int, str]] = []
+    for ci, cluster in enumerate(clusters):
+        for li, ln in enumerate(cluster):
+            flat.append((ci, li, ln))
+
+    for fi, (ci, li, ln) in enumerate(flat):
         for m in _AMOUNT_RE.finditer(ln):
             sign, raw_num = m.group(1) or "", m.group(2)
-            try:
-                value = float(raw_num.replace(" ", "").replace(".", "").replace(",", "."))
-                # Heuristic: if original had thousand dots like 1.104,00 — best effort
-                if "," in raw_num and "." in raw_num:
-                    value = float(raw_num.replace(".", "").replace(",", "."))
-                elif "," in raw_num:
-                    value = float(raw_num.replace(",", "."))
-                else:
-                    value = float(raw_num.replace(" ", ""))
-            except ValueError:
+            value = _parse_amount(raw_num)
+            if value is None:
                 continue
             role = _classify_amount_role(ln, sign, value)
             price_s = f"{'−' if sign in ('-', '−', '–') else ''}€{raw_num.replace(' ', '')}"
 
-            # Best entity upward: highest score; ties → more words / longer title
-            best_name = ""
-            best_es = 0.0
-            best_key: tuple[float, int, int] = (0.0, 0, 0)
-            for j in range(i - 1, max(-1, i - 8), -1):
-                cand = lines[j].strip()
-                es = _entity_score(cand)
-                words_n = len([w for w in cand.split() if w])
-                key = (es, words_n, len(cand))
-                if key > best_key:
-                    best_key = key
-                    best_es = es
-                    best_name = cand
+            # Prefer entity inside the same cluster (structure-local relationship)
+            cluster = clusters[ci]
+            # Window: lines before the price line within cluster, then fallback to prior lines
+            before = cluster[:li]
+            best_name, best_es = _best_entity_in_window(before)
+            if not best_name:
+                # Fallback: a few lines before in flat order (still local)
+                prior = [flat[j][2] for j in range(max(0, fi - 6), fi)]
+                best_name, best_es = _best_entity_in_window(prior)
 
-            # Pairing confidence
-            conf = 0.2
-            if best_es >= 0.5:
-                conf += 0.35
-            elif best_es >= 0.35:
-                conf += 0.15
-            if role == "primary":
-                conf += 0.3
-            elif role == "adjustment":
-                conf -= 0.25
-            elif role in ("filter_ui", "noise"):
-                conf -= 0.35
-            # Prefer amounts not tiny relative to typical offers (generic band)
-            if role == "primary" and 30 <= value <= 20000:
-                conf += 0.1
-            conf = max(0.0, min(1.0, conf))
+            conf = _pairing_confidence(
+                entity_score=best_es,
+                role=role,
+                value=value,
+                entity=best_name,
+                source_url=source_url or "",
+            )
+            # Penalize if we still somehow paired a line-item
+            if best_name and _is_line_item_entity(best_name):
+                conf = min(conf, 0.2)
+                best_es = min(best_es, 0.1)
 
-            window = " | ".join(lines[max(0, i - 3) : i + 2])
+            window = " | ".join(cluster[max(0, li - 3) : li + 2])
             obs.append(
                 {
                     "entity": best_name[:120] if best_name else "",
@@ -852,6 +1254,9 @@ def extract_eav_observations(
                     "value_num": value,
                     "amount_role": role,
                     "confidence": round(conf, 3),
+                    "marketing_penalty": round(_marketing_penalty(best_name), 3),
+                    "is_line_item": bool(best_name and _is_line_item_entity(best_name)),
+                    "cluster_size": len(cluster),
                     "source_url": (source_url or "")[:500],
                     "raw_evidence": window[:400],
                 }
@@ -867,9 +1272,8 @@ def extract_eav_observations(
             if not m:
                 continue
             sign, raw_num = m.group(1) or "", m.group(2)
-            try:
-                value = float(re.sub(r"[^\d.]", "", raw_num.replace(",", ".")) or "0")
-            except ValueError:
+            value = _parse_amount(raw_num)
+            if value is None:
                 continue
             role = _classify_amount_role(phs, sign, value)
             obs.append(
@@ -881,6 +1285,7 @@ def extract_eav_observations(
                     "value_num": value,
                     "amount_role": role,
                     "confidence": 0.15 if role != "primary" else 0.25,
+                    "is_line_item": False,
                     "source_url": (source_url or "")[:500],
                     "raw_evidence": phs[:200],
                 }
@@ -929,14 +1334,22 @@ def harvest_invariant_from_browser_result(
     *,
     session: str = "",
     constraint_mismatches: list[str] | None = None,
-    candidate_confidence_min: float = 0.62,
+    candidate_confidence_min: float = 0.72,
+    entity_score_min: float = 0.62,
     max_auto_candidates_per_page: int = 5,
 ) -> dict[str, Any]:
     """
-    Runtime harvest (research only):
-    1) Write all EAV rows to observations.jsonl (never lost).
-    2) Promote to shortlist only high-confidence primary entity↔price pairs.
-    3) Optional constraint_mismatches → candidate not rankable as full match.
+    Runtime harvest (retrieval only) — pure code, no LLM:
+
+    1) Extract EAV observations from page text (all rows → observations.jsonl).
+    2) Promote to shortlist ONLY when:
+       - amount_role == primary
+       - entity looks like a product title (entity_score / marketing gates)
+       - confidence high enough
+       - NO structural query-state mismatches on this page
+    3) Mismatches / slogans / low-conf stay in observations only — never shortlist.
+
+    Shortlist is the evidence buffer for ranking; observations are the raw layer.
     """
     if not isinstance(result, dict):
         return {"ok": False, "observations": 0, "added": 0, "updated": 0, "candidates": []}
@@ -970,21 +1383,41 @@ def harvest_invariant_from_browser_result(
         )
         n_obs += 1
 
-    # Promote: primary amount + strong entity + confidence gate (observations still keep all)
+    mismatches = [str(x) for x in (constraint_mismatches or []) if x]
+    # Structural query mismatch → learn from observations only; never pollute shortlist
+    if mismatches:
+        return {
+            "ok": True,
+            "observations": n_obs,
+            "added": 0,
+            "updated": 0,
+            "count": len(load_shortlist(run_dir)),
+            "candidates": [],
+            "promoted": 0,
+            "skipped_low_conf": n_obs,
+            "skipped_reason": "query_state_mismatch",
+            "mismatches": mismatches[:6],
+        }
+
+    # Promote: primary + strong multi-signal confidence (observations still keep all).
+    # Never promote line-item / SKU / room-config strings as top-level candidates.
     promotable = [
         e
         for e in eavs
         if e.get("amount_role") == "primary"
         and (e.get("entity") or "").strip()
-        and float(e.get("entity_score") or 0) >= 0.55
+        and not e.get("is_line_item")
+        and not _is_line_item_entity(str(e.get("entity") or ""))
+        and float(e.get("entity_score") or 0) >= entity_score_min
         and float(e.get("confidence") or 0) >= candidate_confidence_min
+        and float(e.get("marketing_penalty") or 0) < 0.30
         and len((e.get("entity") or "").split()) >= 2
+        and not _SLOGAN_SHAPE_RE.search(str(e.get("entity") or ""))
+        and not _AMENITY_CHROME_RE.search(str(e.get("entity") or ""))
     ]
-    # Prefer higher confidence, cap per page
     promotable.sort(key=lambda x: float(x.get("confidence") or 0), reverse=True)
     promotable = promotable[:max_auto_candidates_per_page]
 
-    mismatches = [str(x) for x in (constraint_mismatches or []) if x]
     added = 0
     updated = 0
     entries: list[dict[str, Any]] = []
@@ -993,22 +1426,14 @@ def harvest_invariant_from_browser_result(
         unknown = [
             "task hard criteria not fully checked by runtime harvest",
         ]
-        unmatched: list[str] = []
-        match_status = "observed_only"
-        if mismatches:
-            # Generic: param rewrites → not fully matched to requested query state
-            match_status = "partial"
-            unmatched = [f"query_state_mismatch: {m}" for m in mismatches[:6]]
-            unknown.append(
-                "page may not reflect requested filters (see unmatched query_state_mismatch)"
-            )
-
         evidence = {
             "observed": {
                 "entity": eav.get("entity"),
                 "value": eav.get("value"),
                 "amount_role": eav.get("amount_role"),
                 "confidence": eav.get("confidence"),
+                "entity_score": eav.get("entity_score"),
+                "marketing_penalty": eav.get("marketing_penalty"),
                 "source_url": eav.get("source_url") or url,
                 "raw_evidence": eav.get("raw_evidence") or "",
             },
@@ -1025,9 +1450,9 @@ def harvest_invariant_from_browser_result(
             ],
             session=session,
             constraints_check={
-                "match_status": match_status,
+                "match_status": "observed_only",
                 "matched": [],
-                "unmatched": unmatched,
+                "unmatched": [],
                 "unknown": unknown,
                 "notes": "Runtime EAV harvest (not LLM). Rank only after constraint verification.",
             },
@@ -1035,9 +1460,9 @@ def harvest_invariant_from_browser_result(
                 "origin": "harvest_invariant",
                 "evidence": evidence,
                 "eav_confidence": eav.get("confidence"),
+                "entity_score": eav.get("entity_score"),
                 "amount_role": eav.get("amount_role"),
-                # Structural query mismatch → keep for transparency, exclude from ranking
-                "rankable": not bool(mismatches),
+                "rankable": True,  # no mismatch; still observed_only until phase-2 verifies
             },
         )
         if res.get("ok"):
@@ -1054,7 +1479,12 @@ def harvest_invariant_from_browser_result(
         "updated": updated,
         "count": len(load_shortlist(run_dir)),
         "candidates": [
-            {"name": e.get("name"), "price": e.get("price"), "confidence": e.get("eav_confidence")}
+            {
+                "name": e.get("name"),
+                "price": e.get("price"),
+                "confidence": e.get("eav_confidence"),
+                "rankable": e.get("rankable"),
+            }
             for e in entries
         ],
         "promoted": len(promotable),

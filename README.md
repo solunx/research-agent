@@ -4,7 +4,7 @@ General-purpose local research agent (Ollama + tools + Docker).
 
 ## How it works (start here)
 
-- **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)** — recon vs research; **navigation · semantics · harvest** capability model
+- **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)** — recon vs **retrieval**; **navigation · semantics · harvest**
 - **[docs/LEARNING_LOG.md](docs/LEARNING_LOG.md)** — what we tested, what worked, what we abandoned
 
 ```bash
@@ -12,12 +12,13 @@ General-purpose local research agent (Ollama + tools + Docker).
 docker compose run --rm research-agent python agent.py --planned \
   --run-kind recon --task tasks/recon_packages_hosts.md --browser-backend playwright
 
-# Real task delivery (default) — uses global memory first
+# Task delivery / web retrieval (default) — memory first
 docker compose run --rm research-agent python agent.py --planned \
-  --run-kind research --task tasks/compare_packages_dec2026.md --browser-backend playwright
+  --run-kind retrieval --task tasks/compare_packages_dec2026.md --browser-backend playwright
+# alias: --run-kind research
 ```
 
-**Recon** learns how hosts work (capability model). **Research** answers the user task.  
+**Recon** learns how hosts work. **Retrieval** gathers evidence for the user task (whole system = *research agent*).  
 `tasks/recon_*.md` files are **dev helpers**; core logic stays domain-agnostic.
 
 ## Phases implemented

@@ -47,6 +47,7 @@ from storage import (
 )
 from tools import TOOL_DEFINITIONS, execute_tool, tool_definitions_for_backend
 from urllib.parse import urlparse
+from inline_recon import run_inline_recon_burst
 
 
 MAX_TOOL_RESULT_CHARS = 2500
@@ -126,8 +127,10 @@ def browser_backend_prompt_addon(backend: str) -> str:
 
 
 def run_kind_prompt_addon(run_kind: str) -> str:
-    """Hard separation: recon/learning vs real research (enforced in code too)."""
-    kind = (run_kind or "research").strip().lower()
+    """Hard separation: recon/learning vs retrieval/delivery (enforced in code too)."""
+    kind = (run_kind or "retrieval").strip().lower()
+    if kind == "research":
+        kind = "retrieval"
     if kind == "recon":
         return (
             "\n### RUN KIND: RECON / LEARNING (not a research delivery)\n"
@@ -158,18 +161,21 @@ def run_kind_prompt_addon(run_kind: str) -> str:
             "(navigation / semantics / harvest / failures). No product ranking.\n"
         )
     return (
-        "\n### RUN KIND: RESEARCH / RETRIEVE (task delivery)\n"
-        "Fulfill the user task. Prefer global memory: navigation + semantics + harvest "
+        "\n### RUN KIND: RETRIEVAL (task delivery; alias: research)\n"
+        "This is the **web retrieval** phase of the research agent: find and structure "
+        "evidence for the user task. Prefer global memory: navigation + semantics + harvest "
         "(recipes, param_warnings, URL patterns) from prior recon.\n"
         "\n"
-        "**Harvest (runtime + you):**\n"
-        "- Runtime writes **observations** (raw EAV signals) and only **promotes** high-confidence "
-        "entity↔primary-price pairs to the shortlist. Adjustments/deltas/filter amounts stay observations.\n"
-        "- Enrich promoted rows with `add_to_shortlist` + constraints_check. "
+        "**Harvest (runtime code, not you):**\n"
+        "- Runtime writes **all** EAV signals to observations.jsonl.\n"
+        "- Runtime promotes to shortlist ONLY high-confidence product-title↔primary-price pairs "
+        "with no query-state mismatch. Slogans, adjustments, filter UI, and mismatched pages "
+        "stay in observations — never in the shortlist.\n"
+        "- You may enrich real candidates with `add_to_shortlist` + constraints_check. "
         "Never invent entities; never upgrade to full match without evidence.\n"
-        "- Rank from shortlist after constraint honesty — not from raw observations.\n"
+        "- Rank only from shortlist after constraint honesty.\n"
         "\n"
-        "**Production stop boundary (no mini-recon):**\n"
+        "**Production stop boundary (no mini-recon in retrieval):**\n"
         "- Deep-link → list → harvest once → next host or RESEARCH_COMPLETE.\n"
         "- Query-param rewrite vs request, UI no-ops, or empty after valid deep-link: "
         "`needs_recon` + **stop form clicks** on that host; move on.\n"
@@ -812,9 +818,11 @@ def run_session(
     One tool-using research loop with its own message list (fresh context).
     Notes/sources append to the shared run_dir / sources list.
     Returns {status, stop_reason, final_content, messages}.
-    run_kind: "research" (task delivery) | "recon" (learn hosts only; no shortlist).
+    run_kind: "retrieval"/"research" (task delivery) | "recon" (learn hosts only; no shortlist).
     """
-    run_kind = (run_kind or "research").strip().lower()
+    run_kind = (run_kind or "retrieval").strip().lower()
+    if run_kind == "research":
+        run_kind = "retrieval"
     is_recon = run_kind == "recon"
     tools_for_llm = active_tools if active_tools is not None else TOOL_DEFINITIONS
     messages: list[dict[str, Any]] = [
@@ -839,6 +847,8 @@ def run_session(
     host_browser_use_count: dict[str, int] = {}  # tier-3 expensive agent calls
     host_browser_use_blocked: set[str] = set()  # after timeout or budget
     host_blocked: set[str] = set()
+    # Inline recon: at most one learning burst per host per retrieval session
+    inline_recon_done: set[str] = set()
     # Hosts that already contributed shortlist items — get one softer abandon path
     host_shortlist_hits: set[str] = set()
     host_url_param_grace: set[str] = set()  # one extra browser_open allowed after no-ops
@@ -1673,7 +1683,7 @@ def run_session(
                                     f"{h_mm} — host abandoned (no price signals)"
                                 )
                             elif h_mm:
-                                # Research: structural filter rewrite → one harvest, then stop UI
+                                # Retrieval: structural filter rewrite → one harvest, then stop UI
                                 try:
                                     memory.mark_needs_recon(
                                         h_mm,
@@ -1690,15 +1700,58 @@ def run_session(
                                 )
                                 print(
                                     f"[agent] [{session_label}] Constraint mismatch on "
-                                    f"{h_mm} — needs_recon + host done for research "
+                                    f"{h_mm} — needs_recon + host done for retrieval "
                                     f"(no further UI; harvest once if prices visible)"
                                 )
                                 result["advice"] = (
                                     f"Structural query mismatch on {h_mm}. "
-                                    "Do not click forms to 'fix' filters in research. "
+                                    "Do not click forms to 'fix' filters in retrieval. "
                                     "Host marked needs_recon. Use auto-candidates if any, "
                                     "then move to another primary source."
                                 )
+                                # Inline recon skeleton: separate process, memory-only,
+                                # invisible to retrieval LLM (no messages appended).
+                                if h_mm not in inline_recon_done:
+                                    inline_recon_done.add(h_mm)
+                                    try:
+
+                                        def _browser_open_probe(u: str) -> dict:
+                                            res, _ms = execute_tool(
+                                                "browser_open",
+                                                {"url": u},
+                                                config,
+                                            )
+                                            return res if isinstance(res, dict) else {"error": str(res)}
+
+                                        ir = run_inline_recon_burst(
+                                            host=h_mm,
+                                            memory=memory,
+                                            browser_open_fn=_browser_open_probe,
+                                            max_probes=2,
+                                            session_label=f"inline_recon:{h_mm}",
+                                        )
+                                        counters["inline_recon"] = (
+                                            counters.get("inline_recon", 0) + 1
+                                        )
+                                        print(
+                                            f"[agent] [{session_label}] Inline recon "
+                                            f"{h_mm}: probes={ir.get('probes')} "
+                                            f"cleared={ir.get('cleared_needs_recon')} "
+                                            f"(memory only; shortlist untouched)"
+                                        )
+                                        # One retrieval retry allowed after recon learned
+                                        if ir.get("cleared_needs_recon"):
+                                            host_blocked.discard(h_mm)
+                                            result["advice"] = (
+                                                f"Inline recon updated memory for {h_mm}. "
+                                                "You may retry ONE deep-link using learned "
+                                                "patterns; still no form thrash."
+                                            )
+                                    except Exception as ir_err:
+                                        print(
+                                            f"[agent] [{session_label}] Inline recon "
+                                            f"skipped: {ir_err}"
+                                        )
 
                     # Harvest: observations always; shortlist only high-conf primary EAV
                     if (
@@ -2007,12 +2060,13 @@ def main() -> int:
     )
     parser.add_argument(
         "--run-kind",
-        choices=("research", "recon"),
-        default="research",
+        choices=("retrieval", "research", "recon"),
+        default="retrieval",
         help=(
-            "research = fulfill the task (shortlist + report). "
+            "retrieval (preferred) / research (alias) = fulfill the task "
+            "(shortlist + report) using memory-first web retrieval. "
             "recon = learn host mechanisms only (no shortlist; nothing enters ranking). "
-            "Use recon first on new hosts, then research with the same task file."
+            "Use recon first on new hosts, then retrieval with the same task file."
         ),
     )
     args = parser.parse_args()
@@ -2023,7 +2077,10 @@ def main() -> int:
     task_text = load_task(args.task)
     verbose = args.verbose or bool(config.get("verbose"))
     planned = bool(args.planned)
-    run_kind = str(args.run_kind or "research").strip().lower()
+    # Normalize: research is legacy alias for retrieval (delivery run)
+    run_kind = str(args.run_kind or "retrieval").strip().lower()
+    if run_kind == "research":
+        run_kind = "retrieval"
     browser_backend = (
         args.browser_backend
         or ((config.get("tools") or {}).get("browser") or {}).get("backend")
@@ -2224,11 +2281,31 @@ def main() -> int:
                 print("[agent] Recon report from host_learnings (shortlist skipped)")
             else:
                 forced = try_forced_report(client, run_dir, task_text, system_prompt)
+                rankable_n = len(filter_rankable_shortlist(load_shortlist(run_dir)))
                 if forced:
                     final_report = forced
-                    status = "completed" if stop_reason is None else f"{stop_reason}+forced_report"
+                    # Failure taxonomy: backend crash ≠ research failure when we have deliverable
+                    if stop_reason is None:
+                        status = "RESEARCH_COMPLETE" if rankable_n else "completed"
+                    elif stop_reason == "llm_error":
+                        status = (
+                            "PARTIAL_SUCCESS"
+                            if rankable_n > 0
+                            else "RUN_FAILED_LLM+forced_report"
+                        )
+                    elif stop_reason == "limit":
+                        status = (
+                            "PARTIAL_SUCCESS"
+                            if rankable_n > 0
+                            else f"{stop_reason}+forced_report"
+                        )
+                    else:
+                        status = f"{stop_reason}+forced_report"
                 else:
-                    status = status if status != "running" else "error"
+                    if stop_reason == "llm_error":
+                        status = "RUN_FAILED_LLM"
+                    else:
+                        status = status if status != "running" else "error"
                     if stop_reason is None:
                         stop_reason = "critic_failed"
         else:
@@ -2259,8 +2336,19 @@ def main() -> int:
                 forced = try_forced_report(client, run_dir, task_text, system_prompt)
                 if forced:
                     final_report = forced
-                    if status != "completed":
-                        status = status + "+forced_report"
+                    rankable_n = len(filter_rankable_shortlist(load_shortlist(run_dir)))
+                    if stop_reason == "llm_error":
+                        status = (
+                            "PARTIAL_SUCCESS"
+                            if rankable_n > 0
+                            else "RUN_FAILED_LLM+forced_report"
+                        )
+                    elif status != "completed":
+                        status = (
+                            "PARTIAL_SUCCESS"
+                            if rankable_n > 0
+                            else f"{status}+forced_report"
+                        )
 
     except KeyboardInterrupt:
         print("\n[agent] Interrupted by user")
@@ -2342,6 +2430,7 @@ def main() -> int:
         "sources_count": len(sources),
         "notes_count": counters["notes_count"],
         "shortlist_count": shortlist_n,
+        "rankable_count": len(filter_rankable_shortlist(load_shortlist(run_dir))),
         "shortlist_adds": useful,
         "constraint_mismatches": counters.get("constraint_mismatches", 0),
         "sessions_skipped": counters.get("sessions_skipped", 0),
@@ -2350,6 +2439,15 @@ def main() -> int:
         "useful_actions": useful,
         "useful_action_ratio": (
             round(useful / tool_calls_n, 3) if tool_calls_n else 0.0
+        ),
+        # candidate_precision ≈ rankable / shortlist (1.0 = no junk in shortlist)
+        "candidate_precision": (
+            round(
+                len(filter_rankable_shortlist(load_shortlist(run_dir))) / shortlist_n,
+                3,
+            )
+            if shortlist_n
+            else None
         ),
         "host_domains_touched": learnings.get("domains") or [],
         "human_setup_candidates": learnings.get("human_setup_candidates") or [],

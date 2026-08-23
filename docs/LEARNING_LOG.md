@@ -61,6 +61,21 @@ Format per entry: **date → hypothesis → result → decision**.
 
 ---
 
+## 2026-08-22 — Multi-signal candidate gate + rankable runtime (P0)
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| Single proper-noun rule enough | Would miss real names; slogans still scored high | **Multi-signal**: entity_score + marketing_penalty + offer-meta chrome + URL depth + pairing confidence |
+| Critic filters shortlist junk | Forced report ranked 5 items though 4 were NIET BRUIKBAAR | **Rankable gate before critic**; critic ranks only rankable |
+| LLM update overwrites rankable=False | Merge dropped harvest rankable | Sticky rankable=False on shortlist merge |
+| useful_ratio optimizes research quality | Misleading | Log **candidate_precision** = rankable/shortlist; status taxonomy PARTIAL_SUCCESS / RUN_FAILED_LLM |
+
+**Code shipped:** `_marketing_penalty`, `_OFFER_META_RE`, `_pairing_confidence`; promote thresholds conf≥0.70 entity≥0.58 mp<0.45; `compute_rankable` + sticky merge; metadata `rankable_count` / `candidate_precision`; status `PARTIAL_SUCCESS` when shortlist survives LLM crash.
+
+**Not in this iteration:** Corendon list-card extract; Task Definition Agent; new browser tiers.
+
+---
+
 ## Browser backends (A/B)
 
 | Backend | Finding | Status |
@@ -155,3 +170,50 @@ Format per entry: **date → hypothesis → result → decision**.
 ### Not done (intentionally)
 - Full robots.txt engine / whitelist-only mode.
 - Site-specific product word lists.
+
+---
+
+## 2026-08-23 — Retrieval naming + shortlist purity + harvest gates
+
+### Naming
+- Whole system = **research agent**.
+- Delivery web phase = **retrieval** (`--run-kind retrieval`; `research` kept as alias).
+- Docs/CLI updated so we stop calling the narrow web phase “research”.
+
+### Shortlist purity (generic)
+- Query-state mismatch pages → **observations only**, never `add_to_shortlist`.
+- Stronger slogan/marketing structural penalty (`!`, guaranteed-shape, promo calendar openers).
+- Promote thresholds: entity_score ≥ 0.62, confidence ≥ 0.72, marketing_penalty < 0.30.
+- Shortlist = candidate evidence buffer; observations = raw layer.
+
+### Harvest process (unchanged architecture, clearer contract)
+- **100% runtime code** (no LLM in extract/promote).
+- Pipeline: page text → EAV observations → gated promote → shortlist → critic.
+- No product-vertical word lists; structural signals only.
+- Next (not in this patch): structure-aware clusters (cards/tables/lists) as extraction strategies; optional small model only on ambiguous pairs.
+
+### Metrics note
+- Prefer `rankable_count`, `candidate_precision`, constraints satisfied over raw `useful_action_ratio`.
+
+### Explicitly not done
+- Inline auto-recon loop on `needs_recon` during retrieval (still separate `--run-kind recon`).
+- Card-first as the only strategy (avoid new false primitive).
+
+---
+
+## 2026-08-23 — Structure-aware harvest + line-item gate + inline recon skeleton
+
+### Harvest
+- Cluster lines into local blocks; entity↔price pairing prefers **same cluster**.
+- Structural **line-item / SKU** gate (`1 × 2-persoonskamer`, room config) → never top-level shortlist.
+- Amenity chrome (`Luchthaventransfer inbegrepen`) demoted as entity.
+- EU thousand separators: `€2.328` → 2328 (was misread as 2.328 → noise).
+
+### Inline recon skeleton
+- On retrieval structural mismatch: pause host UI → `run_inline_recon_burst` (memory only).
+- No shortlist writes; retrieval LLM does not see recon transcript.
+- If recon clears `needs_recon`, one deep-link retry allowed.
+
+### Still open
+- Location-vs-hotel title disambiguation on list pages.
+- Full relationship graph (price vs discount vs nights) beyond cluster pairing.
