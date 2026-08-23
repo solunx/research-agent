@@ -792,6 +792,206 @@ def infer_page_role(
     return "unknown"
 
 
+def build_page_structure(
+    *,
+    page_role: str = "unknown",
+    eavs: list[dict[str, Any]] | None = None,
+    title: str = "",
+    text: str = "",
+) -> dict[str, Any]:
+    """
+    Structural skeleton for a page — generic, not vertical-specific.
+
+    Page
+      primary_subject: { id, label, kind: "unknown" } | null
+      groups: [ { id, member_count, sample_labels, sample_values, members } ]
+      members: flat list of offer-shaped rows (entity + primary value)
+
+    kind is always "unknown" at this layer. Promotion/eligibility must not
+    depend on kind==product/hotel. Structure = containment of repeated shapes.
+
+    Evidence units on list surfaces are group *members*, not free-floating EAVs.
+    """
+    role = (page_role or "unknown").strip().lower()
+    eavs = [e for e in (eavs or []) if isinstance(e, dict)]
+
+    # Group members: primary-amount EAV rows with an entity label
+    members: list[dict[str, Any]] = []
+    seen_labels: set[str] = set()
+    for e in eavs:
+        if str(e.get("amount_role") or "") != "primary":
+            continue
+        label = str(e.get("entity") or "").strip()
+        if not label or len(label) < 2:
+            continue
+        # Unit labels / line-items are not subjects of a group
+        if e.get("is_line_item") or _is_line_item_entity(label):
+            continue
+        if _UNIT_LABEL_CHROME_RE.search(label) or _AMENITY_CHROME_RE.search(label):
+            continue
+        key = label.lower()
+        if key in seen_labels:
+            continue
+        seen_labels.add(key)
+        members.append(
+            {
+                "id": f"m{len(members)}",
+                "entity": label[:120],
+                "value": str(e.get("value") or "")[:40],
+                "entity_score": float(e.get("entity_score") or 0),
+                "confidence": float(e.get("confidence") or 0),
+                "marketing_penalty": float(e.get("marketing_penalty") or 0),
+                "raw_evidence": str(e.get("raw_evidence") or "")[:200],
+                "source_url": str(e.get("source_url") or "")[:500],
+                "is_line_item": bool(e.get("is_line_item")),
+            }
+        )
+        if len(members) >= 24:
+            break
+
+    groups: list[dict[str, Any]] = []
+    primary_subject: dict[str, Any] | None = None
+
+    if role == "detail" and members:
+        top = max(members, key=lambda m: float(m.get("entity_score") or 0))
+        primary_subject = {
+            "id": "subject0",
+            "label": top["entity"],
+            "kind": "unknown",
+        }
+        related = [m for m in members if m["entity"].lower() != top["entity"].lower()]
+        if related:
+            groups.append(
+                {
+                    "id": "g0",
+                    "member_count": len(related),
+                    "sample_labels": [m["entity"] for m in related[:6]],
+                    "sample_values": [m["value"] for m in related[:6] if m.get("value")],
+                    "members": related[:12],
+                }
+            )
+    elif members:
+        # list / unknown / landing: one group of repeated offer-shaped rows
+        groups.append(
+            {
+                "id": "g0",
+                "member_count": len(members),
+                "sample_labels": [m["entity"] for m in members[:8]],
+                "sample_values": [m["value"] for m in members[:8] if m.get("value")],
+                "members": members[:16],
+            }
+        )
+        t = (title or "").strip()
+        if t and len(t) > 3 and len(t) < 120:
+            primary_subject = {
+                "id": "page",
+                "label": t[:120],
+                "kind": "unknown",
+            }
+
+    return {
+        "primary_subject": primary_subject,
+        "groups": groups,
+        "members": members,
+        "member_count": len(members),
+        "method": "eav_cluster_structure",
+    }
+
+
+def build_minimal_awareness(
+    *,
+    page_role: str = "unknown",
+    structure: dict[str, Any] | None = None,
+    eavs: list[dict[str, Any]] | None = None,
+    usable_for_task: bool = True,
+    match: str = "unknown",
+) -> dict[str, Any]:
+    """
+    Minimal Awareness Context (MinAC) — opposite of "maximum awareness".
+
+    Principle: collect only the signals needed so downstream reasoning can
+    evaluate task constraints without inventing facts. Not DOM+AX+OCR always;
+    the *minimum* that makes the page decision-grade for this surface.
+
+    have / gaps are structural dimensions, not vertical product fields:
+      - page_usable          query state matches task enough to trust values
+      - subject_identity     at least one structure member or primary_subject
+      - primary_values       at least one primary amount signal
+      - entity_value_link    at least one paired entity↔value observation
+
+    status:
+      adequate     — usable + subject + values + link
+      partial      — usable and some structure/value signal, gaps remain
+      insufficient — not usable, or no subject and no values
+    """
+    structure = structure if isinstance(structure, dict) else {}
+    eavs = [e for e in (eavs or []) if isinstance(e, dict)]
+    role = (page_role or "unknown").strip().lower()
+
+    members = structure.get("members") if isinstance(structure.get("members"), list) else []
+    if not members:
+        # derive from groups if older structure shape
+        for g in structure.get("groups") or []:
+            if isinstance(g, dict) and isinstance(g.get("members"), list):
+                members.extend(g["members"])
+    n_members = len(members) or int(structure.get("member_count") or 0)
+    primary = structure.get("primary_subject") if isinstance(structure.get("primary_subject"), dict) else None
+
+    has_usable = bool(usable_for_task) and match != "mismatch"
+    has_subject = bool(n_members > 0 or (primary and primary.get("label")))
+    has_values = any(
+        str(e.get("amount_role") or "") == "primary" and e.get("value") for e in eavs
+    ) or any(m.get("value") for m in members if isinstance(m, dict))
+    has_link = any(
+        str(e.get("entity") or "").strip()
+        and e.get("value")
+        and float(e.get("confidence") or 0) >= 0.35
+        for e in eavs
+    ) or any(
+        str(m.get("entity") or "").strip() and m.get("value") for m in members if isinstance(m, dict)
+    )
+
+    have: list[str] = []
+    gaps: list[str] = []
+    if has_usable:
+        have.append("page_usable")
+    else:
+        gaps.append("page_usable")
+    if has_subject:
+        have.append("subject_identity")
+    else:
+        gaps.append("subject_identity")
+    if has_values:
+        have.append("primary_values")
+    else:
+        gaps.append("primary_values")
+    if has_link:
+        have.append("entity_value_link")
+    else:
+        gaps.append("entity_value_link")
+
+    if role == "landing":
+        # Landing is intentionally thin; never decision-grade for candidates
+        status = "insufficient"
+        if "landing_surface" not in gaps:
+            gaps.append("landing_surface")
+    elif not has_usable or (not has_subject and not has_values):
+        status = "insufficient"
+    elif gaps:
+        status = "partial"
+    else:
+        status = "adequate"
+
+    return {
+        "status": status,
+        "have": have,
+        "gaps": gaps,
+        "method": "minimal",
+        "member_count": n_members,
+        "page_role": role,
+    }
+
+
 def build_page_state(
     *,
     requested_url: str = "",
@@ -801,10 +1001,11 @@ def build_page_state(
     title: str = "",
     text: str = "",
     page_role: str | None = None,
+    structure: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     First-class page state: where the site is vs what was requested,
-    plus structural page_role (what kind of surface this is).
+    plus structural page_role and optional structure skeleton (subject+groups).
 
     match: full | partial | mismatch | unknown
     page_role: unknown | landing | list | detail
@@ -850,7 +1051,7 @@ def build_page_state(
     if role not in ("unknown", "landing", "list", "detail"):
         role = infer_page_role(url=fin or req, title=title or "", text=text or "")
 
-    return {
+    out: dict[str, Any] = {
         "requested_url": req[:800],
         "observed_url": fin[:800],
         "match": match,
@@ -864,6 +1065,9 @@ def build_page_state(
             "observed_url": fin[:500],
         },
     }
+    if isinstance(structure, dict):
+        out["structure"] = structure
+    return out
 
 
 def compute_rankable(item: dict[str, Any]) -> bool:
@@ -1090,6 +1294,20 @@ _AMENITY_CHROME_RE = re.compile(
     r"boek\s*nu|book\s*now|betaal\s*later|pay\s*later|"
     r"enkel\s*kamer|single\s*room|double\s*room"
     r")\b",
+    re.I,
+)
+
+# Unit / pricing-label chrome: short strings that name a unit, not a subject
+_UNIT_LABEL_CHROME_RE = re.compile(
+    r"^(?:"
+    r"per\s+(?:person|persoon|pers\.?|pax|nacht|night|room|kamer|adult|volwassene)s?"
+    r"|p\.?\s*p\.?"
+    r"|pp\b"
+    r"|vanaf"
+    r"|from\s+price"
+    r"|total\s*(?:price)?"
+    r"|prijs\s*(?:p\.?p\.?)?"
+    r")$",
     re.I,
 )
 
@@ -1653,6 +1871,11 @@ def harvest_invariant_from_browser_result(
     req_url = str(result.get("requested_url") or result.get("request_url") or "")
     mismatches = [str(x) for x in (constraint_mismatches or result.get("constraint_mismatches") or []) if x]
 
+    title_s = str(result.get("title") or "")
+    eavs = extract_eav_observations(
+        text, price_hints=hints, source_url=url, max_items=24
+    )
+
     ps = page_state if isinstance(page_state, dict) else result.get("page_state")
     if not isinstance(ps, dict):
         ps = build_page_state(
@@ -1662,13 +1885,27 @@ def harvest_invariant_from_browser_result(
             semantic_flags=result.get("param_semantics")
             if isinstance(result.get("param_semantics"), list)
             else None,
-            title=str(result.get("title") or ""),
+            title=title_s,
             text=text[:6000],
         )
-
-    eavs = extract_eav_observations(
-        text, price_hints=hints, source_url=url, max_items=24
+    # Structure skeleton (subject + groups + members) from EAV clusters
+    role_for_struct = str(ps.get("page_role") or "unknown")
+    structure = build_page_structure(
+        page_role=role_for_struct,
+        eavs=eavs,
+        title=title_s,
+        text=text[:2000],
     )
+    awareness = build_minimal_awareness(
+        page_role=role_for_struct,
+        structure=structure,
+        eavs=eavs,
+        usable_for_task=bool(ps.get("usable_for_task")),
+        match=str(ps.get("match") or "unknown"),
+    )
+    ps = dict(ps)
+    ps["structure"] = structure
+    ps["awareness"] = awareness
 
     n_obs = 0
     for eav in eavs:
@@ -1698,6 +1935,25 @@ def harvest_invariant_from_browser_result(
             "skipped_reason": "page_state_not_usable",
             "mismatches": mismatches[:6],
             "page_state": ps,
+            "structure": structure,
+            "awareness": awareness,
+        }
+
+    # MinAC insufficient → observations only (no evidence buffer)
+    if awareness.get("status") == "insufficient":
+        return {
+            "ok": True,
+            "observations": n_obs,
+            "added": 0,
+            "updated": 0,
+            "count": len(load_shortlist(run_dir)),
+            "candidates": [],
+            "promoted": 0,
+            "skipped_low_conf": n_obs,
+            "skipped_reason": "awareness_insufficient",
+            "awareness": awareness,
+            "page_state": ps,
+            "structure": structure,
         }
 
     def _region_has_line_item(eav: dict[str, Any]) -> bool:
@@ -1719,6 +1975,8 @@ def harvest_invariant_from_browser_result(
             return "element"
         if _region_has_line_item(eav):
             return "element"
+        if _UNIT_LABEL_CHROME_RE.search(ent):
+            return "chrome"
         if _AMENITY_CHROME_RE.search(ent) or _SLOGAN_SHAPE_RE.search(ent):
             return "chrome"
         if re.search(r"\([^)]{2,24}\)\s*$", ent) and len(ent.split()) <= 4:
@@ -1783,20 +2041,112 @@ def harvest_invariant_from_browser_result(
             "skipped_scope": skipped_scope,
             "skipped_reason": "page_role_landing",
             "page_state": ps,
+            "structure": structure,
+            "awareness": awareness,
         }
 
-    promotable = [
-        (e, sc)
-        for e, sc in scoped
-        if e.get("amount_role") == "primary"
-        and _entity_ok_for_evidence(e, sc)
-        and float(e.get("entity_score") or 0) >= entity_score_min
-        and float(e.get("confidence") or 0) >= candidate_confidence_min
-        and float(e.get("marketing_penalty") or 0) < 0.30
-    ]
+    # ------------------------------------------------------------------
+    # Structure-first promote (Minimal Awareness)
+    #
+    # Evidence units are structure members (entity + primary value already
+    # linked), not free-floating high-score EAVs. This keeps chrome/amenities
+    # out even when they sit near a price line.
+    #
+    # List / unknown: members of structure.groups
+    # Detail: primary_subject member preferred; related group secondary
+    # Thresholds: membership in structure is the main gate; scores are
+    # secondary guards (slightly softer for confirmed group members).
+    # ------------------------------------------------------------------
+    struct_members: list[dict[str, Any]] = []
+    if isinstance(structure.get("members"), list) and structure["members"]:
+        struct_members = [m for m in structure["members"] if isinstance(m, dict)]
+    else:
+        for g in structure.get("groups") or []:
+            if isinstance(g, dict) and isinstance(g.get("members"), list):
+                struct_members.extend(m for m in g["members"] if isinstance(m, dict))
+
+    member_by_label: dict[str, dict[str, Any]] = {}
+    for m in struct_members:
+        lab = str(m.get("entity") or "").strip().lower()
+        if lab and lab not in member_by_label:
+            member_by_label[lab] = m
+
+    primary_label = ""
+    if isinstance(structure.get("primary_subject"), dict):
+        primary_label = str(structure["primary_subject"].get("label") or "").strip().lower()
+
+    def _scope_for_member(label: str) -> str:
+        if page_role == "detail":
+            if primary_label and label == primary_label:
+                return "primary"
+            return "related"
+        if page_role == "list":
+            return "group"
+        return "group"
+
+    # Map structure members back to full EAV rows when available
+    eav_by_label: dict[str, dict[str, Any]] = {}
+    for e in eavs:
+        if str(e.get("amount_role") or "") != "primary":
+            continue
+        lab = str(e.get("entity") or "").strip().lower()
+        if lab and lab not in eav_by_label:
+            eav_by_label[lab] = e
+
+    promotable: list[tuple[dict[str, Any], str]] = []
+    # Soft floors for structure members (membership is the hard gate)
+    mem_entity_min = max(0.45, entity_score_min - 0.17)
+    mem_conf_min = max(0.50, candidate_confidence_min - 0.22)
+
+    for lab, mem in member_by_label.items():
+        if mem.get("is_line_item"):
+            continue
+        scope = _scope_for_member(lab)
+        if scope in ("chrome", "element", "related"):
+            # related on detail stays out of top-level evidence buffer
+            if scope == "related":
+                skipped_scope += 1
+            continue
+        eav = eav_by_label.get(lab) or {
+            "entity": mem.get("entity"),
+            "value": mem.get("value"),
+            "entity_score": mem.get("entity_score", 0),
+            "confidence": mem.get("confidence", 0),
+            "marketing_penalty": mem.get("marketing_penalty", 0),
+            "amount_role": "primary",
+            "raw_evidence": mem.get("raw_evidence") or "",
+            "source_url": mem.get("source_url") or url,
+            "is_line_item": False,
+        }
+        # Re-check chrome/element on the entity string itself
+        sc2 = _classify_scope(eav)
+        if sc2 in ("chrome", "element"):
+            skipped_scope += 1
+            continue
+        if not _entity_ok_for_evidence(eav, scope):
+            continue
+        es = float(eav.get("entity_score") or 0)
+        conf = float(eav.get("confidence") or 0)
+        mp = float(eav.get("marketing_penalty") or 0)
+        if es < mem_entity_min or conf < mem_conf_min or mp >= 0.30:
+            continue
+        promotable.append((eav, scope))
+
+    # Fallback: if structure had no members but scoped EAVs pass classic gates
+    # (e.g. sparse detail page), keep previous path for recall.
+    if not promotable and not member_by_label:
+        promotable = [
+            (e, sc)
+            for e, sc in scoped
+            if e.get("amount_role") == "primary"
+            and _entity_ok_for_evidence(e, sc)
+            and float(e.get("entity_score") or 0) >= entity_score_min
+            and float(e.get("confidence") or 0) >= candidate_confidence_min
+            and float(e.get("marketing_penalty") or 0) < 0.30
+        ]
+
     promotable.sort(key=lambda x: float(x[0].get("confidence") or 0), reverse=True)
     promotable = promotable[:max_auto_candidates_per_page]
-
     added = 0
     updated = 0
     entries: list[dict[str, Any]] = []
@@ -1836,9 +2186,21 @@ def harvest_invariant_from_browser_result(
                 "usable_for_task": ps.get("usable_for_task"),
                 "page_role": page_role,
             },
+            "structure_ref": {
+                "group_id": "g0" if scope == "group" else None,
+                "primary_subject": (structure.get("primary_subject") or {}).get(
+                    "label"
+                )
+                if scope == "primary"
+                else None,
+                "member_count": structure.get("member_count"),
+                "awareness_status": awareness.get("status"),
+            },
             "provenance": {
                 "source_url": url[:500],
-                "extraction_method": "eav_cluster",
+                "extraction_method": "structure_member"
+                if member_by_label
+                else "eav_cluster",
                 "raw_evidence": (eav.get("raw_evidence") or "")[:300],
             },
         }
@@ -1853,6 +2215,7 @@ def harvest_invariant_from_browser_result(
                 "source_url": eav.get("source_url") or url,
                 "raw_evidence": (eav.get("raw_evidence") or "")[:300],
                 "page_state_ref": evidence["page_state_ref"],
+                "structure_ref": evidence["structure_ref"],
                 "session": session,
                 "layer": "evidence",
             },
@@ -1920,6 +2283,8 @@ def harvest_invariant_from_browser_result(
         "skipped_low_conf": max(0, n_obs - len(promotable) - skipped_scope),
         "skipped_scope": skipped_scope,
         "page_state": ps,
+        "structure": structure,
+        "awareness": awareness,
     }
 
 

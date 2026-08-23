@@ -60,11 +60,14 @@ docker compose run --rm research-agent python agent.py --planned \
 - **CAPTCHA / bot-wall**: `policy_stop` → host abandoned for the session (no bypass)
 - **`web_policy`**: rolling per-host rate limits + cooldown after 403/429/CAPTCHA (`memory/domain_policy.json`)
 - **PageState** (`match` + `page_role`: landing|list|detail|unknown) + **eligibility** policy
+- **Page structure**: `primary_subject` (`kind=unknown`) + `groups` + `members` from EAV clusters
+- **Minimal Awareness Context (MinAC)**: only the signals needed for honest constraint evaluation (`adequate` / `partial` / `insufficient`) — not maximum multi-modal capture
+- **Structure-first promote**: evidence units = structure members (list/detail); free-floating chrome EAVs stay out
 - **Evidence scope**: primary|group|related|chrome|element — chrome/related/element never rankable
 - **Layers**: observations → evidence buffer → ranked candidates (only when eligible)
 - Harvest: structural entity↔value; multi-confidence; no product-vertical word lists
 - Host harvest subscore: `price_signals` ≠ `relationships_extractable`
-- **Progress-aware control**: consecutive actions with no state/evidence/candidate delta → host abandon (`max_zero_progress_per_host`)
+- **Progress-aware control (A′)**: state/observation/evidence/candidate/constraint deltas; `memory_updated` ≠ progress; repeated same surface costs extra; `needs_recon` only if no evidence this session
 
 ## Run
 

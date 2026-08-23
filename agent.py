@@ -871,6 +871,10 @@ def run_session(
         "candidate_n": 0,
         "shortlist_n": 0,
     }
+    # A′: diminishing returns — last (tool, url_key) per host; harvested URL keys
+    last_action_sig: dict[str, tuple[str, str]] = {}  # host → (tool, url_key)
+    host_harvested_urls: set[str] = set()  # URL keys already harvested this session
+    host_had_evidence: set[str] = set()  # host produced evidence/candidates this session
 
     def prefer_browser(url: str) -> bool:
         return memory.preferred_tool_for_url(url) == "browser_open"
@@ -916,6 +920,20 @@ def run_session(
             "shortlist_n": len(sl),
         }
 
+    def _url_key(url: str) -> str:
+        """Stable key for same-surface detection (path + sorted query keys, no values)."""
+        if not url:
+            return ""
+        try:
+            from urllib.parse import urlparse, parse_qs
+
+            p = urlparse(url)
+            path = (p.path or "/").rstrip("/") or "/"
+            keys = sorted((parse_qs(p.query or "", keep_blank_values=True) or {}).keys())
+            return f"{path}?{'&'.join(keys)}" if keys else path
+        except Exception:
+            return (url or "")[:200]
+
     def _record_progress(
         host: str,
         *,
@@ -923,43 +941,58 @@ def run_session(
         evidence_added: int = 0,
         candidate_added: int = 0,
         constraint_improved: bool = False,
-        memory_updated: bool = False,
+        observation_delta: int = 0,
         tool: str = "",
+        url: str = "",
     ) -> dict[str, Any]:
         """
-        Progress-aware control (first-class).
+        Progress-aware control (A′ — information / state delta).
 
-        An action has progress if any of:
-          state_changed | evidence_added | candidate_added |
-          constraint_improved | memory_updated
+        Progress = any of:
+          state_changed | observation_delta | evidence_added |
+          candidate_added | constraint_improved
 
-        Consecutive zero-progress browser actions on the same host → abandon
-        (marginal value ≈ 0). Not a fixed click cap — state-based.
+        memory_updated is intentionally NOT progress (side-effect only).
+
+        Stop policy = diminishing returns:
+          consecutive zero-progress on same host, weighted higher when the
+          same (tool, surface) is repeated with no new information.
         """
         had = bool(
             state_changed
+            or observation_delta > 0
             or evidence_added > 0
             or candidate_added > 0
             or constraint_improved
-            or memory_updated
         )
+        uk = _url_key(url) if url else ""
+        sig = (tool or "", uk)
+        prev_sig = last_action_sig.get(host) if host else None
+        repeated_same = bool(prev_sig and prev_sig == sig and not had)
         prog = {
             "state_changed": state_changed,
+            "observation_delta": int(observation_delta),
             "evidence_added": int(evidence_added),
             "candidate_added": int(candidate_added),
             "constraint_improved": constraint_improved,
-            "memory_updated": memory_updated,
             "had_progress": had,
+            "repeated_same_action": repeated_same,
             "tool": tool,
             "host": host,
         }
+        if host:
+            last_action_sig[host] = sig
         if not host:
             return prog
         if had:
             host_zero_progress[host] = 0
             host_noop_count[host] = 0  # real progress also clears classic no-op streak
+            if evidence_added > 0 or candidate_added > 0:
+                host_had_evidence.add(host)
         else:
-            host_zero_progress[host] = host_zero_progress.get(host, 0) + 1
+            # Diminishing returns: repeated same surface+tool costs extra
+            step = 2 if repeated_same else 1
+            host_zero_progress[host] = host_zero_progress.get(host, 0) + step
         prog["zero_progress_streak"] = host_zero_progress.get(host, 0)
         counters["progress_events"] = counters.get("progress_events", 0) + 1
         if had:
@@ -967,7 +1000,12 @@ def run_session(
         return prog
 
     def _maybe_abandon_zero_progress(host: str, result: dict[str, Any]) -> dict[str, Any]:
-        """If consecutive zero-progress ≥ budget, block host (same path as no-ops)."""
+        """
+        If consecutive zero-progress ≥ budget, block host for this session.
+
+        needs_recon only when the host never yielded evidence this session
+        (interaction failure on an already-useful list is session abandon, not recon).
+        """
         if not host:
             return result
         streak = host_zero_progress.get(host, 0)
@@ -980,14 +1018,16 @@ def run_session(
         counters["host_abandons"] = counters.get("host_abandons", 0) + 1
         print(
             f"[agent] [{session_label}] Host {host} abandoned after "
-            f"{streak} zero-progress actions (max={max_zero_progress})"
+            f"{streak} zero-progress weight (max={max_zero_progress})"
         )
-        if not is_recon:
+        # Recon flag only if capability looks incomplete (no evidence this session)
+        mark_recon = host not in host_had_evidence and host not in host_shortlist_hits
+        if not is_recon and mark_recon:
             try:
                 memory.mark_needs_recon(
                     host,
                     reason=(
-                        f"zero_progress streak={streak} in research "
+                        f"zero_progress streak={streak} with no evidence "
                         f"(session={session_label})"
                     ),
                 )
@@ -996,17 +1036,24 @@ def run_session(
         out = dict(result)
         out["host_abandoned"] = True
         out["zero_progress_streak"] = streak
+        out["interaction_blocked"] = not mark_recon
         if is_recon:
             out["advice"] = (
-                f"Stop probing {host}: no new state/evidence/candidates. "
+                f"Stop probing {host}: no new state/observations/evidence. "
                 "Record what failed; move to next host probe."
+            )
+        elif mark_recon:
+            out["advice"] = (
+                f"Stop acting on {host}: diminishing returns (no new information). "
+                "Host marked needs_recon. Move to another primary source or "
+                "RESEARCH_COMPLETE."
             )
         else:
             out["advice"] = (
-                f"Stop acting on {host}: consecutive actions produced no progress "
-                "(no new page state, evidence, or candidates). Host marked needs_recon. "
-                "Use already-harvested evidence; move to another primary source or "
-                "RESEARCH_COMPLETE."
+                f"Stop acting on {host}: interaction exhausted on this surface "
+                "(list already harvested; clicks produced no new information). "
+                "Use already-harvested evidence; do not retry the same selectors. "
+                "Move to another primary source or RESEARCH_COMPLETE."
             )
         return out
 
@@ -1239,15 +1286,31 @@ def run_session(
                                     or cc.get("match_status")
                                 )
                             )
+                            host_had_evidence.add(hh)
                             prog = _record_progress(
                                 hh,
                                 candidate_added=max(cand_delta, sl_delta, 1),
                                 constraint_improved=constraint_improved,
                                 tool=name,
+                                url=su,
                             )
                             if isinstance(result, dict):
                                 result = dict(result)
-                                result["progress"] = prog
+                                result["progress"] = {
+                                    "state_changed": prog.get("state_changed", False),
+                                    "observation_delta": prog.get(
+                                        "observation_delta", 0
+                                    ),
+                                    "evidence_added": prog.get("evidence_added", 0),
+                                    "candidate_added": prog.get("candidate_added", 0),
+                                    "constraint_improved": prog.get(
+                                        "constraint_improved", False
+                                    ),
+                                    "had_progress": prog.get("had_progress", False),
+                                    "zero_progress_streak": prog.get(
+                                        "zero_progress_streak", 0
+                                    ),
+                                }
                         if result.get("ok"):
                             print(
                                 f"[agent] [{session_label}] Tool {name} finished in "
@@ -2006,15 +2069,21 @@ def run_session(
                                     + int(hv.get("updated") or 0),
                                     "observations": n_obs,
                                 }
+                                # Structure skeleton on tool result (for LLM + progress)
+                                if isinstance(hv.get("page_state"), dict):
+                                    result.setdefault(
+                                        "page_state", hv.get("page_state")
+                                    )
                         except Exception as _hv_err:
                             print(
                                 f"[agent] [{session_label}] Harvest invariant error: "
                                 f"{_hv_err}"
                             )
 
-                    # --- Progress-aware control (browser actions) ---
-                    # Progress = new page state OR new evidence OR new candidates.
-                    # Consecutive zero-progress → abandon (marginal value ≈ 0).
+                    # --- Progress-aware control (browser actions, A′) ---
+                    # Progress = state / observation / evidence / candidate / constraint
+                    # deltas. memory_updated is not progress. Repeated same surface
+                    # without delta → diminishing returns → abandon.
                     if name.startswith("browser_") and isinstance(result, dict):
                         h_prog = host_of(current_page_url) or host_of(
                             str(result.get("url") or arguments.get("url") or "")
@@ -2028,7 +2097,28 @@ def run_session(
                         )
                         hv_prog = result.get("_progress_harvest") or {}
                         evidence_added = int(hv_prog.get("evidence_added") or 0)
-                        # Successful first open of a host (URL was empty) counts as state change
+                        n_obs_h = int(hv_prog.get("observations") or 0)
+                        # observation_delta: first harvest on this URL key, or mismatch
+                        uk_now = _url_key(page_url_now)
+                        observation_delta = 0
+                        if n_obs_h > 0 and uk_now and uk_now not in host_harvested_urls:
+                            observation_delta = n_obs_h
+                            host_harvested_urls.add(uk_now)
+                        if result.get("constraint_mismatch") and not err_now:
+                            # Learning that params were rewritten is retrieval progress
+                            observation_delta = max(observation_delta, 1)
+                        # Empty inventory discovery (once per host surface)
+                        if (
+                            not err_now
+                            and name == "browser_open"
+                            and not result.get("price_hints")
+                            and n_obs_h == 0
+                            and uk_now
+                            and uk_now not in host_harvested_urls
+                        ):
+                            observation_delta = max(observation_delta, 1)
+                            host_harvested_urls.add(uk_now)
+                        # Successful first open of a host (URL was empty) counts as state
                         if (
                             not state_changed
                             and not err_now
@@ -2037,19 +2127,27 @@ def run_session(
                             and name == "browser_open"
                         ):
                             state_changed = True
+                        if evidence_added > 0 and h_prog:
+                            host_had_evidence.add(h_prog)
                         prog = _record_progress(
                             h_prog,
                             state_changed=state_changed,
                             evidence_added=evidence_added,
+                            observation_delta=observation_delta,
                             tool=name,
+                            url=page_url_now,
                         )
                         result = dict(result)
                         result.pop("_progress_harvest", None)
                         result["progress"] = {
                             "state_changed": prog.get("state_changed", False),
+                            "observation_delta": prog.get("observation_delta", 0),
                             "evidence_added": prog.get("evidence_added", 0),
                             "candidate_added": prog.get("candidate_added", 0),
                             "had_progress": prog.get("had_progress", False),
+                            "repeated_same_action": prog.get(
+                                "repeated_same_action", False
+                            ),
                             "zero_progress_streak": prog.get("zero_progress_streak", 0),
                         }
                         if not prog.get("had_progress"):
@@ -2057,12 +2155,14 @@ def run_session(
                             if result.get("host_abandoned"):
                                 print(
                                     f"[agent] [{session_label}] Progress: none on {h_prog} "
-                                    f"(streak={prog.get('zero_progress_streak')})"
+                                    f"(streak={prog.get('zero_progress_streak')}"
+                                    f"{', repeated' if prog.get('repeated_same_action') else ''})"
                                 )
                         else:
                             print(
                                 f"[agent] [{session_label}] Progress on {h_prog}: "
                                 f"state={int(bool(state_changed))} "
+                                f"obs=+{observation_delta} "
                                 f"evidence=+{evidence_added} (streak reset)"
                             )
 

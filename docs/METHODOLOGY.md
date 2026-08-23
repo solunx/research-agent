@@ -115,12 +115,14 @@ Cheap verify (fetch or browser_open)
 Discovery signals (price_hints, raw text)
         ↓
 PageState          match + page_role + usable_for_task
-        ↓ usable_for_task?  /  page_role=landing?
+        ↓
+Structure          primary_subject + groups + members
+        ↓
+Minimal Awareness  adequate | partial | insufficient
+        ↓ usable?  role≠landing?  awareness≠insufficient?
    no → observations only
    yes↓
-Structural regions / clusters
-        ↓
-EAV observations → observations.jsonl
+Structure-first evidence units (group members / primary subject)
         ↓  scope classification (primary|group|related|chrome|element)
 Evidence buffer → evidence.jsonl + shortlist layer=evidence
         ↓  ConstraintResults (matched/unmatched/unknown)
@@ -134,10 +136,35 @@ Ranked candidates (report shortlist)
 | Object | Answers |
 |--------|---------|
 | **PageState** | Where is the site relative to the request? What *kind* of surface (`page_role`)? |
+| **Structure** | What subjects/groups exist on this surface (containment, not taxonomy)? |
+| **Minimal Awareness** | Do we have *enough* signals to evaluate constraints without inventing facts? |
 | **Evidence** | What does the page claim about a subject (entity + value_role + **scope**)? |
 | **ConstraintResult** | Facts vs task hard criteria (matched / unmatched / unknown) |
 | **Eligibility** | Policy over ConstraintResults + scope + page usable — may this enter ranking? |
 | **RankedCandidate** | Eligible evidence only; report ranks this set |
+
+### Minimal Awareness Context (MinAC)
+
+**Not** “maximum awareness” (DOM + AX + OCR + layout always).  
+**Yes** the *minimum* set of structural signals so the agent can answer the user task honestly.
+
+| Dimension | Meaning |
+|-----------|---------|
+| `page_usable` | Query state matches task enough to trust values |
+| `subject_identity` | At least one structure member or primary_subject |
+| `primary_values` | At least one primary amount signal |
+| `entity_value_link` | At least one paired entity↔value observation |
+
+```
+awareness.status:
+  adequate      usable + subject + values + link
+  partial       usable, some signals, gaps remain
+  insufficient  not usable, or no subject and no values, or landing
+```
+
+- `insufficient` → observations only (`skipped_reason=awareness_insufficient`).
+- Perception cascade (DOM → AX → screenshot/OCR) is a **future cost ladder**, not the default. Current MinAC is filled from Playwright text/DOM harvest.
+- Memory may hypothesise *how* to obtain these dimensions cheaply; only current PageState says *what is true now*.
 
 ### PageState schema
 ```
@@ -148,14 +175,26 @@ Ranked candidates (report shortlist)
   usable_for_task: bool,
   mismatches: [...],
   semantic_flags: [...],
+  structure: {
+    primary_subject: { id, label, kind: "unknown" } | null,
+    groups: [ { id, member_count, sample_labels, sample_values, members } ],
+    members: [ { id, entity, value, entity_score, confidence, ... } ],
+    member_count: int,
+    method: "eav_cluster_structure"
+  },
+  awareness: {
+    status: adequate | partial | insufficient,
+    have: [...], gaps: [...], method: "minimal"
+  },
   provenance: { method, ... }
 }
 ```
 - `page_role` is structural (path/query/title heuristics). **unknown is valid.**
 - `landing` → observations only (no evidence-buffer promote).
 - `detail` → prefer scope=`primary`; low-score neighbors → `related` (not top-level).
-- `list` → scope=`group` for offer cards.
-- Mismatch / `usable_for_task=false` → observations only.
+- `list` → scope=`group`; **evidence units = structure members**, not free-floating EAVs.
+- `structure.kind` stays **`unknown`** — promotion must never require `kind==hotel|product`.
+- Mismatch / `usable_for_task=false` / `awareness=insufficient` → observations only.
 
 ### Evidence scope
 ```
@@ -217,32 +256,55 @@ harvest:
 Harvest and PageState are not enough if the agent keeps clicking the same surface.
 
 ```
-Action (browser_* / add_to_shortlist)
-        ↓
-Progress event
-  state_changed?        (URL / page surface changed)
-  evidence_added?       (new evidence buffer rows)
-  candidate_added?      (layer=candidate / LLM shortlist)
-  constraint_improved?  (constraints_check filled)
-  memory_updated?       (optional)
-        ↓
-had_progress?
-  yes → zero_progress streak = 0; continue
-  no  → streak += 1
-        ↓
-streak ≥ max_zero_progress_per_host (default 2)
-        ↓
-host abandoned (same path as classic no-ops) + needs_recon in retrieval
+ACTION
+  → OBSERVATION
+  → deltas:
+      state_changed          URL / page surface
+      observation_delta      new information (first harvest on URL key,
+                             param mismatch discovered, empty inventory)
+      evidence_added
+      constraint_improved
+      candidate_added
+  → had_progress?
+       yes → streak = 0
+       no  → streak += 1 (or += 2 if repeated same tool+surface)
+  → streak ≥ max_zero_progress_per_host
+  → session host abandon
+       needs_recon only if host never yielded evidence this session
+       else interaction_blocked (list already useful; stop clicking)
 ```
 
-**Principles**
-- Not a fixed “max 3 clicks” rule — **state-based diminishing returns**.
-- Classic no-op (same URL + no new price_hints) remains; progress is **stricter** (new hints alone without evidence/state do not reset the progress streak forever).
+**Principles (A′)**
+- Progress = **state / information delta**, not side-effects.
+- **`memory_updated` is not progress** (derived from events, not a progress signal).
+- Diminishing returns: repeated same `(tool, url_key)` with no delta costs extra toward abandon.
+- Classic no-op (same URL + no new price_hints) remains.
 - Config: `limits.max_zero_progress_per_host` (default = `max_browser_noops_per_host`).
 - Metadata: `progress_events`, `progress_hits`, `progress_ratio`.
-- Tool results include a compact `progress` object so the LLM sees stagnation.
 
-**Does not solve:** subject/group structure on the page (next architecture step). Solves: burning minutes on repeated timeouts after a useful list was already harvested.
+## 4d. Page structure + structure-first evidence
+
+```
+PageState.structure
+  primary_subject: { id, label, kind: "unknown" } | null
+  groups: [
+    { id, member_count, sample_labels[], sample_values[], members[] }
+  ]
+  members: [ { id, entity, value, entity_score, confidence, ... } ]
+```
+
+Built from EAV clusters after extract — **containment of repeated shapes**, not product taxonomy.
+
+| Surface | Structure behaviour |
+|---------|---------------------|
+| `detail` | Best entity → `primary_subject`; other entities → related group |
+| `list` / unknown | One group of offer-shaped rows; members are evidence units |
+| `landing` | Structure may be empty; no promote |
+
+**Structure-first promote:** on list/detail, the evidence buffer is filled from `structure.members` (entity already paired with a primary value). Isolated high-score EAVs that are not structure members do not enter the buffer (except a sparse fallback when structure is empty). Membership is the hard gate; confidence floors are secondary.
+
+Evidence rows carry `structure_ref` (`group_id` / `primary_subject` / `awareness_status`).  
+**Invariant:** `kind` stays `unknown` at this layer — ranking never keys on vertical type.
 
 ## 5. Web capability ladder (per host)
 

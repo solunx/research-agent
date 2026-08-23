@@ -321,3 +321,64 @@ If each browser action records a **progress delta** (state / evidence / candidat
 
 ### Expected test signal
 Re-run `compare_packages_dec2026` with playwright: after one successful Mijas list harvest, further clicks with no new evidence should hit zero-progress abandon faster; more budget left for other hosts; `progress_ratio` visible in metadata.
+
+## 2026-08-23 — A′ control refinement + B structure skeleton
+
+### Trigger
+ChatGPT review after progress-control run 13-56-14: control and structure are coupled; `memory_updated` is not retrieval progress; need `observation_delta`; stop rule should be diminishing returns (repeated same state/action), not a pure counter; structure (subject+groups) must follow immediately — not more harvest micro-tuning.
+
+### Hypothesis
+If progress is defined as state/information deltas (including first-time observations and mismatch discovery) and repeated same-surface actions cost extra, the agent stops when marginal information value is low. Attaching a structural skeleton (primary_subject + groups, kind=unknown) makes those deltas and later eligibility meaningful without verticalising.
+
+### Shipped (A′)
+- `_record_progress`: removed `memory_updated`; added `observation_delta`.
+- Progress = `state_changed | observation_delta | evidence_added | candidate_added | constraint_improved`.
+- Diminishing returns: same `(tool, url_key)` with no delta increments streak by 2.
+- `needs_recon` on zero-progress abandon only if host never yielded evidence this session; otherwise `interaction_blocked` (list already useful).
+- First harvest per URL key and constraint-mismatch discovery count as observation progress.
+
+### Shipped (B)
+- `build_page_structure()` in `storage.py`: `primary_subject { id, label, kind: "unknown" }` + `groups[]`.
+- Attached to `PageState.structure` inside harvest; evidence rows get `structure_ref`.
+- No new page_role values; kind never gates promotion.
+
+### Explicitly not in this patch
+- Semantics requested → observed → interpretation{result,confidence,support}
+- Subject_kind inference for location vs offer cards
+- Cross-subtask interaction memory (verify-only opens)
+- Site-specific extractors
+
+### Expected test signal
+Re-run retrieval: progress log shows `obs=+N`; repeated clicks on same list surface abandon faster with weight≥2; hosts that already produced evidence are abandoned without `needs_recon`; `page_state.structure.groups` present on list harvests.
+
+---
+
+## 2026-08-23 — Minimal Awareness Context + structure-first promote
+
+### Trigger
+Helicopter review (ChatGPT + internal): “Maximum Awareness” (DOM+AX+OCR always) is the wrong cost model. Latest retrieval run still had list surfaces with observations but weak/empty auto-promote; LLM hand-picked the one rankable candidate. Control (A′) and structure skeleton (B) were necessary but not sufficient — evidence units were still free-floating EAVs.
+
+### Principle shift
+**Minimal Awareness Context (MinAC)** replaces any “gather everything” instinct:
+
+- Collect only the structural dimensions needed to evaluate task constraints without inventing facts.
+- Dimensions: `page_usable`, `subject_identity`, `primary_values`, `entity_value_link`.
+- Status: `adequate` | `partial` | `insufficient`.
+- `insufficient` → observations only (same fail-closed family as mismatch / landing).
+
+Perception cascade (DOM → AX → screenshot/OCR) remains a **future escalation ladder**, not the default. Current MinAC is filled from Playwright text harvest.
+
+### Structure-first evidence units
+- `structure.members` is the promote source on list/detail (entity already paired with primary value).
+- Chrome/amenities that pass isolated entity_score but are not structure members stay out.
+- Soft score floors for confirmed members; classic high thresholds remain as fallback only when structure is empty.
+- `extraction_method`: `structure_member` vs `eav_cluster`.
+
+### Explicitly not in this patch
+- AX tree / OCR / VLM perception backends
+- Task-parsed required-observable lists (can layer later on MinAC gaps)
+- Vertical kind inference (kind stays `unknown`)
+- Site-specific card selectors
+
+### Expected test signal
+List harvest on populated hosts: `page_state.awareness.status` ∈ {partial, adequate}; `promoted` tracks structure members; chrome entities no longer dominate shortlist; empty/mismatch hosts still `awareness=insufficient` / observations only.
