@@ -36,6 +36,7 @@ from storage import (
     create_run_dir,
     filter_rankable_shortlist,
     harvest_invariant_from_browser_result,
+    load_evidence,
     load_notes,
     load_shortlist,
     notes_as_prompt_text,
@@ -843,8 +844,13 @@ def run_session(
     max_browser_per_host = int(limits.get("max_browser_actions_per_host", 8))
     max_noops_per_host = int(limits.get("max_browser_noops_per_host", 2))
     max_browser_use_per_host = int(limits.get("max_browser_use_per_host", 2))
+    # Progress-aware control: consecutive zero-progress browser actions → abandon
+    max_zero_progress = int(
+        limits.get("max_zero_progress_per_host", max_noops_per_host)
+    )
     host_browser_count: dict[str, int] = {}
     host_noop_count: dict[str, int] = {}
+    host_zero_progress: dict[str, int] = {}  # consecutive actions with no progress delta
     host_browser_use_count: dict[str, int] = {}  # tier-3 expensive agent calls
     host_browser_use_blocked: set[str] = set()  # after timeout or budget
     host_blocked: set[str] = set()
@@ -859,6 +865,12 @@ def run_session(
     max_empty_inventory = int(limits.get("max_empty_inventory_per_host", 3))
     # Single source of truth for the live tab (updated after every successful browser tool)
     current_page_url: str = ""
+    # Progress snapshots (counts before action → delta after)
+    _prog_before: dict[str, int] = {
+        "evidence_n": 0,
+        "candidate_n": 0,
+        "shortlist_n": 0,
+    }
 
     def prefer_browser(url: str) -> bool:
         return memory.preferred_tool_for_url(url) == "browser_open"
@@ -874,6 +886,129 @@ def run_session(
         if h.startswith("www."):
             h = h[4:]
         return h
+
+    def _count_progress_snapshot() -> dict[str, int]:
+        """Lightweight run-dir counts for progress deltas (evidence / candidates)."""
+        try:
+            sl = load_shortlist(run_dir)
+        except Exception:
+            sl = []
+        try:
+            ev = load_evidence(run_dir)
+        except Exception:
+            ev = []
+        cand_n = sum(
+            1
+            for x in sl
+            if isinstance(x, dict)
+            and (
+                x.get("layer") == "candidate"
+                or (
+                    x.get("match_status")
+                    and x.get("match_status") not in ("observed_only",)
+                    and x.get("origin") != "harvest_invariant"
+                )
+            )
+        )
+        return {
+            "evidence_n": len(ev),
+            "candidate_n": cand_n,
+            "shortlist_n": len(sl),
+        }
+
+    def _record_progress(
+        host: str,
+        *,
+        state_changed: bool = False,
+        evidence_added: int = 0,
+        candidate_added: int = 0,
+        constraint_improved: bool = False,
+        memory_updated: bool = False,
+        tool: str = "",
+    ) -> dict[str, Any]:
+        """
+        Progress-aware control (first-class).
+
+        An action has progress if any of:
+          state_changed | evidence_added | candidate_added |
+          constraint_improved | memory_updated
+
+        Consecutive zero-progress browser actions on the same host → abandon
+        (marginal value ≈ 0). Not a fixed click cap — state-based.
+        """
+        had = bool(
+            state_changed
+            or evidence_added > 0
+            or candidate_added > 0
+            or constraint_improved
+            or memory_updated
+        )
+        prog = {
+            "state_changed": state_changed,
+            "evidence_added": int(evidence_added),
+            "candidate_added": int(candidate_added),
+            "constraint_improved": constraint_improved,
+            "memory_updated": memory_updated,
+            "had_progress": had,
+            "tool": tool,
+            "host": host,
+        }
+        if not host:
+            return prog
+        if had:
+            host_zero_progress[host] = 0
+            host_noop_count[host] = 0  # real progress also clears classic no-op streak
+        else:
+            host_zero_progress[host] = host_zero_progress.get(host, 0) + 1
+        prog["zero_progress_streak"] = host_zero_progress.get(host, 0)
+        counters["progress_events"] = counters.get("progress_events", 0) + 1
+        if had:
+            counters["progress_hits"] = counters.get("progress_hits", 0) + 1
+        return prog
+
+    def _maybe_abandon_zero_progress(host: str, result: dict[str, Any]) -> dict[str, Any]:
+        """If consecutive zero-progress ≥ budget, block host (same path as no-ops)."""
+        if not host:
+            return result
+        streak = host_zero_progress.get(host, 0)
+        if streak < max_zero_progress:
+            return result
+        if host in host_blocked:
+            return result
+        refresh_host_shortlist_hits()
+        host_blocked.add(host)
+        counters["host_abandons"] = counters.get("host_abandons", 0) + 1
+        print(
+            f"[agent] [{session_label}] Host {host} abandoned after "
+            f"{streak} zero-progress actions (max={max_zero_progress})"
+        )
+        if not is_recon:
+            try:
+                memory.mark_needs_recon(
+                    host,
+                    reason=(
+                        f"zero_progress streak={streak} in research "
+                        f"(session={session_label})"
+                    ),
+                )
+            except Exception:
+                pass
+        out = dict(result)
+        out["host_abandoned"] = True
+        out["zero_progress_streak"] = streak
+        if is_recon:
+            out["advice"] = (
+                f"Stop probing {host}: no new state/evidence/candidates. "
+                "Record what failed; move to next host probe."
+            )
+        else:
+            out["advice"] = (
+                f"Stop acting on {host}: consecutive actions produced no progress "
+                "(no new page state, evidence, or candidates). Host marked needs_recon. "
+                "Use already-harvested evidence; move to another primary source or "
+                "RESEARCH_COMPLETE."
+            )
+        return out
 
     def _is_rootish_url(url: str) -> bool:
         """True for bare homepage / locale home without search path or query."""
@@ -1020,6 +1155,9 @@ def run_session(
                         arguments = raw_args
 
                     print(f"[agent] [{session_label}] Tool call: {name}({arguments})")
+                    # Snapshot run counts before action (progress delta after)
+                    _prog_before = _count_progress_snapshot()
+                    _url_before = current_page_url or ""
 
                     # --- Structured shortlist tool (no network) ---
                     if name == "add_to_shortlist":
@@ -1083,6 +1221,33 @@ def run_session(
                         if hh:
                             host_shortlist_hits.add(hh)
                         refresh_host_shortlist_hits()
+                        # Progress: candidate layer add counts as progress
+                        if result.get("ok") and hh:
+                            after = _count_progress_snapshot()
+                            cand_delta = max(
+                                0, after["candidate_n"] - _prog_before.get("candidate_n", 0)
+                            )
+                            sl_delta = max(
+                                0, after["shortlist_n"] - _prog_before.get("shortlist_n", 0)
+                            )
+                            cc = arguments.get("constraints_check")
+                            constraint_improved = bool(
+                                isinstance(cc, dict)
+                                and (
+                                    cc.get("matched")
+                                    or cc.get("unmatched")
+                                    or cc.get("match_status")
+                                )
+                            )
+                            prog = _record_progress(
+                                hh,
+                                candidate_added=max(cand_delta, sl_delta, 1),
+                                constraint_improved=constraint_improved,
+                                tool=name,
+                            )
+                            if isinstance(result, dict):
+                                result = dict(result)
+                                result["progress"] = prog
                         if result.get("ok"):
                             print(
                                 f"[agent] [{session_label}] Tool {name} finished in "
@@ -1203,6 +1368,7 @@ def run_session(
                                 host_url_param_grace.add(pre_host)
                                 host_blocked.discard(pre_host)
                                 host_noop_count[pre_host] = 0
+                                host_zero_progress[pre_host] = 0
                                 print(
                                     f"[agent] [{session_label}] Grace browser_open on "
                                     f"{pre_host} (URL-param / deep-link recovery)"
@@ -1832,15 +1998,87 @@ def run_session(
                                     "promoted": hv.get("promoted"),
                                     "page_state": hv.get("page_state"),
                                 }
+                            # Stash harvest deltas for progress (recorded below)
+                            if isinstance(result, dict):
+                                result = dict(result)
+                                result["_progress_harvest"] = {
+                                    "evidence_added": int(hv.get("added") or 0)
+                                    + int(hv.get("updated") or 0),
+                                    "observations": n_obs,
+                                }
                         except Exception as _hv_err:
                             print(
                                 f"[agent] [{session_label}] Harvest invariant error: "
                                 f"{_hv_err}"
                             )
 
+                    # --- Progress-aware control (browser actions) ---
+                    # Progress = new page state OR new evidence OR new candidates.
+                    # Consecutive zero-progress → abandon (marginal value ≈ 0).
+                    if name.startswith("browser_") and isinstance(result, dict):
+                        h_prog = host_of(current_page_url) or host_of(
+                            str(result.get("url") or arguments.get("url") or "")
+                        )
+                        page_url_now = current_page_url or str(result.get("url") or "")
+                        err_now = result.get("error")
+                        state_changed = bool(
+                            not err_now
+                            and page_url_now
+                            and page_url_now != _url_before
+                        )
+                        hv_prog = result.get("_progress_harvest") or {}
+                        evidence_added = int(hv_prog.get("evidence_added") or 0)
+                        # Successful first open of a host (URL was empty) counts as state change
+                        if (
+                            not state_changed
+                            and not err_now
+                            and page_url_now
+                            and not _url_before
+                            and name == "browser_open"
+                        ):
+                            state_changed = True
+                        prog = _record_progress(
+                            h_prog,
+                            state_changed=state_changed,
+                            evidence_added=evidence_added,
+                            tool=name,
+                        )
+                        result = dict(result)
+                        result.pop("_progress_harvest", None)
+                        result["progress"] = {
+                            "state_changed": prog.get("state_changed", False),
+                            "evidence_added": prog.get("evidence_added", 0),
+                            "candidate_added": prog.get("candidate_added", 0),
+                            "had_progress": prog.get("had_progress", False),
+                            "zero_progress_streak": prog.get("zero_progress_streak", 0),
+                        }
+                        if not prog.get("had_progress"):
+                            result = _maybe_abandon_zero_progress(h_prog, result)
+                            if result.get("host_abandoned"):
+                                print(
+                                    f"[agent] [{session_label}] Progress: none on {h_prog} "
+                                    f"(streak={prog.get('zero_progress_streak')})"
+                                )
+                        else:
+                            print(
+                                f"[agent] [{session_label}] Progress on {h_prog}: "
+                                f"state={int(bool(state_changed))} "
+                                f"evidence=+{evidence_added} (streak reset)"
+                            )
+
                     result_for_context = truncate_tool_result(
                         name, result, max_chars=max_tool_result_chars
                     )
+                    if (
+                        isinstance(result, dict)
+                        and result.get("progress")
+                        and isinstance(result_for_context, dict)
+                    ):
+                        result_for_context = dict(result_for_context)
+                        result_for_context["progress"] = result.get("progress")
+                        if result.get("host_abandoned") and result.get("advice"):
+                            result_for_context["host_abandoned"] = True
+                            result_for_context["advice"] = result.get("advice")
                     if (
                         isinstance(result, dict)
                         and result.get("constraint_mismatch")
@@ -2198,6 +2436,8 @@ def main() -> int:
         "sessions_skipped": 0,
         "memory_first_rejects": 0,
         "host_abandons": 0,
+        "progress_events": 0,
+        "progress_hits": 0,
     }
     max_runtime = limits.get("max_runtime_minutes", 120) * 60
     status = "running"
@@ -2490,6 +2730,17 @@ def main() -> int:
         "useful_actions": useful,
         "useful_action_ratio": (
             round(useful / tool_calls_n, 3) if tool_calls_n else 0.0
+        ),
+        # Progress-aware control (opt 1): actions that moved state/evidence/candidates
+        "progress_events": counters.get("progress_events", 0),
+        "progress_hits": counters.get("progress_hits", 0),
+        "progress_ratio": (
+            round(
+                counters.get("progress_hits", 0) / counters.get("progress_events", 1),
+                3,
+            )
+            if counters.get("progress_events")
+            else None
         ),
         # candidate_precision ≈ rankable / shortlist (1.0 = no junk in shortlist)
         "candidate_precision": (

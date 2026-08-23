@@ -64,6 +64,7 @@ docker compose run --rm research-agent python agent.py --planned \
 - **Layers**: observations → evidence buffer → ranked candidates (only when eligible)
 - Harvest: structural entity↔value; multi-confidence; no product-vertical word lists
 - Host harvest subscore: `price_signals` ≠ `relationships_extractable`
+- **Progress-aware control**: consecutive actions with no state/evidence/candidate delta → host abandon (`max_zero_progress_per_host`)
 
 ## Run
 

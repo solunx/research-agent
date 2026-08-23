@@ -212,6 +212,38 @@ harvest:
 - **No product-vertical word lists.**
 - Inline recon: memory only; clear `needs_recon` only without severe param rewrite.
 
+## 4c. Progress-aware control (agent control loop)
+
+Harvest and PageState are not enough if the agent keeps clicking the same surface.
+
+```
+Action (browser_* / add_to_shortlist)
+        ↓
+Progress event
+  state_changed?        (URL / page surface changed)
+  evidence_added?       (new evidence buffer rows)
+  candidate_added?      (layer=candidate / LLM shortlist)
+  constraint_improved?  (constraints_check filled)
+  memory_updated?       (optional)
+        ↓
+had_progress?
+  yes → zero_progress streak = 0; continue
+  no  → streak += 1
+        ↓
+streak ≥ max_zero_progress_per_host (default 2)
+        ↓
+host abandoned (same path as classic no-ops) + needs_recon in retrieval
+```
+
+**Principles**
+- Not a fixed “max 3 clicks” rule — **state-based diminishing returns**.
+- Classic no-op (same URL + no new price_hints) remains; progress is **stricter** (new hints alone without evidence/state do not reset the progress streak forever).
+- Config: `limits.max_zero_progress_per_host` (default = `max_browser_noops_per_host`).
+- Metadata: `progress_events`, `progress_hits`, `progress_ratio`.
+- Tool results include a compact `progress` object so the LLM sees stagnation.
+
+**Does not solve:** subject/group structure on the page (next architecture step). Solves: burning minutes on repeated timeouts after a useful list was already harvested.
+
 ## 5. Web capability ladder (per host)
 
 ```
@@ -227,7 +259,7 @@ harvest:
   Tier 3   Browser Use (last resort, narrow instruction)
 ```
 
-**Guards:** memory-first open, param-warning strip, soft mismatch, empty-inventory cap, no-op/consent, shortlist honesty.
+**Guards:** memory-first open, param-warning strip, soft mismatch, empty-inventory cap, no-op/consent, **progress-aware abandon**, shortlist honesty.
 
 ---
 

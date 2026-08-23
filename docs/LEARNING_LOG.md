@@ -295,3 +295,29 @@ observations → evidence (layer=evidence) → ConstraintResults → eligibility
 
 ### Genericity
 Harvest still reconstructs entity↔value structure only — no product-vertical word lists. Same contract for any list/detail surface.
+
+## 2026-08-23 — Progress-aware control (opt 1)
+
+### Trigger
+Retrieval run 13-24-22 (~11 min): useful list harvested on lastminute.be, then repeated clicks → timeout → host abandon; Sunweb same pattern. Control loop, not harvest, was the operational bottleneck. ChatGPT helicopter view: progress first-class, not fixed click caps; no more page_role taxonomy growth.
+
+### Hypothesis
+If each browser action records a **progress delta** (state / evidence / candidate / constraint) and consecutive zero-progress actions abandon the host, runs stop thrashing the same surface after yield is exhausted.
+
+### Shipped
+- `_record_progress` / `_maybe_abandon_zero_progress` in `agent.py` (per session).
+- Progress event fields: `state_changed`, `evidence_added`, `candidate_added`, `constraint_improved`, `had_progress`, `zero_progress_streak`.
+- Config: `limits.max_zero_progress_per_host` (default 2, same scale as no-ops).
+- Metadata: `progress_events`, `progress_hits`, `progress_ratio`.
+- Tool results expose compact `progress` so the LLM sees stagnation.
+- Classic no-op (URL + price_hints) retained; progress is stricter (hints alone without state/evidence do not keep the host open indefinitely).
+- Docs: METHODOLOGY §4c, this log entry, README bullet.
+
+### Explicitly not in this patch
+- Subject/group containment model (opt 2 / structure)
+- Extra page_role values
+- Site-specific harvest regex / marketing word lists
+- Semantics requested/observed/interpreted object (follow-up)
+
+### Expected test signal
+Re-run `compare_packages_dec2026` with playwright: after one successful Mijas list harvest, further clicks with no new evidence should hit zero-progress abandon faster; more budget left for other hosts; `progress_ratio` visible in metadata.

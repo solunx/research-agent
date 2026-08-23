@@ -18,6 +18,9 @@ limits:
   max_browser_actions_per_host: 8
   # Consecutive no-op browser actions (same URL, no new price_hints) before abandoning host
   max_browser_noops_per_host: 2
+  # Progress-aware control: consecutive browser actions with no progress delta
+  # (no new page state, evidence, or candidates) → abandon host. State-based, not a fixed click cap.
+  max_zero_progress_per_host: 2
   # Tier-3 Browser Use: hard cap per host per session (timeouts are expensive)
   max_browser_use_per_host: 2
 
