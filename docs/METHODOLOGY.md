@@ -282,29 +282,52 @@ ACTION
 - Config: `limits.max_zero_progress_per_host` (default = `max_browser_noops_per_host`).
 - Metadata: `progress_events`, `progress_hits`, `progress_ratio`.
 
-## 4d. Page structure + structure-first evidence
+## 4d. Page structure + member admissibility + structure-first evidence
 
 ```
 PageState.structure
   primary_subject: { id, label, kind: "unknown" } | null
-  groups: [
-    { id, member_count, sample_labels[], sample_values[], members[] }
-  ]
-  members: [ { id, entity, value, entity_score, confidence, ... } ]
+  groups: [ { id, member_count, sample_labels[], sample_values[], members[] } ]
+  members: [ admissible members only ]
+  rejected_members: [ { entity, value, reject_reason, features } ]
+  admissibility_stats: { accept, reject_cta, reject_geo_nav, ... }
+  candidate_count: int
 ```
 
-Built from EAV clusters after extract — **containment of repeated shapes**, not product taxonomy.
+### Four epistemic questions (keep separate)
+
+| Layer | Question |
+|-------|----------|
+| **Member admissibility** | May this object be an evidence unit at all? |
+| **MinAC** | Do we know *enough* about admissible members / the surface? |
+| **Constraints** | Does the evidence match the user request? |
+| **Eligibility** | May it enter the ranked shortlist? |
+
+Admissibility ≠ MinAC. A clear room-only offer is **admissible + MinAC adequate** even if the user asked all-inclusive — constraints then FAIL. Never fold task constraints into MinAC or admissibility.
+
+### Admissibility (deterministic, generic)
+
+```
+candidate members (entity + primary value)
+        ↓
+assess_member_admissibility → features + reject_reason | accept
+        ↓
+structure.members = accepted only
+```
+
+Features (examples): `looks_like_cta`, `has_offer_body`, `offer_shape_score`, `geo_signal`, `dest_card_shape`, `schema_similarity`.  
+Reason codes: `reject_cta`, `reject_geo_nav`, `reject_amenity`, `reject_type_label`, `reject_schema_outlier`, `reject_unit_or_line_item`, …
+
+No product-vertical place-name lists. List **schema consistency**: members that diverge from the dominant offer-shape cohort are outliers.
 
 | Surface | Structure behaviour |
 |---------|---------------------|
-| `detail` | Best entity → `primary_subject`; other entities → related group |
-| `list` / unknown | One group of offer-shaped rows; members are evidence units |
-| `landing` | Structure may be empty; no promote |
+| `detail` | Best *admissible* entity → `primary_subject` |
+| `list` / unknown | Admissible offer-shaped rows only |
+| `landing` | Empty / no promote |
 
-**Structure-first promote:** on list/detail, the evidence buffer is filled from `structure.members` (entity already paired with a primary value). Isolated high-score EAVs that are not structure members do not enter the buffer (except a sparse fallback when structure is empty). Membership is the hard gate; confidence floors are secondary.
-
-Evidence rows carry `structure_ref` (`group_id` / `primary_subject` / `awareness_status`).  
-**Invariant:** `kind` stays `unknown` at this layer — ranking never keys on vertical type.
+**Structure-first promote:** evidence buffer ← `structure.members` only.  
+**Invariant:** `kind` stays `unknown` — ranking never keys on vertical type.
 
 ## 5. Web capability ladder (per host)
 

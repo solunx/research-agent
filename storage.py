@@ -792,6 +792,235 @@ def infer_page_role(
     return "unknown"
 
 
+# CTA / pure-action entity shape (language-light imperatives + UI verbs)
+_CTA_ENTITY_RE = re.compile(
+    r"^(?:"
+    r"(?:bekijk|view|see|show|toon|open|kies|choose|select|sorteer|sort|"
+    r"filter|zoek|search|personaliseer|customise|customize|book|boek|"
+    r"reserveer|reserve|koop|buy|add|voeg)\b.{"
+    r"0,40}$|"
+    r".{0,40}\b(?:bekijken|boeken|personaliseren)\s*$|"
+    r"pakket\s+bekijken|view\s+package|see\s+(?:deal|offer|package)|"
+    r"toon\s+meer|show\s+more|load\s+more"
+    r")",
+    re.I,
+)
+# Accommodation *type* alone (not a branded property name)
+_ACCOM_TYPE_ONLY_RE = re.compile(
+    r"^(?:hotel|appartement|apartment|studio|villa|bungalow|hostel|"
+    r"resort|landhuis|guesthouse|pension|kamer|room|suite)s?$",
+    re.I,
+)
+# Offer-body co-signals in raw cluster text (board, stay length, transport, reviews)
+_OFFER_BODY_RE = re.compile(
+    r"(?:"
+    r"\b(?:enkel\s*kamer|room\s*only|ontbijt|breakfast|halfpension|"
+    r"half\s*board|volpension|full\s*board|all\s*-?\s*inclusive|"
+    r"ultra\s*all)\b|"
+    r"\b\d+\s*(?:nacht(?:en)?|nights?|dagen|days?)\b|"
+    r"\b(?:luchthaven\s*transfer|airport\s*transfer|"
+    r"heen-?\s*en\s*terug(?:vlucht(?:en)?)?|flights?\s+from|"
+    r"vertrek\s+van|from\s+\w{3,})\b|"
+    r"\b\d+[.,]?\d*\s*(?:/5|/10)\b|"  # rating
+    r"\b\d{2,}\s*reviews?\b|"
+    r"\b\d+\s*m\s+van\b|\b\d+[.,]\d+\s*km\b"  # distance-to-beach style
+    r")",
+    re.I,
+)
+# "X per boeking/booking" amenity chrome as entity
+_PER_BOOKING_RE = re.compile(
+    r"\bper\s+(?:boeking|booking|reservatie|reservation|kamer|room)\b",
+    re.I,
+)
+
+
+def assess_member_admissibility(
+    member: dict[str, Any],
+    *,
+    page_role: str = "unknown",
+    cohort_offer_scores: list[float] | None = None,
+) -> dict[str, Any]:
+    """
+    Member admissibility — separate from MinAC.
+
+    Question: may this structure member be an evidence unit at all?
+    (Not: do we know enough about it? That is MinAC.)
+
+    Generic structural features only — no product-vertical word lists of places.
+    Returns admissible bool, features, reject_reason.
+    """
+    ent = str(member.get("entity") or "").strip()
+    raw = str(member.get("raw_evidence") or "")
+    blob = f"{ent} | {raw}".lower()
+    tokens = [t for t in re.split(r"\s+", ent) if t]
+    n_tok = len(tokens)
+    es = float(member.get("entity_score") or 0)
+    mp = float(member.get("marketing_penalty") or 0)
+
+    looks_like_cta = bool(_CTA_ENTITY_RE.search(ent)) or bool(
+        re.match(r"^(?:bekijk|boek|view|book|toon|kies)\b", ent, re.I) and n_tok <= 4
+    )
+    looks_like_unit = bool(_UNIT_LABEL_CHROME_RE.search(ent))
+    looks_like_amenity = bool(
+        _AMENITY_CHROME_RE.search(ent)
+        or _PER_BOOKING_RE.search(ent)
+        or _PER_BOOKING_RE.search(raw)
+        and n_tok <= 6
+        and es < 0.7
+    )
+    looks_like_line_item = bool(
+        member.get("is_line_item") or _is_line_item_entity(ent)
+    )
+    looks_like_accom_type = bool(_ACCOM_TYPE_ONLY_RE.search(ent))
+    looks_like_slogan = bool(_SLOGAN_SHAPE_RE.search(ent) or _MARKETING_OPENER_RE.search(ent))
+
+    offer_hits = len(_OFFER_BODY_RE.findall(raw)) + len(_OFFER_BODY_RE.findall(ent))
+    has_offer_body = offer_hits >= 1
+    # Stronger offer shape: entity multi-token + body signals or high entity score
+    offer_shape_score = 0.0
+    if has_offer_body:
+        offer_shape_score += 0.45
+    if offer_hits >= 2:
+        offer_shape_score += 0.2
+    if n_tok >= 2 and es >= 0.55:
+        offer_shape_score += 0.25
+    if n_tok >= 3 and es >= 0.7:
+        offer_shape_score += 0.15
+    if mp >= 0.3:
+        offer_shape_score -= 0.25
+    if looks_like_cta or looks_like_unit or looks_like_amenity:
+        offer_shape_score -= 0.4
+    offer_shape_score = max(0.0, min(1.0, offer_shape_score))
+
+    # Geo/nav-like: short proper-name entity, weak/no offer body relative to list
+    geo_signal = bool(
+        1 <= n_tok <= 4
+        and es >= 0.55
+        and not has_offer_body
+        and not looks_like_cta
+        and not re.search(r"\d", ent)
+        and not looks_like_accom_type
+    )
+    # Destination / region aggregate card vs property offer row.
+    # Property body = reviews, distance-to-POI, airport transfer, round-trip flights.
+    has_property_body = bool(
+        re.search(
+            r"\b(?:reviews?|/5|/10|\d+\s*m\s+van|\d+[.,]\d+\s*km\b|"
+            r"luchthaven\s*transfer|airport\s*transfer|"
+            r"heen-?\s*en\s*terug(?:vlucht)?|flights?\s+from)\b",
+            raw,
+            re.I,
+        )
+    )
+    dest_card_shape = bool(
+        1 <= n_tok <= 4
+        and es >= 0.55
+        and not looks_like_cta
+        and not re.search(r"\d", ent)
+        and re.search(
+            r"\b(?:hotel|landhuis|appartement|apartment|resort|villa)\b",
+            raw,
+            re.I,
+        )
+        and not has_property_body
+        # Aggregate destination cards often still mention nights/pp; that alone
+        # must not promote them to offer members when property body is absent.
+    )
+
+    features = {
+        "looks_like_cta": looks_like_cta,
+        "looks_like_amenity": looks_like_amenity,
+        "looks_like_unit_label": looks_like_unit,
+        "looks_like_line_item": looks_like_line_item,
+        "looks_like_accom_type": looks_like_accom_type,
+        "looks_like_slogan": looks_like_slogan,
+        "has_offer_body": has_offer_body,
+        "offer_shape_score": round(offer_shape_score, 3),
+        "geo_signal": geo_signal,
+        "dest_card_shape": dest_card_shape,
+        "token_count": n_tok,
+        "entity_score": es,
+    }
+
+    # Hard rejects (order = priority reason)
+    if not ent or n_tok < 1:
+        return {
+            "admissible": False,
+            "features": features,
+            "reject_reason": "reject_empty",
+        }
+    if looks_like_cta:
+        return {
+            "admissible": False,
+            "features": features,
+            "reject_reason": "reject_cta",
+        }
+    if looks_like_unit or looks_like_line_item:
+        return {
+            "admissible": False,
+            "features": features,
+            "reject_reason": "reject_unit_or_line_item",
+        }
+    if looks_like_amenity:
+        return {
+            "admissible": False,
+            "features": features,
+            "reject_reason": "reject_amenity",
+        }
+    if looks_like_accom_type:
+        return {
+            "admissible": False,
+            "features": features,
+            "reject_reason": "reject_type_label",
+        }
+    if looks_like_slogan and offer_shape_score < 0.35:
+        return {
+            "admissible": False,
+            "features": features,
+            "reject_reason": "reject_slogan",
+        }
+    if dest_card_shape or (geo_signal and offer_shape_score < 0.35):
+        return {
+            "admissible": False,
+            "features": features,
+            "reject_reason": "reject_geo_nav",
+        }
+
+    # Schema consistency vs cohort (list surfaces with enough peers)
+    cohort = [float(x) for x in (cohort_offer_scores or []) if x is not None]
+    if page_role in ("list", "unknown") and len(cohort) >= 3:
+        sorted_c = sorted(cohort)
+        median = sorted_c[len(sorted_c) // 2]
+        if median >= 0.45 and offer_shape_score < median - 0.35:
+            features["schema_similarity"] = "low"
+            features["cohort_median_offer"] = round(median, 3)
+            return {
+                "admissible": False,
+                "features": features,
+                "reject_reason": "reject_schema_outlier",
+            }
+        features["schema_similarity"] = (
+            "high" if offer_shape_score >= median - 0.15 else "mid"
+        )
+        features["cohort_median_offer"] = round(median, 3)
+    else:
+        features["schema_similarity"] = "n/a"
+
+    # Weak offer shape on list without hard reject → still drop if very weak
+    if page_role == "list" and offer_shape_score < 0.25 and es < 0.65:
+        return {
+            "admissible": False,
+            "features": features,
+            "reject_reason": "reject_weak_offer_shape",
+        }
+
+    return {
+        "admissible": True,
+        "features": features,
+        "reject_reason": None,
+    }
+
+
 def build_page_structure(
     *,
     page_role: str = "unknown",
@@ -805,18 +1034,19 @@ def build_page_structure(
     Page
       primary_subject: { id, label, kind: "unknown" } | null
       groups: [ { id, member_count, sample_labels, sample_values, members } ]
-      members: flat list of offer-shaped rows (entity + primary value)
+      members: admissible offer-shaped rows only
+      rejected_members: candidates dropped by admissibility (debug)
+      admissibility_stats: counts by reject_reason / accept
 
-    kind is always "unknown" at this layer. Promotion/eligibility must not
-    depend on kind==product/hotel. Structure = containment of repeated shapes.
+    Pipeline: candidate members → MEMBER ADMISSIBILITY → members → MinAC.
 
-    Evidence units on list surfaces are group *members*, not free-floating EAVs.
+    kind is always "unknown". Evidence units = admissible members.
     """
     role = (page_role or "unknown").strip().lower()
     eavs = [e for e in (eavs or []) if isinstance(e, dict)]
 
-    # Group members: primary-amount EAV rows with an entity label
-    members: list[dict[str, Any]] = []
+    # Candidate members: primary-amount EAV rows with an entity label
+    candidates: list[dict[str, Any]] = []
     seen_labels: set[str] = set()
     for e in eavs:
         if str(e.get("amount_role") or "") != "primary":
@@ -824,18 +1054,13 @@ def build_page_structure(
         label = str(e.get("entity") or "").strip()
         if not label or len(label) < 2:
             continue
-        # Unit labels / line-items are not subjects of a group
-        if e.get("is_line_item") or _is_line_item_entity(label):
-            continue
-        if _UNIT_LABEL_CHROME_RE.search(label) or _AMENITY_CHROME_RE.search(label):
-            continue
         key = label.lower()
         if key in seen_labels:
             continue
         seen_labels.add(key)
-        members.append(
+        candidates.append(
             {
-                "id": f"m{len(members)}",
+                "id": f"m{len(candidates)}",
                 "entity": label[:120],
                 "value": str(e.get("value") or "")[:40],
                 "entity_score": float(e.get("entity_score") or 0),
@@ -846,8 +1071,81 @@ def build_page_structure(
                 "is_line_item": bool(e.get("is_line_item")),
             }
         )
-        if len(members) >= 24:
+        if len(candidates) >= 24:
             break
+
+    # Pass 1: feature scores for cohort median (schema consistency)
+    pre_scores: list[float] = []
+    pre_assess: list[dict[str, Any]] = []
+    for c in candidates:
+        a = assess_member_admissibility(c, page_role=role, cohort_offer_scores=None)
+        pre_assess.append(a)
+        pre_scores.append(float((a.get("features") or {}).get("offer_shape_score") or 0))
+
+    # Dominant schema samples for optional MEMBER_ROLE LLM context
+    strong = sorted(
+        [
+            (float((a.get("features") or {}).get("offer_shape_score") or 0), c)
+            for c, a in zip(candidates, pre_assess)
+            if a.get("admissible")
+        ],
+        key=lambda x: -x[0],
+    )
+    dominant_schema = {
+        "sample_targets": [c["entity"] for _, c in strong[:5]],
+        "typical_signals": ["price", "subject_body", "repeated_list_shape"],
+    }
+
+    # Pass 2: structural assess → MEMBER_ROLE resolve (deterministic-first)
+    from member_role import resolve_member_role  # local import: avoid cycles
+
+    members: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    stats: dict[str, int] = {"accept": 0}
+    role_stats: dict[str, int] = {}
+    telemetry_log: list[dict[str, Any]] = []
+    for c, _pre in zip(candidates, pre_assess):
+        a = assess_member_admissibility(
+            c, page_role=role, cohort_offer_scores=pre_scores
+        )
+        resolved = resolve_member_role(
+            a,
+            candidate=c,
+            task_subject_type="accommodation_offer",
+            dominant_list_schema=dominant_schema,
+            # chat_fn omitted: LLM only when MEMBER_ROLE_LLM=1 and caller injects
+        )
+        row = dict(c)
+        row["admissibility"] = {
+            "admissible": resolved["admissible"],
+            "features": a.get("features") or {},
+            "reject_reason": resolved.get("reject_reason") or a.get("reject_reason"),
+            "role": resolved.get("role"),
+            "member_role": resolved.get("telemetry") or {},
+        }
+        rname = str(resolved.get("role") or "UNKNOWN")
+        role_stats[rname] = role_stats.get(rname, 0) + 1
+        telemetry_log.append(
+            {
+                "entity": c.get("entity"),
+                **(resolved.get("telemetry") or {}),
+            }
+        )
+        if resolved["admissible"]:
+            members.append(row)
+            stats["accept"] = stats.get("accept", 0) + 1
+        else:
+            reason = str(
+                resolved.get("reject_reason")
+                or a.get("reject_reason")
+                or "reject_other"
+            )
+            stats[reason] = stats.get(reason, 0) + 1
+            rejected.append(row)
+
+    # Re-id accepted members for stable ids
+    for i, m in enumerate(members):
+        m["id"] = f"m{i}"
 
     groups: list[dict[str, Any]] = []
     primary_subject: dict[str, Any] | None = None
@@ -871,7 +1169,6 @@ def build_page_structure(
                 }
             )
     elif members:
-        # list / unknown / landing: one group of repeated offer-shaped rows
         groups.append(
             {
                 "id": "g0",
@@ -894,7 +1191,21 @@ def build_page_structure(
         "groups": groups,
         "members": members,
         "member_count": len(members),
-        "method": "eav_cluster_structure",
+        "rejected_members": [
+            {
+                "entity": r.get("entity"),
+                "value": r.get("value"),
+                "reject_reason": (r.get("admissibility") or {}).get("reject_reason"),
+                "role": (r.get("admissibility") or {}).get("role"),
+                "features": (r.get("admissibility") or {}).get("features"),
+            }
+            for r in rejected[:20]
+        ],
+        "admissibility_stats": stats,
+        "member_role_stats": role_stats,
+        "member_role_telemetry": telemetry_log[:24],
+        "candidate_count": len(candidates),
+        "method": "eav_cluster_structure+admissibility+member_role",
     }
 
 

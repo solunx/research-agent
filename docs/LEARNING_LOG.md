@@ -382,3 +382,202 @@ Perception cascade (DOM → AX → screenshot/OCR) remains a **future escalation
 
 ### Expected test signal
 List harvest on populated hosts: `page_state.awareness.status` ∈ {partial, adequate}; `promoted` tracks structure members; chrome entities no longer dominate shortlist; empty/mismatch hosts still `awareness=insufficient` / observations only.
+
+---
+
+## 2026-08-23 — Member admissibility (iteration A)
+
+### Trigger
+Run 22-07-41 after MinAC: structure-first + adequate awareness, but shortlist still held destination cards (Gran Canaria), CTAs (Pakket bekijken), amenities (3 kleine tassen). Case B: entity↔value true → MinAC adequate → false evidence unit.
+
+### Principle
+Four separate epistemic questions:
+1. **Admissibility** — may this object be evidence at all?
+2. **MinAC** — do we know enough?
+3. **Constraints** — does it match the request?
+4. **Eligibility** — may it rank?
+
+Admissibility is **not** a MinAC dimension. Task constraints stay out of both.
+
+### Shipped
+- `assess_member_admissibility()` with features + `reject_reason` codes
+- `build_page_structure`: candidates → admissibility → `members` (accepted only) + `rejected_members` + `admissibility_stats`
+- Generic signals: CTA shape, unit/amenity, type-label, dest/geo card without property body, schema outlier vs cohort
+- No AX/OCR/LLM; no host routing; no new harvest score layer
+
+### Explicitly not in this patch
+- Frontier host switch on constraint-unmatched
+- Perception cascade
+- LLM on uncertain members
+
+### Expected test signal
+Same retrieval task: Gran Canaria / Pakket bekijken / Personaliseer / Appartement / amenity lines in `rejected_members` with reason codes; hotel-shaped rows in `members`; higher candidate_precision; MinAC still adequate on real offer lists.
+
+---
+
+## 2026-08-24 — MEMBER_ROLE experiment v0 (isolated)
+
+### Why
+Iteratie A (admissibility) reduced geo/CTA noise but remaining Case-B and vertical enums
+(`TARGET_OFFER`) are not generic. Architecture direction: code driver + typed LLM only
+on UNCERTAIN.
+
+### Shipped
+- `docs/DECISION_MEMBER_ROLE.md` — structural roles TARGET|NAVIGATION|ACTION|FRAGMENT|CHROME|UNKNOWN
+- `evals/member_role_golden.jsonl` — 20 labeled members from runs
+- `member_role.py` — deterministic-first → optional LLM (`MEMBER_ROLE_LLM=1`) → fail-closed UNKNOWN
+- `build_page_structure` wires resolve_member_role + telemetry
+
+### Golden (deterministic only)
+accuracy 19/20 (0.95). Miss: "Mijas Costa·…·Bekijk op kaart" accepted as TARGET (chrome glued into entity string).
+
+### Enable LLM path
+`MEMBER_ROLE_LLM=1` plus inject chat_fn in resolve (not wired to Ollama in harvest path yet — next small step).
+
+---
+
+## 2026-08-24 — Contract Discovery v0 (isolated, no pipeline change)
+
+### Why
+Run `2026-08-24T08-01-36`: rankable=0, candidate_precision=0.0, but admissibility/member_role
+correctly rejected geo/CTA noise and accepted hotel-shaped TARGET rows. Bottleneck is no longer
+harvest chrome — it is **task-specific semantics** (board_type, detail_link, price_scope) and
+eligibility. Fixed MEMBER_ROLE ontology is still vertical bias for non-shopping tasks.
+
+### Architecture shift (agreed)
+- Meta-schema fixed in code; LLM fills content only
+- Contract Discovery → (later) FREEZE → typed decision execution
+- MEMBER_ROLE remains a feature layer, not the permanent ontology
+- Success criterion: contract **explains** zero-rankable (names missing decisions)
+
+### Shipped
+- `contract_discovery.py` — schema, validate, surface selection, discover, gap analysis
+- `scripts/run_contract_discovery_v0.py` — CLI + fixture
+- `docs/DECISION_CONTRACT_DISCOVERY.md`
+
+### Not shipped
+- Live pipeline wiring, FREEZE loop, SPEC_GAP auto-patch, multi-host convergence
+
+### How to test on host
+```bash
+python scripts/run_contract_discovery_v0.py --fixture
+python scripts/run_contract_discovery_v0.py \
+  --run-dir runs/2026-08-24T08-01-36_compare_packages_dec2026
+# optional:
+python scripts/run_contract_discovery_v0.py --run-dir PATH --llm
+```
+
+---
+
+## 2026-08-24 — Contract Execution v0.1 (generic decision executor)
+
+### Hypothesis
+LLM/heuristic contract supplies evidence_signals; domain-agnostic executor emits
+PASS|FAIL|UNKNOWN|SPEC_GAP without `if decision_id == ...`.
+
+### Shipped
+- `contract_discovery.py` schema **0.2** + `evidence_signals` validation + heuristic signals
+- `decision_executor.py` — generic pattern match, item-local evidence, optional LLM on UNKNOWN
+- `scripts/run_contract_execution_v0.py`
+- `evals/decision_oracle_packages_v0.jsonl` (14 cells)
+- `docs/DECISION_CONTRACT_EXECUTION.md`
+
+### Fixture GO metrics
+- oracle_accuracy **1.0**, false_pass **0**, blocker_recall **1.0**, spec_gap_rate **0**
+- board_type ROOM_ONLY on "Enkel kamer"; detail_link ABSENT on `/s/tsx`; Gran Canaria NOT_TARGET
+
+### Not shipped
+Live agent wiring, FREEZE, contract patch, rankable policy.
+
+---
+
+## 2026-08-24 — Evidence channels v0.2 / contract schema 0.3
+
+### Lesson from LLM execution run
+false_pass: Gran Canaria board_type=ALL_INCLUSIVE because `meal=all-inclusive`
+lived in source_url, merged into one evidence blob.
+
+### Change
+- `build_evidence_channels()` splits candidate_claims / search_context / navigation / page_context
+- signals may set `evidence_channels`; default = candidate_claims only
+- discovery prompt + heuristic schema 0.3 require channel discipline
+- oracle soft-align ABSENT ↔ SEARCH_LIST_ONLY
+
+### GO still offline
+false_pass=0 is the gate before second domain or live wiring.
+
+---
+
+## 2026-08-24 — Interpretation v0
+
+### Shift
+evidence_signals proved generic execution is possible but encode meaning as
+patterns. Product direction: Interpretation LLM → normalized outcome; code only
+gates outcomes against the contract.
+
+### Shipped
+- `interpretation.py` — interpret_observation + execute_normalized
+- `evals/interpretation_board_type_golden.jsonl`
+- `scripts/run_interpretation_v0.py`
+- `docs/DECISION_INTERPRETATION.md`
+
+### Next
+`--llm` golden run → if GO, same binary on a literature snippet set (no core change).
+
+---
+
+## 2026-08-25 — Observation provenance v0.2
+
+- Contract: `docs/OBSERVATION_CONTRACT.md` (text/channel/scope/provenance; no outcomes).
+- Builder: `observation_builder.py` — notes **off** by default; card_texts / url_query / chrome explicit.
+- Fixture test: `scripts/run_observation_provenance_v0.py` + `evals/observation_provenance_fixture_v0.json`.
+- Result: **GO=True** — card vs search_context vs chrome separated; no cross-candidate leak; no semantic fill.
+- Next: map existing run artifacts → card_texts if present; one vertical slice.
+
+## 2026-08-25 — raw_evidence → observations
+
+- Extended `observation_builder.py`: `split_raw_evidence`, `observations_from_harvest_row`,
+  `build_from_observations_jsonl`, `build_from_run_dir_rich`.
+- Literal `|` split only; chrome literals → page_chrome; URL meal= → search_context.
+- Script: `scripts/run_observation_raw_evidence_v0.py`.
+- On pasted harvest JSONL: GO=True, Sercotel gets "Enkel kamer" + flight text as candidate_claim.
+- Notes still off. No semantic outcomes in builder.
+
+## 2026-08-25 — Vertical slice v0
+
+- `scripts/run_vertical_slice_v0.py`: harvest observations → builder → interpret_observation
+  (board_type + package_includes_flight) → AND eligibility.
+- Channel filter: only candidate_claim for those decisions; meal= search_context excluded.
+- Primary case: Sercotel (Enkel kamer + flight text) → expect not eligible under required AI.
+- Dry-run GO (UNKNOWN fail-closed + search_context not fed). Full GO needs `--llm`.
+
+---
+
+## 2026-08-25/26 — Candidate selection campaign (structural vs LLM)
+
+**Hypothesis:** Compare S0 structural, S1 heuristics, S2 LLM-raw, S3 LLM-grounded, S5 hybrid for *candidate selection* across web/literature/code/documents pilots.
+
+| Method | Avg R (4 domains) | Notes |
+|--------|-------------------|--------|
+| S3 grounded | **1.0** | Neighbors/element_type/provenance matter |
+| S0 structural | 0.875 | Weak on documents |
+| S5 hybrid | 0.875 | Loses docs recall to aggressive long-phrase prefilter |
+| S1 heuristics | 0.75 | Long-phrase harms content units |
+| S2 raw | 0.625 | **Web R=0** — hotel name alone insufficient |
+
+**Decisions:**
+- Treat structure as **context provider**, not universal candidate classifier.
+- Do not expand phrase-based admissibility as product architecture.
+- Prefer **grounded LLM (S3)** as selection hypothesis; hybrid only after safe chrome-only prefilter.
+- Next science: **Contract Discovery modes CD0/CD1/CD2** (task-only vs one-shot vs provisional→refine).
+
+**Code:** `candidate_selection/`, `scripts/run_candidate_selection_*.py`; results under `evals/candidate_campaign/`.
+
+---
+
+## 2026-08-26 — Architecture freeze narrative + CD campaign
+
+Documented full path in `docs/ARCHITECTURE_JOURNEY.md` (process schema, experiment map, non-goals).
+
+**Next campaign:** Contract Discovery CD0/CD1/CD2  
+Scripts: `run_contract_discovery_mode_v0.py`, `run_contract_discovery_campaign_v0.py`.

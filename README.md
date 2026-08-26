@@ -6,6 +6,9 @@ General-purpose local research agent (Ollama + tools + Docker).
 
 - **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)** — recon vs **retrieval**; **navigation · semantics · harvest**
 - **[docs/LEARNING_LOG.md](docs/LEARNING_LOG.md)** — what we tested, what worked, what we abandoned
+- **[docs/DECISION_CONTRACT_DISCOVERY.md](docs/DECISION_CONTRACT_DISCOVERY.md)** — Contract Discovery v0 (task-specific research contract)
+- **[docs/DECISION_CONTRACT_EXECUTION.md](docs/DECISION_CONTRACT_EXECUTION.md)**
+- **[docs/DECISION_INTERPRETATION.md](docs/DECISION_INTERPRETATION.md)** — Interpretation v0 (raw → normalized outcome → dumb gate) — Contract Execution v0.1 (generic decision executor)
 
 ```bash
 # Learning only (no shortlist) — probes interface structure, not deals
@@ -61,8 +64,9 @@ docker compose run --rm research-agent python agent.py --planned \
 - **`web_policy`**: rolling per-host rate limits + cooldown after 403/429/CAPTCHA (`memory/domain_policy.json`)
 - **PageState** (`match` + `page_role`: landing|list|detail|unknown) + **eligibility** policy
 - **Page structure**: `primary_subject` (`kind=unknown`) + `groups` + `members` from EAV clusters
+- **Member admissibility** (before MinAC): may this object be an evidence unit? Features + reject_reason (`reject_cta`, `reject_geo_nav`, …); only accepted members enter structure
 - **Minimal Awareness Context (MinAC)**: only the signals needed for honest constraint evaluation (`adequate` / `partial` / `insufficient`) — not maximum multi-modal capture
-- **Structure-first promote**: evidence units = structure members (list/detail); free-floating chrome EAVs stay out
+- **Structure-first promote**: evidence units = *admissible* structure members; free-floating chrome EAVs stay out
 - **Evidence scope**: primary|group|related|chrome|element — chrome/related/element never rankable
 - **Layers**: observations → evidence buffer → ranked candidates (only when eligible)
 - Harvest: structural entity↔value; multi-confidence; no product-vertical word lists
