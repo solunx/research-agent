@@ -1150,3 +1150,62 @@ leaving the start path was tagged `site_marketing` + `same_entity_path=False` �
 - `provenance_blocked_n` much lower than 248
 - At least some decision outcomes ≠ UNKNOWN when offer text is present
 - Failed "Zoeken" does not alone yield `ACQUISITION_ACTION_FAILED`
+
+---
+
+## 2026-08-28 — Candidate-unit packaging + item-link acquisition bias
+
+### Problem (post E / soft-fail)
+Provenance no longer blocked list evidence (`prov_blocked=0`), and some outcomes
+moved (e.g. `board_type=ALL_INCLUSIVE`, `price_scope=PRICE_NOT_VISIBLE`). But
+most package-level decisions stayed UNKNOWN because interpretation still saw
+**isolated line claims**:
+  "Grand Park Lara"
+  "Ultra All Inclusive"
+  "vanaf Brussel"
+  "va 547 p.p."
+A human binds these as one offer; the agent did not.
+
+Also: acquisition kept preferring search/filter controls over concrete item links
+even when units were visible.
+
+### Shipped (framework only)
+1. **`candidate_units.py`**
+   - `package_candidate_units(text, affordances, page_url)` → units with
+     `texts`, optional `item_link`, `density_hits`, `source`
+   - Clustering: blank-line blocks first (card boundaries), then link anchors
+     clipped to their block
+   - Density signal: currency / from / p.p. shapes only — **no** domain enums
+   - `units_to_observations` emits **one multi-line claim per unit** so
+     interpretation sees co-occurring facts
+   - `unit_item_link_targets` for acquisition preference
+
+2. **Acquisition loop** (`live_offer_state_slice`)
+   - On `list_results`: prefer unit-bound observations over flat line ranking
+   - On detail surfaces: keep line observations; units supplemental
+   - Trace artifacts: `step_XXX_candidate_units.json`, unit_preview in claims
+
+3. **Planner bias** (`evidence_acquisition`)
+   - `filter_safe_affordances(..., preferred_item_links=)` marks matching
+     local links `preferred_item=true` and ranks them first
+   - `acquisition_decide` receives `candidate_units` + `preferred_item_links`
+     and is instructed to prefer opening a concrete unit when gaps remain
+
+### Boundary
+- No Corendon / hotel / board / flight strings in packager or ranking
+- Contract decision ids remain LLM-owned data
+- Packaging is a **mechanism** (binding), not a domain ontology
+
+### Expect on 01 re-run
+- `units=N item_links=M` on list steps
+- claim_preview shows `[u0] … | … | … → link`
+- At least one acquisition step may OPEN/CLICK a preferred item link
+- Outcomes for co-occurring facts (airport/date/board/price) more likely
+  non-UNKNOWN when unit text contains them
+- 02 still CONTRACT_SATISFIED in 0 steps (detail path unchanged)
+
+### Still open
+- Interpretation still one-decision-at-a-time; unit text helps binding but
+  cost (LLM calls) remains high on large contracts
+- Prefer deeper DOM card structure later if blank-line clustering fails on
+  some sites (still structural, not domain)

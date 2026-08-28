@@ -132,11 +132,26 @@ def filter_safe_affordances(
     affordances: list[dict[str, Any]],
     *,
     max_keep: int = 36,
+    preferred_item_links: list[dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Drop irreversible controls; prefer local/tab/button over global nav.
-    Preserves scope tag for planner + audit.
+    When preferred_item_links is provided (from candidate-unit packaging),
+    boost matching local links so the planner sees concrete item targets first.
+
+    Structural only — no domain vocabulary.
     """
+    pref_texts = {
+        str(p.get("text") or "").strip().lower()
+        for p in (preferred_item_links or [])
+        if p.get("text")
+    }
+    pref_hrefs = {
+        str(p.get("href") or "").strip().lower()
+        for p in (preferred_item_links or [])
+        if p.get("href")
+    }
+
     safe: list[dict[str, Any]] = []
     for a in affordances or []:
         text = str(a.get("text") or "")
@@ -146,6 +161,16 @@ def filter_safe_affordances(
         scope = str(a.get("scope") or "unknown")
         if scope not in ("local", "global", "unknown"):
             scope = "unknown"
+        is_pref = False
+        tl = text.strip().lower()
+        hl = href.strip().lower()
+        if tl and tl in pref_texts:
+            is_pref = True
+        if hl and hl in pref_hrefs:
+            is_pref = True
+        if not is_pref and tl and pref_texts:
+            # soft substring match on preferred labels
+            is_pref = any(tl in p or p in tl for p in pref_texts if len(p) >= 4)
         safe.append(
             {
                 "kind": a.get("kind"),
@@ -153,16 +178,18 @@ def filter_safe_affordances(
                 "href": href[:300],
                 "role": a.get("role") or "",
                 "scope": scope,
+                "preferred_item": is_pref,
             }
         )
 
-    def _rank(item: dict[str, Any]) -> tuple[int, int]:
+    def _rank(item: dict[str, Any]) -> tuple[int, int, int]:
         kind = str(item.get("kind") or "")
         scope = str(item.get("scope") or "unknown")
         # lower = better
+        pref_rank = 0 if item.get("preferred_item") else 1
         kind_rank = 0 if kind == "tab" else (1 if kind == "button" else 2)
         scope_rank = 0 if scope == "local" else (1 if scope == "unknown" else 2)
-        return (scope_rank, kind_rank)
+        return (pref_rank, scope_rank, kind_rank)
 
     safe.sort(key=_rank)
     return safe[:max_keep]
@@ -253,6 +280,8 @@ def acquisition_decide(
     step_index: int,
     max_steps: int,
     blocked_action_keys: list[str] | None = None,
+    preferred_item_links: list[dict[str, str]] | None = None,
+    candidate_unit_preview: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Propose next action. Fail-closed to STOP when no LLM or invalid output.
@@ -266,8 +295,14 @@ def acquisition_decide(
 
     blocked_action_keys: fingerprints of actions that produced no state change
     (or already failed). Code rejects repeats generically — no site rules.
+
+    preferred_item_links / candidate_unit_preview: optional structural hints from
+    candidate-unit packaging (co-occurring text clusters + their item links).
+    When gaps remain, prefer opening a concrete unit link over re-running search.
     """
-    safe = filter_safe_affordances(affordances)
+    safe = filter_safe_affordances(
+        affordances, preferred_item_links=preferred_item_links
+    )
     blocked = set(blocked_action_keys or [])
     if not gaps:
         return {
@@ -308,11 +343,19 @@ def acquisition_decide(
         "Prefer affordances with scope=local (same entity / same page surface) over "
         "scope=global (site-wide marketing, FAQ, login, destinations). "
         "Global pages rarely prove facts about the specific candidate under study.\n"
-        "Prefer kind=tab or kind=button that stay on the current entity over distant links.\n"
+        "When candidate_units list concrete item clusters with links, and gaps remain, "
+        "prefer opening one of those item links (preferred_item=true) over repeating "
+        "search/filter controls. Exploring a concrete unit yields bound evidence.\n"
+        "Prefer kind=tab or kind=button that stay on the current entity over distant links "
+        "when no preferred item link is available.\n"
         "Do NOT repeat an action listed under no_progress_actions — those already "
         "produced no useful page-state change.\n"
         "If no listed affordance is likely to help, choose STOP.\n"
         "Respond with exactly one JSON object, no markdown."
+    )
+    pref_note = (
+        "prefer preferred_item=true local links that open a concrete candidate unit; "
+        "else prefer local tabs/buttons that deepen the current surface"
     )
     user = {
         "task_excerpt": (task_text or "")[:600],
@@ -320,9 +363,11 @@ def acquisition_decide(
         "page_title": (page_title or "")[:160],
         "gaps": gaps,
         "claim_preview": (claim_preview or [])[:20],
+        "candidate_units": (candidate_unit_preview or [])[:8],
+        "preferred_item_links": (preferred_item_links or [])[:8],
         "affordances": safe[:28],
         "no_progress_actions": list(blocked)[:20],
-        "preference": "prefer scope=local tabs/buttons that open deeper offer/price/detail state for the current entity",
+        "preference": pref_note,
         "step_index": step_index,
         "max_steps": max_steps,
         "allowed_action_class": list(ACTION_CLASSES),

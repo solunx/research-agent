@@ -20,6 +20,12 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
+from candidate_units import (
+    package_candidate_units,
+    unit_claim_preview,
+    unit_item_link_targets,
+    units_to_observations,
+)
 from evidence_acquisition import (
     acquisition_decide,
     action_fingerprint,
@@ -315,27 +321,69 @@ def run_acquisition_loop(
             pass
         prev_state_sig = cur_sig
 
-        obs = page_text_to_observations(
-            candidate_id=entity,
-            url=final_url,
-            title=title,
-            text=text,
-            max_claim_lines=max_claim_lines,
-        )
         # Surface taxonomy (generic, no site names):
         #   live_detail      — starting detail page
         #   live_offer_state — deeper same-entity surface
         #   list_results     — multi-item listing / search results with
         #                      offer-like density (prices, repeated cards)
         #   site_marketing   — left entity path AND no dense item evidence
-        # Binding is surface + candidate_claim channel; path equality alone
-        # must not reject list evidence after a root-start task.
         surface, same_entity = _classify_surface(
             start_url=start_url,
             cur_url=final_url,
             text=text,
             step=step,
         )
+
+        # Candidate-unit packaging (structural binding). On list_results we prefer
+        # unit-bound multi-line claims so interpretation sees co-occurring facts.
+        # On detail surfaces we still keep line observations; units are supplemental.
+        units = package_candidate_units(
+            text=text,
+            affordances=affordances,
+            page_url=final_url,
+            max_units=8,
+            max_lines_per_unit=8,
+        )
+        preferred_links = unit_item_link_targets(units)
+        unit_preview = unit_claim_preview(units)
+
+        if surface == "list_results" and units:
+            obs = units_to_observations(
+                units, page_url=final_url, surface=surface, max_units=6
+            )
+            # Keep page identity crumbs so subject_instance-style decisions still work
+            if title:
+                obs.insert(
+                    0,
+                    {
+                        "observation_id": "live-title",
+                        "candidate_id": entity,
+                        "text": title[:300],
+                        "channel": "candidate_claim",
+                        "scope": "page_title",
+                        "provenance": {
+                            "origin": "browser_title",
+                            "source_url": final_url,
+                            "surface": surface,
+                        },
+                    },
+                )
+        else:
+            obs = page_text_to_observations(
+                candidate_id=entity,
+                url=final_url,
+                title=title,
+                text=text,
+                max_claim_lines=max_claim_lines,
+            )
+            # Supplemental unit-bound claims (do not replace detail line evidence)
+            if units:
+                obs.extend(
+                    units_to_observations(
+                        units[:3], page_url=final_url, surface=surface, max_units=3
+                    )
+                )
+
         for o in obs:
             prov = o.setdefault("provenance", {})
             prov["surface"] = surface
@@ -351,9 +399,18 @@ def run_acquisition_loop(
                     "url": final_url,
                     "stage_d": stage_d,
                     "claim_preview": claims_preview,
+                    "candidate_units": units[:8],
+                    "unit_preview": unit_preview,
                     "obs_n": len(obs),
                 },
             )
+            try:
+                trace.save_artifact(
+                    f"step_{step:03d}_candidate_units.json",
+                    {"url": final_url, "surface": surface, "units": units[:8]},
+                )
+            except Exception:
+                pass
 
         import time as _time
 
@@ -434,6 +491,9 @@ def run_acquisition_loop(
             "same_entity_path": same_entity,
             "state_sig": cur_sig,
             "blocked_actions_n": len(blocked_action_keys),
+            "candidate_units_n": len(units),
+            "preferred_item_links_n": len(preferred_links),
+            "unit_preview": unit_preview[:4],
         }
         steps_log.append(step_rec)
         print(
@@ -444,7 +504,8 @@ def run_acquisition_loop(
             f"interpreted={pipe.get('interpreted')} "
             f"llm_calls={llm_calls_step} interp_s={interp_duration} "
             f"surface={surface} prov_blocked={prov_blocked} "
-            f"blocked_n={len(blocked_action_keys)}",
+            f"blocked_n={len(blocked_action_keys)} "
+            f"units={len(units)} item_links={len(preferred_links)}",
             flush=True,
         )
 
@@ -503,6 +564,8 @@ def run_acquisition_loop(
                 step_index=acquisition_steps,
                 max_steps=max_acquisition_steps,
                 blocked_action_keys=blocked_action_keys,
+                preferred_item_links=preferred_links,
+                candidate_unit_preview=unit_preview,
             )
 
         ledger.log_decision(

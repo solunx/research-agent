@@ -3,7 +3,7 @@
 **Purpose:** prevent regression into domain hardcoding (travel, GPU, marketplace, …).  
 If a future change puts `board_type`, `visible_price`, `offer_state`, or similar **fixed enums** into the runtime, it violates this boundary.
 
-Last updated: 2026-08-27.
+Last updated: 2026-08-28.
 
 ---
 
@@ -27,6 +27,7 @@ These are domain-agnostic and may live in code permanently:
 | Irreversible block | book/pay/checkout/submit (multi-lingual patterns, not site names) |
 | Affordance target enforcement | LLM may only choose observed controls |
 | Provenance tags | surface (`live_detail` / `live_offer_state` / `list_results` / `site_marketing`), same_entity_path, acquisition_step — structural, not domain enums. Marketing surfaces hard-blocked; list_results admissible even when path ≠ start_url |
+| **Candidate-unit packaging** | Structural clustering of co-occurring page lines + local item links into bound units (`candidate_units.py`). Blank-line blocks, link anchors, density signals (€/$/from shapes only). **No** hotel/board/SKU field names in the packager. Units feed interpretation as multi-line claims and acquisition as preferred item links |
 | Evidence store + claim status | UNKNOWN / evidence refs |
 | **Sufficiency gate** | STOP only when **frozen contract** required claims are satisfied — **code decides STOP**, LLM may only propose |
 | TraceSession / flush / job boundaries | Observability and isolation |
