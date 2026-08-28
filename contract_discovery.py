@@ -368,6 +368,173 @@ def _extract_json(text: str) -> dict[str, Any]:
     return json.loads(text[start : end + 1])
 
 
+# Channel aliases the LLM commonly invents → canonical schema channels
+_CHANNEL_ALIASES: dict[str, str] = {
+    "candidate_claim": "candidate_claims",
+    "candidate_claims": "candidate_claims",
+    "claims": "candidate_claims",
+    "card": "candidate_claims",
+    "card_text": "candidate_claims",
+    "raw_evidence": "candidate_claims",
+    "search_context": "search_context",
+    "search": "search_context",
+    "url_filter": "search_context",
+    "url_query": "search_context",
+    "navigation": "navigation",
+    "nav": "navigation",
+    "url": "navigation",
+    "link": "navigation",
+    "page_context": "page_context",
+    "page_chrome": "page_context",
+    "chrome": "page_context",
+    "ui": "page_context",
+    "footer": "page_context",
+}
+
+ALLOWED_EVIDENCE_CHANNELS = frozenset(
+    {"candidate_claims", "search_context", "navigation", "page_context"}
+)
+
+
+def normalize_contract(contract: dict[str, Any]) -> dict[str, Any]:
+    """
+    Best-effort repair of LLM output so validation is stable across CD0/CD1/CD2.
+
+    - Ensure top-level keys exist
+    - Force UNKNOWN into every outcomes list
+    - Map channel aliases; drop empty/broken signals instead of hard-failing
+    - Coerce polarity; default missing polarity to supports
+    Does NOT invent domain semantics — only structural hygiene.
+    """
+    if not isinstance(contract, dict):
+        return {
+            "schema_version": CONTRACT_SCHEMA_VERSION,
+            "subject": {"name": "unknown", "definition": "invalid contract payload"},
+            "observables": ["subject_identity"],
+            "decisions": [
+                {
+                    "id": "subject_instance",
+                    "question": "Is this a concrete subject instance?",
+                    "outcomes": ["TARGET", "NOT_TARGET", OUTCOME_UNKNOWN],
+                }
+            ],
+            "sufficiency": {"required": [], "blocking_unknowns": []},
+            "missing_to_solve": ["contract payload was not an object"],
+            "_source": "normalize_fallback",
+        }
+
+    c = dict(contract)
+    c.setdefault("schema_version", CONTRACT_SCHEMA_VERSION)
+
+    subj = c.get("subject")
+    if not isinstance(subj, dict):
+        c["subject"] = {"name": "unknown_subject", "definition": str(subj or "missing")}
+    else:
+        subj = dict(subj)
+        subj.setdefault("name", "unnamed_subject")
+        subj.setdefault("definition", "definition missing from model output")
+        c["subject"] = subj
+
+    obs = c.get("observables")
+    if not isinstance(obs, list) or not obs:
+        c["observables"] = ["subject_identity"]
+    else:
+        c["observables"] = [str(x) for x in obs if x is not None]
+
+    decisions_in = c.get("decisions")
+    decisions_out: list[dict[str, Any]] = []
+    if isinstance(decisions_in, list):
+        for d in decisions_in:
+            if not isinstance(d, dict):
+                continue
+            dd = dict(d)
+            dd.setdefault("id", f"decision_{len(decisions_out)}")
+            dd.setdefault("question", str(dd.get("id")))
+            outcomes = dd.get("outcomes")
+            if not isinstance(outcomes, list):
+                outcomes = []
+            outcomes = [str(o) for o in outcomes if o is not None]
+            if OUTCOME_UNKNOWN not in outcomes:
+                outcomes.append(OUTCOME_UNKNOWN)
+            if len(outcomes) < 2:
+                outcomes = ["TARGET", "NOT_TARGET", OUTCOME_UNKNOWN]
+            dd["outcomes"] = outcomes
+
+            signals = dd.get("evidence_signals")
+            if signals is None:
+                pass  # sparse OK for CD0
+            elif not isinstance(signals, list):
+                dd.pop("evidence_signals", None)
+            else:
+                cleaned: list[dict[str, Any]] = []
+                for sig in signals:
+                    if not isinstance(sig, dict):
+                        continue
+                    ss = dict(sig)
+                    pats = ss.get("patterns")
+                    if isinstance(pats, str):
+                        pats = [pats]
+                    if not isinstance(pats, list):
+                        continue
+                    pats = [str(p) for p in pats if p is not None and str(p).strip()]
+                    if not pats:
+                        continue
+                    ss["patterns"] = pats
+                    pol = str(ss.get("polarity") or "").lower().strip()
+                    if pol not in ("supports", "contradicts"):
+                        ss["polarity"] = "supports"
+                    else:
+                        ss["polarity"] = pol
+                    ch = ss.get("evidence_channels")
+                    if ch is None:
+                        ss["evidence_channels"] = ["candidate_claims"]
+                    else:
+                        if isinstance(ch, str):
+                            ch = [ch]
+                        mapped: list[str] = []
+                        for cname in ch or []:
+                            key = str(cname).strip().lower()
+                            canon = _CHANNEL_ALIASES.get(key) or _CHANNEL_ALIASES.get(
+                                key.replace(" ", "_")
+                            )
+                            if canon and canon not in mapped:
+                                mapped.append(canon)
+                        ss["evidence_channels"] = mapped or ["candidate_claims"]
+                    cleaned.append(ss)
+                dd["evidence_signals"] = cleaned
+            decisions_out.append(dd)
+    if not decisions_out:
+        decisions_out = [
+            {
+                "id": "subject_instance",
+                "question": "Does this object represent one concrete subject instance?",
+                "outcomes": ["TARGET", "NOT_TARGET", OUTCOME_UNKNOWN],
+            }
+        ]
+    c["decisions"] = decisions_out
+
+    suf = c.get("sufficiency")
+    if not isinstance(suf, dict):
+        c["sufficiency"] = {"required": [], "blocking_unknowns": []}
+    else:
+        suf = dict(suf)
+        if not isinstance(suf.get("required"), list):
+            suf["required"] = list(suf.get("required") or []) if suf.get("required") else []
+            if not isinstance(suf["required"], list):
+                suf["required"] = []
+        if not isinstance(suf.get("blocking_unknowns"), list):
+            suf["blocking_unknowns"] = []
+        c["sufficiency"] = suf
+
+    miss = c.get("missing_to_solve")
+    if not isinstance(miss, list):
+        c["missing_to_solve"] = [str(miss)] if miss else ["missing_to_solve not provided"]
+    elif not miss:
+        c["missing_to_solve"] = ["no gaps listed by model"]
+
+    return c
+
+
 def validate_contract(contract: dict[str, Any]) -> ValidationResult:
     errors: list[str] = []
     warnings: list[str] = []
@@ -412,19 +579,19 @@ def validate_contract(contract: dict[str, Any]) -> ValidationResult:
             if not isinstance(outcomes, list) or len(outcomes) < 2:
                 errors.append(f"decisions[{i}].outcomes need >= 2 values")
             elif OUTCOME_UNKNOWN not in outcomes:
+                # after normalize this should not happen; still hard error if it does
                 errors.append(f"decisions[{i}].outcomes must include UNKNOWN")
-            # evidence_signals (schema 0.3): patterns + optional evidence_channels
+            # evidence_signals: sparse allowed (CD0); malformed → warning after normalize
             signals = d.get("evidence_signals")
             if signals is None:
                 warnings.append(f"decisions[{i}] ({did}) missing evidence_signals")
             elif not isinstance(signals, list):
                 errors.append(f"decisions[{i}].evidence_signals must be a list")
             else:
-                allowed_ch = {"candidate_claims", "search_context", "navigation", "page_context"}
                 outcome_set = {str(o) for o in outcomes if o != OUTCOME_UNKNOWN}
                 for j, sig in enumerate(signals):
                     if not isinstance(sig, dict):
-                        errors.append(f"decisions[{i}].evidence_signals[{j}] not object")
+                        warnings.append(f"decisions[{i}].evidence_signals[{j}] not object (ignored)")
                         continue
                     so = str(sig.get("outcome") or "")
                     pats = sig.get("patterns")
@@ -434,10 +601,14 @@ def validate_contract(contract: dict[str, Any]) -> ValidationResult:
                             f"decisions[{i}].evidence_signals[{j}].outcome {so!r} not in outcomes"
                         )
                     if not isinstance(pats, list) or not pats:
-                        errors.append(f"decisions[{i}].evidence_signals[{j}].patterns required")
+                        warnings.append(
+                            f"decisions[{i}].evidence_signals[{j}].patterns empty/missing (ignored)"
+                        )
+                        continue
                     if pol not in ("supports", "contradicts"):
-                        errors.append(
-                            f"decisions[{i}].evidence_signals[{j}].polarity must be supports|contradicts"
+                        warnings.append(
+                            f"decisions[{i}].evidence_signals[{j}].polarity {pol!r} "
+                            f"(expected supports|contradicts; normalize should default)"
                         )
                     ch = sig.get("evidence_channels")
                     if ch is None:
@@ -449,13 +620,13 @@ def validate_contract(contract: dict[str, Any]) -> ValidationResult:
                         if isinstance(ch, str):
                             ch = [ch]
                         if not isinstance(ch, list) or not ch:
-                            errors.append(
-                                f"decisions[{i}].evidence_signals[{j}].evidence_channels must be non-empty list"
+                            warnings.append(
+                                f"decisions[{i}].evidence_signals[{j}].evidence_channels empty"
                             )
                         else:
                             for c in ch:
-                                if str(c) not in allowed_ch:
-                                    errors.append(
+                                if str(c) not in ALLOWED_EVIDENCE_CHANNELS:
+                                    warnings.append(
                                         f"decisions[{i}].evidence_signals[{j}].evidence_channels "
                                         f"unknown {c!r}"
                                     )
@@ -502,19 +673,23 @@ def discover_contract(
         try:
             msg = chat_fn(messages)
             content = msg.get("content") if isinstance(msg, dict) else str(msg)
-            contract = _extract_json(content or "")
+            contract = normalize_contract(_extract_json(content or ""))
             contract.setdefault("schema_version", CONTRACT_SCHEMA_VERSION)
             contract["_source"] = "llm"
             return contract
         except Exception as e:
             if not use_heuristic_fallback:
                 raise
-            contract = heuristic_contract_for_packages(task_text, surfaces, meta)
+            contract = normalize_contract(
+                heuristic_contract_generic(task_text, surfaces, meta)
+            )
             contract["_source"] = f"heuristic_fallback:{type(e).__name__}:{e}"
             return contract
 
     if use_heuristic_fallback:
-        contract = heuristic_contract_for_packages(task_text, surfaces, meta)
+        contract = normalize_contract(
+            heuristic_contract_generic(task_text, surfaces, meta)
+        )
         contract["_source"] = "heuristic"
         return contract
 
@@ -527,9 +702,11 @@ def heuristic_contract_for_packages(
     meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Deterministic contract for the packages task + observed surface failure modes.
-    Used for offline validation of the meta-schema and gap analysis; not the long-term
-    source of truth (LLM discovery is).
+    EXPERIMENT FIXTURE ONLY — packages / travel vertical smoke tests.
+
+    Do NOT use as production fallback. Prefer heuristic_contract_generic or LLM
+    synthesis (synthesize_and_freeze_contract). Kept for offline schema/gap
+    regression against historical package runs. See FRAMEWORK_BOUNDARY.md.
     """
     meta = meta or {}
     has_partial_noise = any(
@@ -824,13 +1001,40 @@ def analyze_gaps(
     if rankable == 0 and not why:
         why.append("rankable_count=0 but contract did not list concrete gaps")
 
-    # Success criterion for v0: contract names board/link/scope gaps when rankable=0
+    # Success criterion for v0: contract names concrete gaps when rankable=0
+    # (travel + literature + generic research keywords)
     explains = False
     blob = " ".join(why).lower()
     if rankable == 0:
         explains = any(
             k in blob
-            for k in ("board", "meal", "detail", "booking", "link", "scope", "aggregate", "destination")
+            for k in (
+                "board",
+                "meal",
+                "detail",
+                "booking",
+                "link",
+                "scope",
+                "aggregate",
+                "destination",
+                "comparator",
+                "placebo",
+                "drug",
+                "endpoint",
+                "population",
+                "provenance",
+                "full-text",
+                "full text",
+                "doi",
+                "citation",
+                "study",
+                "rct",
+                "standard care",
+                "budget",
+                "price",
+                "origin",
+                "date",
+            )
         )
     else:
         explains = True
@@ -907,8 +1111,20 @@ Rules:
 3. Every decision.outcomes MUST include "UNKNOWN".
 4. Prefer generic decision ids (subject_instance, price_scope, board_type, detail_link, study_design, …).
 5. Do not invent domain enum families like TARGET_OFFER / AMENITY as top-level types.
-6. evidence_signals may be sparse; mark polarity supports|contradicts when present.
+6. evidence_signals may be sparse or omitted in provisional mode.
+   When present, each signal MUST be:
+   { "outcome": "<outcome>", "patterns": ["literal"], "polarity": "supports"|"contradicts",
+     "evidence_channels": ["candidate_claims"] }
+   Allowed evidence_channels ONLY: candidate_claims, search_context, navigation, page_context.
+   Never use page_chrome, candidate_claim (singular), or other aliases.
 7. Be conservative: list information you will need to confirm later under missing_to_solve.
+8. sufficiency must include required (list) and blocking_unknowns (list).
+9. CRITICAL — sufficiency.required entries MUST be machine-checkable against decision outcomes:
+   - "decision_id"  (any non-UNKNOWN outcome counts as proven), OR
+   - "decision_id = OUTCOME", OR
+   - "decision_id in [OUTCOME_A, OUTCOME_B]"
+   Do NOT put free-text prose sentences in sufficiency.required (those cannot be matched to outcomes).
+   Prose belongs in missing_to_solve or decision.question only.
 """
 
 
@@ -928,6 +1144,14 @@ Rules:
 5. Add or drop decisions only when samples justify it.
 6. missing_to_solve must be concrete gaps visible in samples (or still required by task).
 7. Board/meal claims must not rely on search_context URL filters alone.
+8. For each decision, prefer non-empty evidence_signals with:
+   { "outcome", "patterns", "polarity": "supports"|"contradicts",
+     "evidence_channels": ["candidate_claims"|"search_context"|"navigation"|"page_context"] }
+   Only those four channel names are allowed.
+9. sufficiency must include required (list) and blocking_unknowns (list).
+10. CRITICAL — sufficiency.required MUST use only:
+    "decision_id" | "decision_id = OUTCOME" | "decision_id in [A, B]"
+    Never free-text prose in required (runtime matches outcomes by decision id only).
 """
 
 
@@ -972,6 +1196,7 @@ def _call_llm_contract(
     msg = chat_fn(messages)
     content = msg.get("content") if isinstance(msg, dict) else str(msg)
     contract = _extract_json(content or "")
+    contract = normalize_contract(contract)
     contract.setdefault("schema_version", CONTRACT_SCHEMA_VERSION)
     contract["_source"] = source_tag
     return contract
@@ -1011,10 +1236,14 @@ def discover_contract_mode(
             except Exception as e:
                 if not use_heuristic_fallback:
                     raise
-                contract = heuristic_contract_for_packages(task_text, [], meta)
+                contract = normalize_contract(
+                    heuristic_contract_generic(task_text, [], meta)
+                )
                 contract["_source"] = f"heuristic_fallback_cd0:{type(e).__name__}"
         elif use_heuristic_fallback:
-            contract = heuristic_contract_for_packages(task_text, [], meta)
+            contract = normalize_contract(
+                heuristic_contract_generic(task_text, [], meta)
+            )
             contract["_source"] = "heuristic_cd0"
         else:
             raise RuntimeError("CD0 requires chat_fn or heuristic fallback")
@@ -1040,7 +1269,9 @@ def discover_contract_mode(
             except Exception as e:
                 if not use_heuristic_fallback:
                     raise
-                contract = heuristic_contract_for_packages(task_text, surfaces, meta)
+                contract = normalize_contract(
+                    heuristic_contract_generic(task_text, surfaces, meta)
+                )
                 contract["_source"] = f"heuristic_fallback_cd1:{type(e).__name__}"
         else:
             contract = discover_contract(
@@ -1072,10 +1303,14 @@ def discover_contract_mode(
             except Exception as e:
                 if not use_heuristic_fallback:
                     raise
-                provisional = heuristic_contract_for_packages(task_text, [], meta)
+                provisional = normalize_contract(
+                    heuristic_contract_generic(task_text, [], meta)
+                )
                 provisional["_source"] = f"heuristic_fallback_cd2_prov:{type(e).__name__}"
         else:
-            provisional = heuristic_contract_for_packages(task_text, [], meta)
+            provisional = normalize_contract(
+                heuristic_contract_generic(task_text, [], meta)
+            )
             provisional["_source"] = "heuristic_cd2_provisional"
 
         # Step 2: refine with surfaces
@@ -1091,11 +1326,15 @@ def discover_contract_mode(
             except Exception as e:
                 if not use_heuristic_fallback:
                     raise
-                contract = heuristic_contract_for_packages(task_text, surfaces, meta)
+                contract = normalize_contract(
+                    heuristic_contract_generic(task_text, surfaces, meta)
+                )
                 contract["_source"] = f"heuristic_fallback_cd2_refine:{type(e).__name__}"
                 contract["_provisional_source"] = provisional.get("_source")
         else:
-            contract = heuristic_contract_for_packages(task_text, surfaces, meta)
+            contract = normalize_contract(
+                heuristic_contract_generic(task_text, surfaces, meta)
+            )
             contract["_source"] = "heuristic_cd2_refined"
             contract["_provisional_source"] = provisional.get("_source")
 
@@ -1132,3 +1371,316 @@ def compare_contracts(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
         "subject_b": (b.get("subject") or {}).get("name"),
         "subject_same": (a.get("subject") or {}).get("name") == (b.get("subject") or {}).get("name"),
     }
+
+
+# ---------------------------------------------------------------------------
+# End-to-end contract synthesis + FREEZE (step 1 of generic agent path)
+# ---------------------------------------------------------------------------
+#
+# Code owns: meta-schema, loop, freeze flag, validation.
+# LLM owns: all claim/decision content, sufficiency criteria, gap judgment.
+# No domain enums (board_type, offer_state, …) as framework vocabulary.
+#
+
+GAP_CHECK_SYSTEM = """You are a Research Contract gap checker for a generic research agent.
+
+Given a TASK and a draft Research Contract (JSON), decide whether the contract
+is ready to FREEZE or still has gaps that must be filled before execution.
+
+Rules:
+1. Output EXACTLY one JSON object. No markdown fences, no commentary.
+2. Schema of your reply:
+   {
+     "ready_to_freeze": true | false,
+     "remaining_gaps": ["..."],   // empty list if ready
+     "rationale": "one short paragraph"
+   }
+3. ready_to_freeze=true only when:
+   - subject is clear for this task
+   - every required decision has outcomes that include UNKNOWN
+   - sufficiency.required names the decisions that must be proven
+   - missing_to_solve is empty OR only lists things that will be discovered at runtime
+     (not missing structural pieces of the contract itself)
+4. Be conservative: if the contract could stop too early for this task
+   (e.g. property-level claim when the task asks for a concrete offer),
+   list that as a remaining gap and set ready_to_freeze=false.
+5. Do not invent new domain field names for the framework; only judge content.
+"""
+
+
+def build_gap_check_prompt(task_text: str, contract: dict[str, Any]) -> str:
+    return (
+        "Judge whether this Research Contract is ready to FREEZE for the task.\n\n"
+        f"## TASK\n{task_text.strip()}\n\n"
+        f"## CONTRACT\n{json.dumps(contract, ensure_ascii=False, indent=2)}\n\n"
+        "Return JSON only: ready_to_freeze, remaining_gaps, rationale."
+    )
+
+
+def heuristic_contract_generic(
+    task_text: str,
+    surfaces: list[dict[str, Any]] | None = None,
+    meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Domain-agnostic offline fallback. Produces a minimal valid contract so
+    schema/loop tests work without an LLM. Content is deliberately shallow;
+    real contracts must come from LLM synthesis.
+
+    NOT a packages / travel / GPU ontology — only structural placeholders
+    derived from task text length and optional surface awareness gaps.
+    """
+    surfaces = surfaces or []
+    meta = meta or {}
+    text = (task_text or "").strip()
+    first_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "research_subject")
+    subject_name = re.sub(r"[^a-zA-Z0-9_]+", "_", first_line[:48]).strip("_").lower() or "subject"
+    if len(subject_name) < 3:
+        subject_name = "research_subject"
+
+    awareness_gaps: list[str] = []
+    for s in surfaces:
+        for g in s.get("awareness_gaps") or []:
+            if g and g not in awareness_gaps:
+                awareness_gaps.append(str(g))
+
+    missing = list(awareness_gaps[:6]) if awareness_gaps else [
+        "Confirm which observables the task actually requires after first observations"
+    ]
+
+    return {
+        "schema_version": CONTRACT_SCHEMA_VERSION,
+        "subject": {
+            "name": subject_name[:64],
+            "definition": (
+                "Instance that satisfies the user task as stated in task.md. "
+                "Exact criteria are filled by LLM synthesis when available."
+            ),
+        },
+        "observables": ["primary_identity", "supporting_evidence", "source_location"],
+        "decisions": [
+            {
+                "id": "task_satisfied",
+                "question": "Does the available evidence fully answer the user task?",
+                "outcomes": ["YES", "NO", "UNKNOWN"],
+                "evidence_required": ["supporting_evidence"],
+                "unknown_conditions": [
+                    "evidence incomplete relative to task wording",
+                    "source not inspected",
+                ],
+            },
+            {
+                "id": "evidence_grounded",
+                "question": "Is each key claim tied to an inspectable source (URL, file, quote)?",
+                "outcomes": ["GROUNDED", "UNGROUNDED", "UNKNOWN"],
+                "evidence_required": ["source_location"],
+                "unknown_conditions": ["no source URL or path"],
+            },
+        ],
+        "sufficiency": {
+            "required": ["task_satisfied", "evidence_grounded"],
+            "blocking_unknowns": ["task_satisfied"],
+        },
+        "missing_to_solve": missing,
+        "_source": "heuristic_generic",
+    }
+
+
+def synthesize_and_freeze_contract(
+    task_text: str,
+    *,
+    surfaces: list[dict[str, Any]] | None = None,
+    chat_fn: ChatFn | None = None,
+    meta: dict[str, Any] | None = None,
+    max_passes: int = 3,
+    use_heuristic_fallback: bool = True,
+) -> dict[str, Any]:
+    """
+    End-to-end contract synthesis for one task.md.
+
+    Flow (code-owned loop, LLM-owned content):
+      Pass 0  CD0  provisional from task only
+      Pass 1+ refine with surfaces (if any) and/or gap-driven revise
+      After each pass: LLM gap-check → FREEZE or continue
+      Cap at max_passes; last draft freezes with flag frozen=false if still gappy
+
+    Returns:
+      {
+        "frozen": bool,
+        "contract": { ... meta-schema fields ..., "frozen": bool, "freeze_rationale": str },
+        "passes": [ {pass_index, mode, contract_source, ready_to_freeze, remaining_gaps} ],
+        "llm_calls": int,
+        "validation": {ok, errors, warnings},
+      }
+    """
+    surfaces = surfaces or []
+    meta = meta or {}
+    passes_log: list[dict[str, Any]] = []
+    llm_calls = 0
+    contract: dict[str, Any] | None = None
+
+    def _llm_or_heuristic(system: str, user: str, tag: str) -> dict[str, Any]:
+        nonlocal llm_calls
+        if chat_fn is not None:
+            try:
+                c = _call_llm_contract(system, user, chat_fn, source_tag=tag)
+                llm_calls += 1
+                return c
+            except Exception as e:
+                if not use_heuristic_fallback:
+                    raise
+                c = normalize_contract(heuristic_contract_generic(task_text, surfaces, meta))
+                c["_source"] = f"heuristic_fallback:{tag}:{type(e).__name__}"
+                return c
+        if use_heuristic_fallback:
+            c = normalize_contract(heuristic_contract_generic(task_text, surfaces, meta))
+            c["_source"] = f"heuristic:{tag}"
+            return c
+        raise RuntimeError(f"synthesize pass {tag} needs chat_fn or heuristic fallback")
+
+    def _gap_check(c: dict[str, Any]) -> dict[str, Any]:
+        nonlocal llm_calls
+        # Structural minimum without LLM: empty missing_to_solve + valid schema
+        validation = validate_contract(c)
+        structural_ready = validation.ok and not (c.get("missing_to_solve") or [])
+        if chat_fn is None:
+            return {
+                "ready_to_freeze": structural_ready,
+                "remaining_gaps": list(c.get("missing_to_solve") or [])
+                if not structural_ready
+                else [],
+                "rationale": "heuristic gap-check (no LLM): schema ok and missing_to_solve empty"
+                if structural_ready
+                else "heuristic gap-check: schema issues or missing_to_solve non-empty",
+                "_source": "heuristic_gap_check",
+            }
+        messages = [
+            {"role": "system", "content": GAP_CHECK_SYSTEM},
+            {"role": "user", "content": build_gap_check_prompt(task_text, c)},
+        ]
+        try:
+            msg = chat_fn(messages)
+            llm_calls += 1
+            content = msg.get("content") if isinstance(msg, dict) else str(msg)
+            parsed = _extract_json(content or "")
+            ready = bool(parsed.get("ready_to_freeze"))
+            gaps = parsed.get("remaining_gaps") or []
+            if not isinstance(gaps, list):
+                gaps = [str(gaps)]
+            return {
+                "ready_to_freeze": ready and validation.ok,
+                "remaining_gaps": [str(g) for g in gaps],
+                "rationale": str(parsed.get("rationale") or ""),
+                "_source": "llm_gap_check",
+            }
+        except Exception as e:
+            return {
+                "ready_to_freeze": structural_ready,
+                "remaining_gaps": list(c.get("missing_to_solve") or []),
+                "rationale": f"gap-check LLM failed ({type(e).__name__}); fell back to structural",
+                "_source": f"gap_check_fallback:{type(e).__name__}",
+            }
+
+    # --- Pass 0: provisional (task only) ---
+    contract = _llm_or_heuristic(
+        PROVISIONAL_SYSTEM,
+        build_provisional_prompt(task_text),
+        "cd0_provisional",
+    )
+    gap = _gap_check(contract)
+    passes_log.append(
+        {
+            "pass_index": 0,
+            "mode": "CD0",
+            "contract_source": contract.get("_source"),
+            "ready_to_freeze": gap["ready_to_freeze"],
+            "remaining_gaps": gap["remaining_gaps"],
+            "gap_source": gap.get("_source"),
+        }
+    )
+
+    # --- Further passes: refine with surfaces and/or gap list ---
+    pass_i = 1
+    while not gap["ready_to_freeze"] and pass_i < max_passes:
+        if surfaces:
+            contract = _llm_or_heuristic(
+                REFINE_SYSTEM,
+                build_refine_prompt(task_text, contract, surfaces, meta),
+                f"refine_pass_{pass_i}",
+            )
+            mode = "CD2_refine"
+        else:
+            # No surfaces yet: ask LLM to revise purely from remaining gaps + task
+            gap_user = (
+                "Revise the contract so remaining gaps are resolved as far as possible "
+                "from the task text alone. Clear missing_to_solve items that are only "
+                "runtime discovery issues; keep structural gaps that the contract itself "
+                "must define before execution.\n\n"
+                f"## TASK\n{task_text.strip()}\n\n"
+                f"## CURRENT_CONTRACT\n{json.dumps(contract, ensure_ascii=False, indent=2)}\n\n"
+                f"## REMAINING_GAPS\n{json.dumps(gap['remaining_gaps'], ensure_ascii=False)}\n\n"
+                f"schema_version must be \"{CONTRACT_SCHEMA_VERSION}\".\n"
+                "Return JSON only (full contract)."
+            )
+            contract = _llm_or_heuristic(REFINE_SYSTEM, gap_user, f"gap_revise_pass_{pass_i}")
+            mode = "gap_revise"
+        gap = _gap_check(contract)
+        passes_log.append(
+            {
+                "pass_index": pass_i,
+                "mode": mode,
+                "contract_source": contract.get("_source"),
+                "ready_to_freeze": gap["ready_to_freeze"],
+                "remaining_gaps": gap["remaining_gaps"],
+                "gap_source": gap.get("_source"),
+            }
+        )
+        pass_i += 1
+
+    frozen = bool(gap["ready_to_freeze"])
+    contract = normalize_contract(contract)
+    contract["frozen"] = frozen
+    contract["freeze_rationale"] = gap.get("rationale") or ""
+    contract["schema_version"] = CONTRACT_SCHEMA_VERSION
+    if frozen:
+        contract["_source"] = f"{contract.get('_source', 'unknown')}+frozen"
+    else:
+        contract["_source"] = f"{contract.get('_source', 'unknown')}+unfrozen_max_passes"
+
+    validation = validate_contract(contract)
+    return {
+        "frozen": frozen,
+        "contract": contract,
+        "passes": passes_log,
+        "llm_calls": llm_calls,
+        "validation": {
+            "ok": validation.ok,
+            "errors": validation.errors,
+            "warnings": validation.warnings,
+        },
+        "remaining_gaps": gap.get("remaining_gaps") or [],
+    }
+
+
+def synthesize_contract_from_task_path(
+    task_path: Path | str,
+    *,
+    surfaces: list[dict[str, Any]] | None = None,
+    chat_fn: ChatFn | None = None,
+    max_passes: int = 3,
+    use_heuristic_fallback: bool = True,
+) -> dict[str, Any]:
+    """Load task.md and run synthesize_and_freeze_contract."""
+    path = Path(task_path)
+    task_text = path.read_text(encoding="utf-8")
+    result = synthesize_and_freeze_contract(
+        task_text,
+        surfaces=surfaces,
+        chat_fn=chat_fn,
+        max_passes=max_passes,
+        use_heuristic_fallback=use_heuristic_fallback,
+    )
+    result["task_path"] = str(path)
+    result["task_id"] = path.stem
+    return result
+

@@ -2,6 +2,8 @@
 
 Isolated experiment. **Does not change the retrieval execution pipeline.**
 
+**Boundary:** Code owns the meta-schema and freeze/gap loop. LLM owns decision *ids*, questions, outcomes, and sufficiency *content*. See `FRAMEWORK_BOUNDARY.md`. Do not promote package/GPU field names into a permanent global enum.
+
 ## Hypothesis
 
 A small, schema-constrained LLM (or offline heuristic) pass over:
@@ -99,3 +101,27 @@ Later, `subject_instance` (or equivalent) from the **contract** becomes the admi
 | CD2 | provisional then refine with samples | Iterative grounding hypothesis |
 
 Runner: `scripts/run_contract_discovery_campaign_v0.py`.
+
+## End-to-end FREEZE loop (2026-08-27)
+
+Production path for step 1 (generic agent):
+
+```text
+synthesize_and_freeze_contract(task_text)
+  → CD0 provisional
+  → gap-check (LLM or structural)
+  → refine / gap_revise until ready_to_freeze or max_passes
+  → contract["frozen"] = true|false
+```
+
+Batch over `tasks/batch_v0`:
+
+```bash
+python scripts/run_contract_synthesis_batch_v0.py \
+  --tasks-dir tasks/batch_v0 \
+  --outdir ./evals/contract_synthesis \
+  --llm
+```
+
+Code owns the loop and meta-schema; LLM owns claim content and freeze judgment.
+See `FRAMEWORK_BOUNDARY.md`.

@@ -116,13 +116,25 @@ def run_one(
                 }
             except Exception:
                 pass
+        # Prefer artifact presence: if a contract JSON was written, treat as DONE
+        # so validation-only soft-fails still contribute metrics to the report.
+        status = "DONE"
+        if proc.returncode not in (0, 1):
+            status = "FAILED"
+        elif not metrics and not out_path.exists():
+            status = "FAILED"
+        elif proc.returncode == 1 and metrics.get("go") is False and not metrics.get(
+            "validation_ok"
+        ):
+            # soft validation fail with artifact → still DONE for campaign rollup
+            status = "DONE"
         return {
-            "status": "DONE" if proc.returncode == 0 else "FAILED",
+            "status": status,
             "exit_code": proc.returncode,
             "duration_s": round(dur, 2),
             "metrics": metrics,
             "stdout_tail": (proc.stdout or "")[-800:],
-            "stderr_tail": (proc.stderr or "")[-400:],
+            "stderr_tail": (proc.stderr or "")[-800:],
         }
     except subprocess.TimeoutExpired:
         return {
@@ -130,6 +142,8 @@ def run_one(
             "exit_code": -1,
             "duration_s": round(time.monotonic() - t0, 2),
             "metrics": {},
+            "stdout_tail": "",
+            "stderr_tail": "timeout",
         }
 
 
@@ -195,6 +209,10 @@ def main() -> int:
             counts["failed"] += 1
         if res.get("stdout_tail"):
             print(res["stdout_tail"][-500:])
+        if res.get("stderr_tail") and res["status"] != "DONE":
+            print(f"[stderr] {res['stderr_tail'][-500:]}", file=sys.stderr)
+        elif res.get("stderr_tail") and res.get("metrics", {}).get("go") is False:
+            print(f"[stderr/go=false] {res['stderr_tail'][-300:]}", file=sys.stderr)
 
     # Report
     by_mode: dict[str, list] = {}

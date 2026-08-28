@@ -3,6 +3,11 @@
 This document is the **mental model**: one simple picture of process steps.
 Implementation details live in code; experiment history lives in `LEARNING_LOG.md`.
 
+**Framework vs LLM content:** see `FRAMEWORK_BOUNDARY.md`.  
+Code owns mechanism (observe, actions, provenance, sufficiency gate, trace).  
+LLM owns contract *content* per `task.md` (which claims, required, what counts as enough evidence).  
+Do **not** promote travel/GPU/marketplace field names into the runtime as fixed enums.
+
 **Naming:** the whole system is the **research agent**. Inside it, web work splits into:
 
 | Name | CLI | Role |
@@ -298,14 +303,24 @@ PageState.structure
 
 | Layer | Question |
 |-------|----------|
-| **Member admissibility** | May this object be an evidence unit at all? |
-| **MinAC** | Do we know *enough* about admissible members / the surface? |
-| **Constraints** | Does the evidence match the user request? |
-| **Eligibility** | May it enter the ranked shortlist? |
+| **Candidate unit** | Could this fragment be a useful evidence unit for the task? (incomplete OK) |
+| **MinAC** | Do we know *enough* about the surface / unit? |
+| **Constraints / interpretation** | What does the evidence mean under each decision? |
+| **Eligibility** | Do normalized outcomes satisfy the required set? → ranked shortlist |
 
-Admissibility ≠ MinAC. A clear room-only offer is **admissible + MinAC adequate** even if the user asked all-inclusive — constraints then FAIL. Never fold task constraints into MinAC or admissibility.
+**Candidate ≠ eligibility (2026-08-26, grounding ablation A4):**  
+Never ask the candidate LLM “are all task fields already proven on this unit?”. That is eligibility.  
+Task in the candidate step is a **relevance filter**, not a completeness checklist.  
+See `ARCHITECTURE_JOURNEY.md` § Phase F and `LEARNING_LOG.md` grounding ablation entry.
 
-### Admissibility (deterministic, generic)
+Legacy “member admissibility” ≠ MinAC. A clear room-only offer can be a **candidate unit** even if the user asked all-inclusive — constraints then FAIL. Never fold task constraints into MinAC or candidate selection.
+
+### Admissibility (legacy experimental baseline — not product default)
+
+> **Ground rule (2026-08-26):** Code may *describe* structure; the LLM may *interpret* role/relevance; code may *enforce* schema/eligibility.  
+> Classifying CTA vs offer vs destination is **semantic** — do not grow deterministic phrase/feature classifiers as the long-term path. Prefer grounded LLM **CANDIDATE_UNIT** selection (S3 / A5-style context). See `ARCHITECTURE_JOURNEY.md` §2.
+
+Historical deterministic path (kept for ablation only):
 
 ```
 candidate members (entity + primary value)
@@ -315,19 +330,9 @@ assess_member_admissibility → features + reject_reason | accept
 structure.members = accepted only
 ```
 
-Features (examples): `looks_like_cta`, `has_offer_body`, `offer_shape_score`, `geo_signal`, `dest_card_shape`, `schema_similarity`.  
-Reason codes: `reject_cta`, `reject_geo_nav`, `reject_amenity`, `reject_type_label`, `reject_schema_outlier`, `reject_unit_or_line_item`, …
+Features were experimental (`looks_like_cta`, `geo_signal`, …). Prefer structure as **grounding context** for LLM, not as a meaning filter.
 
-No product-vertical place-name lists. List **schema consistency**: members that diverge from the dominant offer-shape cohort are outliers.
-
-| Surface | Structure behaviour |
-|---------|---------------------|
-| `detail` | Best *admissible* entity → `primary_subject` |
-| `list` / unknown | Admissible offer-shaped rows only |
-| `landing` | Empty / no promote |
-
-**Structure-first promote:** evidence buffer ← `structure.members` only.  
-**Invariant:** `kind` stays `unknown` — ranking never keys on vertical type.
+**Structure-first promote (still valid for observation packaging):** evidence buffer gets literal members + channels; ranking never keys on vertical `kind`.
 
 ## 5. Web capability ladder (per host)
 
@@ -362,3 +367,8 @@ No product-vertical place-name lists. List **schema consistency**: members that 
 
 - **Recon:** “What is the structural interface of this site, and how do I reach extractable results cheaply?”
 - **Research:** “Given that model, answer *this* task with verified candidates.”
+- **Candidate step:** “Could this unit matter for the task?” (incomplete OK).
+- **Eligibility step:** “Do normalized outcomes satisfy the contract?” (code).
+- **Offline pipeline (2026-08-26):** observation → CANDIDATE_UNIT → interpretation → code eligibility.
+  Measure each stage separately; never collapse into one “works/doesn’t” score.
+

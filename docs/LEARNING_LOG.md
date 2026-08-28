@@ -7,6 +7,23 @@ Format per entry: **date → hypothesis → result → decision**.
 
 ---
 
+## 2026-08-28 — Contract-driven 01+02 (execution layer)
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| Frozen contract + code sufficiency is the only STOP authority | Task 02: LLM said STOP (“All Inclusive found”) while `subject_instance` still UNKNOWN → run ended unsatisfied | **Reject LLM/soft STOP while gaps remain**; only code terminals (`no_gaps`, `max_steps`, `no_llm`) may end early |
+| State-signature anti-loop stops useless repeats | Task 01: 3× `VERTREKPERIODE`; UI toggled open↔close so `no_progress=false` | **Block action_key after one use** (toggle ≠ research progress) |
+| Interpret after NOT_ADMISSIBLE yields outcomes | 01: `interpreted=True` but `provenance_blocked_n=248` → all UNKNOWN | Admission fix kept; **provenance/list surface** = later step (not this commit) |
+| Same architecture, different tasks → different stop criteria | 01 (8 required) vs 02 (2 required) without Python domain ifs | Keep ladder: contract → sufficiency → evidence → nav; **no Monica/Costa patches** |
+
+**Shipped (this step only):** stop-reject-on-gaps + anti-repeat-by-action-key in `live_offer_state_slice.py` / `evidence_acquisition.py`.
+
+**Next (ordered, one layer at a time):** affordance panel options → identity interpret → list-surface provenance → full 8-task batch.
+
+See also `FRAMEWORK_BOUNDARY.md` regression lessons.
+
+---
+
 ## 2026-08 — Architecture direction
 
 | Decision | Why |
@@ -568,16 +585,521 @@ gates outcomes against the contract.
 **Decisions:**
 - Treat structure as **context provider**, not universal candidate classifier.
 - Do not expand phrase-based admissibility as product architecture.
-- Prefer **grounded LLM (S3)** as selection hypothesis; hybrid only after safe chrome-only prefilter.
-- Next science: **Contract Discovery modes CD0/CD1/CD2** (task-only vs one-shot vs provisional→refine).
+- Prefer **grounded LLM (S3)** as selection hypothesis.
+- **Do not** add semantic “obvious chrome” prefilters in code (see ground rule).
+- Next science: **Contract Discovery modes CD0/CD1/CD2**.
 
 **Code:** `candidate_selection/`, `scripts/run_candidate_selection_*.py`; results under `evals/candidate_campaign/`.
 
 ---
 
-## 2026-08-26 — Architecture freeze narrative + CD campaign
+## 2026-08-26 — Ground rule locked + CD pilot complete
 
-Documented full path in `docs/ARCHITECTURE_JOURNEY.md` (process schema, experiment map, non-goals).
+### Ground rule (docs/ARCHITECTURE_JOURNEY.md §2)
 
-**Next campaign:** Contract Discovery CD0/CD1/CD2  
-Scripts: `run_contract_discovery_mode_v0.py`, `run_contract_discovery_campaign_v0.py`.
+```text
+CODE describes  |  LLM interprets  |  CODE enforces
+```
+
+Anti-pattern: “code removes obvious semantic garbage before LLM.” That *is* interpretation. Mechanical facts only in code; meaning only via LLM unless proven deterministic (404, empty field, no DOM delta).
+
+### Contract Discovery pilot `20260826T072909Z_pilot`
+
+| Mode | packages | literature | jaccard (CD2) |
+|------|----------|------------|---------------|
+| CD0 | 8 dec, ~39s, sparse signals | 5 dec, ~33s, sparse signals | — |
+| CD1 | 9 dec, ~85s, full signals + surface gaps | 6 dec, ~85s | — |
+| CD2 | 9 dec, ~124s, +filter_reliability | 5 dec, ~88s | 0.89 / **1.0** |
+
+- **6/6 jobs DONE**, validation_ok=1.0 all modes (after normalize + soft validation).
+- Wall time **~7–8 min**, not hours (1–2 LLM calls × 6 jobs).
+- CD0: valid provisional *without* samples; `missing_to_solve` is hypothesis-level.
+- CD1: best **sample-grounded** explanation of zero-rankable (Enkel kamer vs meal=filter; placebo vs standard care).
+- CD2: **stable decision ids**; refine mainly names subject + adds sample-driven gaps/decisions; not a full rewrite.
+- CD0 literature vs packages heuristic cross-jaccard=0 is expected (domain-wrong baseline comparison).
+
+**Not learned yet:** freeze policy (when to stop refining); live wiring discovery→execution.
+
+**Scripts:** `run_contract_discovery_mode_v0.py`, `run_contract_discovery_campaign_v0.py`.
+
+---
+
+## 2026-08-26 — Grounding ablation campaign v0 (results)
+
+**Hypothesis:** which context (task / neighbors / structure / provenance) does
+candidate interpretation need?
+
+**Run:** `evals/grounding_ablation/20260826T080416Z_full` — **24/24 DONE**, flush on.
+
+| Variant | Web R | Lit R | Code P | Docs | Note |
+|---------|------:|------:|-------:|------|------|
+| A0 text only | 1.0 | 1.0 | 0.67 | ok | Code: `format_price` FP without task |
+| A1 +neighbors | 1.0 | 1.0 | 0.67 | ok | Same code FP |
+| A2 +structure | 1.0 | 1.0 | 0.67 | weaker | Structure ≠ semantic classifier |
+| A3 +provenance | 1.0 | 1.0 | **1.0** | ok | Path/url strong grounding |
+| **A4 task+text** | **0.0** | **0.5** | 1.0 | ok | **Critical failure** |
+| **A5 full** | **1.0** | **1.0** | **1.0** | ok | Best overall |
+
+**Core finding (A4):**
+
+```text
+task + bare hotel title  →  NOT_ADMISSIBLE
+```
+
+The LLM treated the task as a **completeness checklist** (“no price/board/flight visible → reject”)
+instead of a **relevance filter**. That confuses:
+
+```text
+CANDIDATE:   "could this be a useful evidence unit?"
+ELIGIBILITY: "are hard constraints already proven?"
+```
+
+A5 recovers because neighbors/provenance show card body (price, board, flight) —
+and because the unit’s *role* becomes clear.
+
+**Other lessons:**
+- Task is still needed for **precision** on code (auth vs `format_price`).
+- Provenance alone is a strong signal on this pilot (not claimed universal).
+- Structure remains grounding, not a universal candidate classifier.
+- Small n (4–8/domain) → directional evidence, not production claim.
+
+**Decision:** next experiment isolates the **prompt question** (candidate vs eligibility),
+not more board/hotel heuristics.
+
+**Scripts:** `run_grounding_ablation_*.py` · **Module:** `candidate_selection/grounding_ablation.py`
+
+---
+
+## 2026-08-26 — Next: Candidate vs Eligibility prompt-split v0
+
+**Hypothesis:** If the LLM is asked the **CANDIDATE_UNIT** question explicitly
+(incomplete OK), web RELEVANT titles recover under `G_task_text` and `G_full`,
+while code precision stays high. **ELIGIBILITY_COMPLETE** should stay strict
+(low relevant_recall on incomplete units).
+
+| Factor | Values |
+|--------|--------|
+| Decision mode | `CANDIDATE_UNIT` vs `ELIGIBILITY_COMPLETE` |
+| Grounding | `G_task_text` (A4-shaped) · `G_full` (A5-shaped) |
+| Datasets | web_travel, literature, code, documents |
+
+**Primary metric:** per-domain `relevant_recall` and  
+`delta = CU_relevant_recall − ELIG_relevant_recall`  
+(expect large positive delta on web under `G_task_text`).
+
+**GO (scientific, not averaged):**
+- web + `G_task_text`: delta > 0.5 and CU relevant_recall ≥ 0.75
+- code + `G_full`: CU precision stays high (task still filters off-topic)
+
+**Isolation:** same as ablation (subprocess, keep_alive=0, optional flush).
+
+**Scripts:** `run_candidate_vs_eligibility_experiment_v0.py`,  
+`run_candidate_vs_eligibility_campaign_v0.py`  
+**Module:** `candidate_selection/candidate_vs_eligibility.py`
+
+```bash
+# smoke offline
+python scripts/run_candidate_vs_eligibility_campaign_v0.py --campaign smoke \
+  --outdir ./evals/candidate_vs_eligibility
+
+# full LLM (2 modes × 2 groundings × 4 domains = 16 jobs)
+python scripts/run_candidate_vs_eligibility_campaign_v0.py --campaign full --llm \
+  --outdir ./evals/candidate_vs_eligibility --max-hours 6 --flush-between-jobs
+```
+
+---
+
+## 2026-08-26 — Candidate vs Eligibility campaign (results)
+
+**Run:** `evals/candidate_vs_eligibility/20260826T104655Z_full` — **16/16 DONE**.
+
+| Domain | CU relevant_R | ELIG relevant_R | Δ |
+|--------|-------------:|----------------:|--:|
+| **web** | **1.0** | **0.0** | **+1.0** |
+| **literature** | **1.0** | **0.0** | **+1.0** |
+| code | 1.0 | 1.0 | 0 |
+| documents | 1.0 | 1.0 | 0 |
+
+**GO criteria met:** web Δ=+1.0 with CU≥0.75; code CU precision=1.0.
+
+**Causal example (web G_task_text):**
+```text
+"Grand Park Lara All Inclusive Resort"
+  CANDIDATE_UNIT      → ADMISSIBLE  (hotel name can be evidence unit; incomplete OK)
+  ELIGIBILITY_COMPLETE → NOT/UNKNOWN (price/party/dates not on this fragment)
+```
+
+**Lessons locked:**
+1. A4 failure was the **wrong question**, not “too little text”.
+2. Candidate and eligibility are **empirically different operations** — never one LLM step.
+3. Code/docs Δ=0 is expected: self-contained units satisfy both questions.
+4. Literature CU P≈0.67 (keywords FP) is acceptable residual; do **not** harden candidate back into eligibility.
+5. Product eligibility remains **code** on normalized outcomes; ELIGIBILITY_COMPLETE mode was diagnostic only.
+
+**Decision:** stop further isolated candidate/eligibility prompt experiments.
+**Next:** offline end-to-end pipeline (observation → CANDIDATE_UNIT → interpretation → code eligibility) with staged metrics.
+
+---
+
+## 2026-08-26 — Next: Offline pipeline v0
+
+**Hypothesis:** chaining proven layers yields correct eligibility on package fixtures
+without domain heuristics in code.
+
+```text
+fixture / observations
+  → CANDIDATE_UNIT (LLM, optional gate)
+  → INTERPRETATION (LLM, candidate_claim only)
+  → ELIGIBILITY (code AND)
+  → staged metrics
+```
+
+**GO:** positive AI-card eligible; Sercotel/breakfast not; search_context never boards AI; no marketing eligible.
+
+**Scripts:** `run_pipeline_offline_experiment_v0.py`, `run_pipeline_offline_campaign_v0.py`
+**Module:** `pipeline_offline.py`
+
+---
+
+## 2026-08-26 — Offline pipeline pilot (results)
+
+**Run:** `evals/pipeline_offline/20260826T114225Z_pilot` — 2/2 DONE.
+
+| Fixture | n | match_rate | pos | neg | search_leaks | GO |
+|---------|---|------------|-----|-----|--------------|-----|
+| batch | 10 | **1.0** | 2/2 | 8/8 | **0** | True |
+| positive (pre-fix) | 3 | n/a (missing oracle labels) | — | — | 0 | True* |
+
+**Causal chains verified:** Grand Park / Blue Bay → eligible; Sercotel (Enkel kamer + meal= URL) → not eligible, board UNKNOWN, search_context skipped; marketing CU=NOT_ADMISSIBLE.
+
+**Lesson:** full semantic chain works on controlled fixtures. Next risk is **real harvest observations**, not more board synonyms.
+
+**Fixes applied after pilot:**
+- `vertical_slice_positive_fixture_v0.jsonl` now has `expected_eligible` / `expected_role`
+- `go_no_go(..., require_oracle=True)` invalidates empty-oracle scored runs
+- `run_pipeline_from_run_v0.py` + campaign `--campaign from_run`
+
+```bash
+python scripts/run_pipeline_offline_campaign_v0.py --campaign from_run --llm \
+  --run-dir runs/2026-08-24T08-01-36_compare_packages_dec2026 \
+  --outdir ./evals/pipeline_offline --flush-between-jobs --max-hours 6
+```
+
+---
+
+## 2026-08-26 — Pipeline from real run (results)
+
+**Run:** `evals/pipeline_offline/20260826T123947Z_from_run`  
+**Source:** `runs/2026-08-24T08-01-36_compare_packages_dec2026` (360 observations → 15 candidates)
+
+| Metric | Value |
+|--------|-------|
+| CU admitted | 11/15 (73%) |
+| **eligible_n** | **0/15** |
+| Oracle negatives | 3/3 correct not-eligible |
+| search_context → board leaks | **0** |
+| LLM calls | 169 |
+
+**What held:** full semantic chain on messy harvest is **fail-closed and leak-free**.  
+Hotels can be ADMISSIBLE while board stays UNKNOWN → not eligible. Chrome often NOT_ADMISSIBLE.
+
+**What failed (by design):** zero rankable packages — harvested **card text** had no trustworthy ALL_INCLUSIVE claim (mostly `Enkel kamer`, destinations, marketing slogans). URL `meal=all-inclusive` correctly stayed search_context.
+
+**Architectural localization:** bottleneck is **observation / evidence acquisition** (retrieval page coverage and/or extractor binding), **not** candidate/interpretation/eligibility code.
+
+**Do not fix with:** board synonyms, URL→board, admissibility heuristics.
+
+**Next:** Positive Evidence Trace v0 — for 1–3 hand-verified AI offers, mark PRESENT/ABSENT at stages A–F (site → raw harvest → observation → CU → interp → eligibility).
+
+---
+
+## 2026-08-26 — Positive Evidence Trace v0 (Test A/B built)
+
+| Decision | Why |
+|----------|-----|
+| **List/card price ≠ offer evidence** | Sites show “vanaf” prices before date/board/party selection; claiming budget/board from list alone is unsafe |
+| **Evidence scopes** | `detail_page` (direct AI text) vs `booking_state` / offer selection vs `search_list` incomplete |
+| **Ultra AI** | LLM maps “Ultra All Inclusive” → `ALL_INCLUSIVE` under contract; no Python synonym table |
+| **Trace A→F** | Localize loss: site → retrieval → page/state → observation → CU/interp → eligibility |
+
+**Fixtures shipped**
+
+- `evals/detail_evidence_fixture_v0.jsonl` — Costa Calma, Monica Beach, IVI Mare (simulated **successful** detail harvest)
+- `evals/offer_state_fixture_v0.jsonl` — Playa Park **selected** AI offer vs hotel-level options only vs vague list price vs Sercotel Enkel kamer
+- `evals/positive_evidence_trace_oracle_v0.jsonl` — hand-verified URLs (unchanged)
+
+**Code shipped**
+
+- `positive_evidence_trace.py` — stage D literal checks + fault localization + pipeline reuse
+- `scripts/run_positive_evidence_trace_v0.py`
+- `scripts/run_positive_evidence_trace_campaign_v0.py` — smoke / detail / offer_state / full
+
+**What this test proves / does not prove**
+
+| Proves (when LLM GO on detail fixture) | Does **not** prove |
+|----------------------------------------|--------------------|
+| If observations contain board+flight literals, D→F can yield eligible | Live retrieval opened those detail pages |
+| Incomplete list / unselected hotel options stay not eligible | Agent navigates to price-calculation state |
+| search_context still cannot sole-source board | Production memory/deep URL already does this |
+
+**Still required after offline GO:** controlled live harvest of the oracle `detail_url`s (and later booking-state stop-before-book) into a run-dir, then same pipeline — that is stages **B/C**.
+
+**Ground rule reminder:** Code describes surfaces/state; LLM judges “complete offer vs incomplete list”; code enforces eligibility. No “obvious garbage” semantic prefilter in core.
+
+---
+
+## 2026-08-26 — Live detail slice + Run Ledger v0 (built)
+
+After fixture evidence-trace GO (detail + offer_state, 7/7 fault=none):
+
+| Built | Role |
+|-------|------|
+| `run_ledger.py` | Side-branch telemetry: actions, observations, decisions, stop_reason — no live self-train |
+| `live_detail_slice.py` | OPEN oracle `detail_url` → literal page lines → frozen CU/interp/eligibility → A–F with **LIVE** B/C |
+| `scripts/run_live_detail_slice_v0.py` | CLI presets: costa_monica, primary_detail, ivi |
+| `scripts/run_live_detail_campaign_v0.py` | smoke / pilot / primary / full |
+
+**Hypothesis under test:** real Corendon/Sunweb detail pages contain board+flight literals that the proven D–F chain can consume.
+
+**Not in this slice:** free multi-step booking-state navigation (Playa Park price calculation) — next after detail GO.
+
+**stop_reason examples:** `ALL_REQUIRED_OUTCOMES_PROVEN`, `EVIDENCE_UNAVAILABLE_BOARD`, `FETCH_FAILED_OR_EMPTY`, `BOT_WALL_OR_POLICY`.
+
+---
+
+## 2026-08-27 — Evidence acquisition + live offer-state slice (built)
+
+### Ground rule (reaffirmed)
+
+- Code **observes** structure, affordances, provenance; enforces enums, max depth, irreversible blocks.
+- LLM **interprets** meaning (board/flight/…) and may **propose** next action only from **observed** affordances.
+- **No** core hardcoding of “on Corendon click Prijzen & boeken” as product policy.
+- Lab presets may pass `force_click_texts` as **experiment parameters** only (visible labels under test).
+
+### Why
+
+Live detail pilot: Monica could reach eligible; Costa often `E_flight_UNKNOWN` on first detail state. Human inspection showed richer flight/price/board in **price-calculation / selected offer** UI. Need gap-driven deeper exploration without vertical scrapers.
+
+### Shipped
+
+| Module | Role |
+|--------|------|
+| `evidence_acquisition.py` | `gaps_from_eligibility`, safe affordances, enum `ACTION_CLASSES`, `acquisition_decide` (LLM or fail-closed), `execute_acquisition_action` |
+| `browser.browser_list_affordances` | Visible links/buttons/tabs only (structural) |
+| `live_offer_state_slice.py` | OPEN → observe → CU/interp/elig → while gaps: decide → act → re-observe |
+| `scripts/run_acquisition_unit_v0.py` | Offline unit tests (no browser) |
+| `scripts/run_live_offer_state_slice_v0.py` | Presets: monica_lab, costa_lab, monica_llm, costa_llm, both_lab |
+| `scripts/run_live_offer_state_campaign_v0.py` | smoke / lab / llm / full |
+
+### Action enum (closed)
+
+`STOP | OPEN_URL | CLICK_TEXT | CLICK_SELECTOR | SCROLL | WAIT | OPEN_FILE`
+
+`OPEN_FILE` reserved for future FS/xlsx observers; browser path fail-closes.
+
+Irreversible text blocked generically (`Reis boeken`, `Buy now`, checkout, …). **“Prijzen & boeken”** is not treated as irreversible (information UI, not commit).
+
+### Test commands
+
+```bash
+# Offline units (always first)
+python scripts/run_acquisition_unit_v0.py --out ./evals/live_offer/acquisition_unit_v0.json
+
+# Lab: forced click queue + LLM interpretation (proves deeper state → pipeline)
+docker compose run --rm research-agent python scripts/run_live_offer_state_campaign_v0.py \
+  --campaign lab --llm --outdir ./evals/live_offer \
+  --flush-between-jobs --max-hours 3 --job-timeout-s 7200
+
+# Pure LLM acquisition (no force list) — genericity test
+docker compose run --rm research-agent python scripts/run_live_offer_state_campaign_v0.py \
+  --campaign llm --llm --outdir ./evals/live_offer \
+  --flush-between-jobs --max-hours 3 --job-timeout-s 7200
+```
+
+### What success means
+
+| Lab GO | LLM campaign GO |
+|--------|-----------------|
+| When force path reaches price UI, D–F can use richer literals | Acquisition planner picks observed affordances and improves gaps without site rules in core |
+
+### Not done yet
+
+- FS / xlsx / literature folder observers using same acquisition API
+- Wiring into main `agent.py` control loop
+- Free multi-site night task + final report schema
+
+---
+
+## 2026-08-27 — Lab + LLM campaign results + TraceSession wired
+
+### Lab campaign (`20260827T080151Z_lab`)
+
+| Job | steps | stop | fault |
+|-----|-------|------|-------|
+| monica_lab | 0 | ALL_REQUIRED_OUTCOMES_PROVEN | none |
+| costa_lab | 1 (force `Prijzen & boeken`) | ALL_REQUIRED_OUTCOMES_PROVEN | none |
+
+Monica: detail page already has board + flight literals → eligible without acquisition.
+Costa: step-0 `package_includes_flight=UNKNOWN`; after price-tab surface → `FLIGHT_INCLUDED`.
+
+### LLM campaign (`20260827T064948Z_llm`)
+
+Both monica_llm and costa_llm reported GO / fault=none (durations ~12–39 min). Full affordance + acquisition decisions need TraceSession for post-mortem (why any path chose marketing vs price-tab).
+
+### Design read
+
+Lab results **do not change** TraceSession contract:
+- Full affordance lists + `has_prijzen_boeken` flags already anticipated
+- URL sequence + surface tag (`live_detail` vs `live_offer_state`) already in provenance
+- Acquisition decision + code_policy reject already logged
+
+Trace is the tool to diagnose future LLM wrong-surface choices, not a redesign.
+
+### Shipped this step
+
+| Piece | Role |
+|-------|------|
+| `trace_session.py` | Already present: events.jsonl, artifacts, audit.md/json, summary |
+| `live_offer_state_slice.run_acquisition_loop` | Optional `trace: TraceSession` — observe / affordances / gaps / interpret / eligibility / acquisition / action / stop |
+| `run_acquisition_batch(..., trace_root=)` | One TraceSession dir per entity under `trace_root/<entity>/` |
+| `run_live_offer_state_slice_v0.py` | `--trace` default on; `--no-trace` to disable; writes `<out>_traces/` |
+
+### How to read a trace
+
+```text
+evals/live_offer/<job>_traces/<Entity>/
+  meta.json
+  events.jsonl          # ordered phases
+  artifacts/step_NNN_affordances.json
+  artifacts/step_NNN_claims.json
+  artifacts/step_NNN_page_text.txt
+  audit.md              # human timeline
+  summary.json          # url_sequence, affordance_flags, acquisition_decisions
+```
+
+Key forensic questions for Costa LLM vs lab:
+1. Did step-0 affordances include `Prijzen & boeken`? (`has_prijzen_boeken`)
+2. What `action_class` + `target_text` did acquisition choose?
+3. Final URL still same-entity tab, or global marketing path (`/voordelen`)?
+4. Evidence for `FLIGHT_INCLUDED` bound to which surface/URL?
+
+### Next runs
+
+```bash
+# Traced lab (default --trace)
+docker compose run --rm research-agent python scripts/run_live_offer_state_campaign_v0.py \
+  --campaign lab --llm --outdir ./evals/live_offer \
+  --flush-between-jobs --max-hours 3 --job-timeout-s 7200
+
+# Traced pure LLM
+docker compose run --rm research-agent python scripts/run_live_offer_state_campaign_v0.py \
+  --campaign llm --llm --outdir ./evals/live_offer \
+  --flush-between-jobs --max-hours 3 --job-timeout-s 7200
+```
+
+
+## 2026-08-27 — LLM campaign diagnosis + affordance/scope fix
+
+### Campaign result (traced)
+- Monica LLM: 0-step GO — detail already had strong `pakketreis met vlucht + deze accommodatie`.
+- Costa LLM: 1-step GO — but **false-positive scope**: chose global `ALL INCLUSIVE` → `/vakanties/all-inclusive`, then accepted marketing literals as `FLIGHT_INCLUDED`.
+
+### Root causes (trace-proven)
+1. **Affordance extraction**: global `<a>` filled max_items before tabs/buttons; `has_prijzen_boeken=false` while page text contained the tab.
+2. **Acquisition**: LLM only saw global menu → chose marketing path.
+3. **Provenance**: eligibility accepted cross-entity marketing surface as candidate proof.
+
+### Fix shipped (generic, no Corendon if)
+| Change | Module |
+|--------|--------|
+| Affordance priority: tabs → buttons → local links → global | `browser.browser_list_affordances` |
+| `scope` tag: local / global / unknown | same |
+| `filter_safe_affordances` ranks local/tab first | `evidence_acquisition` |
+| Planner prompt: prefer scope=local | `acquisition_decide` |
+| Trace: n_local, n_global, n_tab, local_sample | `trace_session` |
+| Surface tag `site_marketing` when URL leaves entity path | `live_offer_state_slice` |
+
+### Expected after re-test
+```
+Monica: detail → STOP (unchanged)
+Costa:  detail → flight UNKNOWN → sees local "Prijzen & boeken" → CLICK → offer state → STOP
+```
+without site-specific hardcoding.
+
+### Still open
+- Hard provenance reject (marketing evidence cannot PASS candidate decisions)
+- decision_context artifact per acquisition step
+- 5 multi-domain tasks after Costa/Monica regression GO
+
+## 2026-08-27 — Safety + Evidence Integrity (V0.1)
+
+Post successful Costa local-tab run + Monica 0-step.
+
+### Shipped
+1. **Hard provenance guard** (`pipeline_offline`)
+   - `is_provenance_blocked_for_entity`: surface in {site_marketing, site_wide, global_marketing} OR same_entity_path=False → blocked
+   - Blocked claims never sent to interpret LLM; cannot contribute to aggregate PASS
+   - Unit: `marketing_only_stays_unknown`, `aggregate_ignores_blocked`
+
+2. **Irreversible expanded** (`evidence_acquisition`)
+   - Added: Start boeking/booking, Confirm payment/booking/order, Bevestig betaling/boeking, proceed to checkout
+   - Still safe: "Prijzen & boeken", "Vlucht"
+
+3. **Interpret cost control**
+   - Priority sort of claims (boardish/flightish first)
+   - `max_llm_per_decision=8` + early-stop on high-confidence required outcome
+   - Expected wall-time drop: ~12min/page → ~1–2min on local Ollama
+
+4. **Trace decision-context + timing**
+   - acquisition events carry known/unknown/actions_sample
+   - interpret events: llm_calls, duration_s, provenance_blocked_n
+   - timing phase: interpret_llm_s vs wall_total_s
+   - audit.md shows both
+
+### Runtime diagnosis (from Monica events)
+- Browser OPEN+OBSERVE: ~5.6s
+- Interpret: ~737s (30 claims × 2 decisions × local LLM)
+- Bottleneck is interpretation fan-out, not navigation.
+- Early-stop + priority should cut this by ~5–10×.
+
+### Next after re-test
+- 5 multi-domain tasks (vakantie / GPU / 2dehands / literatuur / xlsx)
+- Then night campaign with flush-between-jobs
+
+## 2026-08-27 — Sufficiency is contract-driven (not page richness)
+
+### Hypothesis challenge
+Monica 0-step GO looked “correct” under fixed experiment outcomes (`ALL_INCLUSIVE` + `FLIGHT_INCLUDED`). Human review: detail still only shows *vanaf*-price and a Fly&Go tip sentence; concrete bookable offer needs availability / price-calc surface. Costa only reached that surface because flight stayed UNKNOWN.
+
+### Decision
+- **Not** a Monica special-case fix.
+- **Not** hardcoding `property` / `binding` / `offer_state` or `visible_price` / `flight_details` as runtime enums.
+- **Yes**: task → LLM contract synthesis defines claims + verification + required set; **code** sufficiency gate decides STOP.
+- Experiment fixtures (`PACKAGES_DECISIONS` in live_offer slice) remain **vertical experiment only**, not production ontology.
+
+### Boundary doc
+See `docs/FRAMEWORK_BOUNDARY.md` — checklist to avoid sliding back into domain hardcoding.
+
+### Direction
+Broaden with many small `task.md` files in batches (web + marketplace + literature + files). Observability across tasks teaches architecture more than further Corendon-only loops. Frequent hosts may later get human API adapters; agent still learns sketches in recon for cheap replay.
+
+## 2026-08-27 — Task batch campaign v0
+
+- `tasks/batch_v0/*.md` — micro-tasks across domains (no fixed outcome enums in files beyond natural language).
+- `scripts/run_task_batch_campaign_v0.py` — one job per task.md, flush, timeout, campaign report + traces path.
+- Goal: surface contract gaps and premature-stop failures generically.
+
+## 2026-08-27 — Contract synthesis freeze + sufficiency mismatch (02)
+
+### Observation
+LLM frozen contracts for batch_v0: 8/8 frozen. Contract **01** (package) uses machine-checkable `sufficiency.required` (`subject_instance = YES`, `price_scope in […]`, …). Contract **02** (property-only) put **prose sentences** in `sufficiency.required`, so outcomes `board_type=ALL_INCLUSIVE` did not satisfy the gate (label_missing).
+
+### Learning
+- Gate + 01 behaviour is correct: board alone ≠ package contract.
+- 02 failure was representation, not architecture: required must reference **decision ids / outcomes**, not free text.
+- Do **not** map prose labels with Python heuristics.
+- Fix synthesis prompts (rule 9/10): required only `id` | `id = OUTCOME` | `id in [A,B]`.
+- Execution wiring: `run_acquisition_loop(..., frozen_contract=)` → `gaps_from_frozen_contract` + `sufficiency_stop` for STOP (no match_status / shortlist shortcuts).
+
+### Next
+Re-synthesize contracts with updated prompts; re-run batch with frozen contracts passed into the loop; read traces for premature vs correct stop.

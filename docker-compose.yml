@@ -5,6 +5,7 @@ services:
     shm_size: "1gb"
     volumes:
       - ./runs:/app/runs
+      - ./evals:/app/evals
       - ./tasks:/app/tasks:ro
       - ./inputs:/app/inputs:ro
       - ./config.yaml:/app/config.yaml:ro

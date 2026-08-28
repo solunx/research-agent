@@ -223,12 +223,17 @@ def browser_open(
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
         time.sleep(max(0.4, float(wait_seconds)))
         n = _dismiss_cookies(page)
-        time.sleep(0.8)
+        time.sleep(0.5)
+        # Prefer load first — booking sites often never reach networkidle (analytics).
         try:
-            page.wait_for_load_state("networkidle", timeout=12000)
+            page.wait_for_load_state("load", timeout=15000)
         except Exception:
             pass
-        # Second pass – some sites show CMP after networkidle
+        try:
+            page.wait_for_load_state("networkidle", timeout=8000)
+        except Exception:
+            pass
+        # Second pass – some sites show CMP after load
         n += _dismiss_cookies(page, rounds=2)
         snap = _snapshot(page, max_chars=max_chars)
         snap["cookies_dismissed"] = n
@@ -387,3 +392,143 @@ def browser_wait(seconds: float = 2.0) -> dict[str, Any]:
         return snap
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
+    """
+    Structural affordances only (visible tabs/buttons/links/controls).
+
+    Priority order (generic, no domain hardcoding):
+      1. role=tab / tablist children / aria-selected controls
+      2. buttons and role=button in main/content
+      3. same-path / fragment / empty-href links (local navigation)
+      4. other in-page links
+      5. global / external nav links (last)
+
+    Each item may carry:
+      kind, text, href, role, scope ∈ {local, global, unknown}
+    """
+    try:
+        page = _ensure_browser()
+        js = """
+        (maxItems) => {
+          const pageUrl = location.href;
+          let pageOrigin = '';
+          let pagePath = '';
+          try {
+            const u = new URL(pageUrl);
+            pageOrigin = u.origin;
+            pagePath = u.pathname || '';
+          } catch (e) {}
+
+          const seen = new Set();
+          const buckets = { tab: [], button: [], local_link: [], other_link: [], global_link: [] };
+
+          const visible = (el) => {
+            if (!el) return false;
+            const st = window.getComputedStyle(el);
+            if (!st) return true;
+            if (st.visibility === 'hidden' || st.display === 'none' || st.opacity === '0') return false;
+            const r = el.getBoundingClientRect();
+            if (r.width < 2 && r.height < 2) return false;
+            return true;
+          };
+
+          const cleanText = (t) => (t || '').replace(/\\s+/g, ' ').trim();
+
+          const classifyHref = (href) => {
+            if (!href) return 'local';
+            const h = String(href).trim();
+            if (!h || h === '#' || h.startsWith('#') || h.startsWith('javascript:')) return 'local';
+            try {
+              const u = new URL(h, pageUrl);
+              if (u.origin !== pageOrigin) return 'global';
+              // same origin: treat as local if path shares prefix with current, else still site-local
+              const p = u.pathname || '';
+              if (pagePath && (p === pagePath || p.startsWith(pagePath + '/') || pagePath.startsWith(p + '/')))
+                return 'local';
+              // same origin but different section → still often useful; mark global only for pure top-nav destinations
+              if (p.split('/').filter(Boolean).length <= 1) return 'global';
+              return 'local';
+            } catch (e) {
+              return 'unknown';
+            }
+          };
+
+          const push = (kind, text, href, role, preferredScope) => {
+            text = cleanText(text);
+            if (!text || text.length < 2 || text.length > 120) return;
+            const key = (kind + '|' + text.toLowerCase()).slice(0, 160);
+            if (seen.has(key)) return;
+            seen.add(key);
+            const scope = preferredScope || classifyHref(href);
+            const item = {
+              kind: kind,
+              text: text.slice(0, 120),
+              href: (href || '').slice(0, 300),
+              role: role || '',
+              scope: scope,
+            };
+            if (kind === 'tab') buckets.tab.push(item);
+            else if (kind === 'button') buckets.button.push(item);
+            else if (scope === 'local') buckets.local_link.push(item);
+            else if (scope === 'global') buckets.global_link.push(item);
+            else buckets.other_link.push(item);
+          };
+
+          // --- 1. Tabs (role + common tab patterns) ---
+          document.querySelectorAll('[role="tab"], [role="tablist"] [role="tab"]').forEach(el => {
+            if (!visible(el)) return;
+            const t = el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '';
+            push('tab', t, el.getAttribute('href') || '', el.getAttribute('role') || 'tab', 'local');
+          });
+          // Clickable list items / spans inside tab-like containers
+          document.querySelectorAll('[class*="tab" i] a, [class*="tab" i] button, [class*="nav-tabs" i] a, [data-tab], [aria-controls]').forEach(el => {
+            if (!visible(el)) return;
+            const t = el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '';
+            const href = el.getAttribute('href') || el.href || '';
+            const role = el.getAttribute('role') || el.tagName.toLowerCase();
+            let kind = 'link';
+            if (role === 'tab' || el.getAttribute('aria-controls')) kind = 'tab';
+            else if (el.tagName === 'BUTTON' || role === 'button') kind = 'button';
+            push(kind, t, href, role, 'local');
+          });
+
+          // --- 2. Buttons ---
+          document.querySelectorAll('button, [role="button"], input[type="submit"], input[type="button"]').forEach(el => {
+            if (!visible(el)) return;
+            const t = el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '';
+            push('button', t, '', el.getAttribute('role') || el.tagName.toLowerCase(), 'local');
+          });
+
+          // --- 3. Links (all), classified by scope ---
+          document.querySelectorAll('a[href]').forEach(a => {
+            if (!visible(a)) return;
+            const t = a.innerText || a.getAttribute('aria-label') || a.getAttribute('title') || '';
+            push('link', t, a.href || '', a.getAttribute('role') || 'link', null);
+          });
+
+          // Merge in priority order
+          const out = [];
+          const take = (arr) => {
+            for (const it of arr) {
+              if (out.length >= maxItems) break;
+              out.push(it);
+            }
+          };
+          take(buckets.tab);
+          take(buckets.button);
+          take(buckets.local_link);
+          take(buckets.other_link);
+          take(buckets.global_link);
+          return out.slice(0, maxItems);
+        }
+        """
+        items = page.evaluate(js, max_items) or []
+        # Python-side safety: ensure scope present
+        for it in items:
+            if "scope" not in it or not it.get("scope"):
+                it["scope"] = "unknown"
+        return {"ok": True, "url": page.url, "affordances": items, "n": len(items)}
+    except Exception as e:
+        return {"ok": False, "url": "", "affordances": [], "n": 0, "error": str(e)}
