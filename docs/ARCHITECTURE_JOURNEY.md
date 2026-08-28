@@ -3,7 +3,7 @@
 **Purpose:** Durable record of *why* the architecture looks the way it does.  
 Read this before changing harvest, admissibility, contracts, or LLM wiring.
 
-**Last major update:** 2026-08-26 (grounding ablation A0–A5 + candidate≠eligibility).
+**Last major update:** 2026-08-28 (candidate layer = missing intermediate abstraction).
 
 ---
 
@@ -420,3 +420,60 @@ task.md → frozen contract → acquisition loop
 **Still open (ordered):** affordance panel options → identity interpret → list-surface provenance → 8-task batch.
 
 Details: `LEARNING_LOG.md` (2026-08-28), `FRAMEWORK_BOUNDARY.md`.
+
+---
+
+## Candidate layer (2026-08-28) — stopping the rabbit hole
+
+### Context
+
+Contract-driven execution (tasks `01_web_hotel_package_concrete` and `02_web_hotel_property_only`) proved:
+
+- Different tasks → different frozen contracts → different “done” definitions (generic).
+- Code STOP authority + anti-repeat + soft-fail + panel_option affordances work.
+- Packaging + item-link bias improves **navigation** toward offer surfaces.
+
+Yet 01 still left multiple required outcomes UNKNOWN on pages that *visually* showed package facts; 02 occasionally false-negatived `subject_instance` until a better-bound unit appeared.
+
+Pattern of work:
+
+```text
+fix symptom N → symptom N+1 appears one layer deeper
+```
+
+### Architectural reading
+
+Not “the agent cannot click” or “sufficiency is wrong.”
+
+The missing intermediate abstraction:
+
+```text
+PAGE
+  → CANDIDATES          (what is one thing here?)
+      → BOUND EVIDENCE  (facts attached to that thing)
+          → INTERPRET   (contract outcomes)
+              → SUFFICIENCY / STOP
+```
+
+Humans bind first, then evaluate. The agent was extracting fragments first and reconstructing binding later (ranking, provenance, surface, prompts). That reconstruction is expensive (100+ LLM calls) and brittle.
+
+### Decision
+
+1. **Name the layer:** first-class `Candidate` (`candidates.py`), built from structural `candidate_units` packaging.
+2. **No domain schema on candidates** — identity_hints + evidence + primary_action only; board/price/flight remain contract outcomes.
+3. **Verify offline first** — `scripts/run_candidate_extraction_offline_v0.py` (no planner, no STOP, no sufficiency).
+4. **Defer** further surface/ranking micro-patches until offline candidate quality is accepted.
+5. **Then** interpret top-K candidates (not whole-page claim soup) and prefer `primary_action` in acquisition.
+
+### Docs
+
+- `docs/CANDIDATE_LAYER.md` — full definition + offline protocol
+- `docs/FRAMEWORK_BOUNDARY.md` — candidates as allowed framework mechanism
+- `docs/LEARNING_LOG.md` — dated experiment notes
+
+### What this is not
+
+- Not a Corendon scraper
+- Not hardcoded offer cards
+- Not abandoning contract synthesis
+- Not a full rewrite — packaging work is the embryo; Candidates stabilize it

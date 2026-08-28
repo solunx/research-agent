@@ -372,3 +372,18 @@ Features were experimental (`looks_like_cta`, `geo_signal`, …). Prefer structu
 - **Offline pipeline (2026-08-26):** observation → CANDIDATE_UNIT → interpretation → code eligibility.
   Measure each stage separately; never collapse into one “works/doesn’t” score.
 
+---
+
+## Candidate extraction before interpretation (2026-08-28)
+
+**Method rule:** when a page may contain multiple parallel items (list results, search hits, comparison tables), do **not** treat the page as one bag of claims. Extract **Candidates** first (structural packaging), then interpret candidate-bound evidence under the frozen contract.
+
+Offline verification is mandatory for changes to packaging/candidate shape:
+
+```bash
+python scripts/run_candidate_extraction_offline_v0.py \
+  --manifest evals/candidate_offline/fixtures_from_traces/manifest.json \
+  --outdir ./evals/candidate_offline
+```
+
+Live contract-driven runs remain the integration test *after* offline GO. See `docs/CANDIDATE_LAYER.md`.

@@ -43,3 +43,13 @@ Notes may still be emitted with `channel` set carefully, but main path uses shor
 ## Provenance fixture GO
 
 See `evals/observation_provenance_fixture_v0.json` + `scripts/run_observation_provenance_v0.py`.
+
+## Binding via Candidates (2026-08-28)
+
+Preferred production path: build `Candidate` objects (`candidates.py`), then emit observations with a stable `candidate_id` so interpretation sees **bound** multi-line evidence rather than an unordered claim soup.
+
+```text
+page → extract_candidates → candidates_to_observations → Interpretation
+```
+
+`scope` may be `unit` / `card` when the observation comes from a candidate package. Chrome should prefer `page_chrome` when packager source is affordance-only with zero density (filtering is ranking, not domain classification).

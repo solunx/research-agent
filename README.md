@@ -109,3 +109,31 @@ docker compose run --rm research-agent python agent.py --planned \
 ## Config highlights
 
 See `config.yaml`: `timeout_seconds`, `memory.*`, `safety.require_docker`.
+
+## Architecture docs (read order for reviews)
+
+1. `docs/FRAMEWORK_BOUNDARY.md` — what code may hardcode vs LLM contract content
+2. `docs/CANDIDATE_LAYER.md` — intermediate page object model (2026-08-28)
+3. `docs/ARCHITECTURE_JOURNEY.md` — why the system evolved this way
+4. `docs/LEARNING_LOG.md` — dated experiments and outcomes
+5. `docs/METHODOLOGY.md` — recon vs retrieval, host memory, method rules
+6. `docs/DECISION_CONTRACT_DISCOVERY.md` / `DECISION_CONTRACT_EXECUTION.md` — contract path
+
+### Offline candidate probe (no LLM / no browser)
+
+```bash
+python scripts/run_candidate_extraction_offline_v0.py \
+  --manifest evals/candidate_offline/fixtures_from_traces/manifest.json \
+  --outdir ./evals/candidate_offline
+```
+
+### Contract-driven live smoke (after offline GO)
+
+```bash
+docker compose run --rm research-agent \
+  python scripts/run_contract_driven_task_v0.py \
+  --tasks 01_web_hotel_package_concrete,02_web_hotel_property_only \
+  --tasks-dir tasks/batch_v0 \
+  --contract-dir evals/contract_synthesis/<synthesis_run> \
+  --llm --outdir ./evals/contract_driven
+```

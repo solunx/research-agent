@@ -1,0 +1,310 @@
+[
+  {
+    "kind": "tab",
+    "text": "Waar wil je naartoe?",
+    "href": "",
+    "role": "input",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Klantenservice",
+    "href": "",
+    "role": "div",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "CONTACT",
+    "href": "",
+    "role": "li",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Mijn Corendon",
+    "href": "",
+    "role": "div",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "REGISTREER",
+    "href": "",
+    "role": "li",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "Bekijk deze Fly & Go vakantie",
+    "href": "/spanje/canarische-eilanden/fuerteventura/costa-calma/fly-go-sbh-monica-beach",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "Zoeken",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "Bekijk beschikbaarheid",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Prijzen & boeken",
+    "href": "/spanje/canarische-eilanden/fuerteventura/costa-calma/sbh-monica-beach?tab=price-calculation-tab#acco-tabs-section",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Beschrijving",
+    "href": "/spanje/canarische-eilanden/fuerteventura/costa-calma/sbh-monica-beach?tab=destination-info-tab#acco-tabs-section",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Beoordelingen",
+    "href": "/spanje/canarische-eilanden/fuerteventura/costa-calma/sbh-monica-beach?tab=review-rating-tab#acco-tabs-section",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Foto's & Video's",
+    "href": "/spanje/canarische-eilanden/fuerteventura/costa-calma/sbh-monica-beach?tab=photo-tab#acco-tabs-section",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Kaart",
+    "href": "/spanje/canarische-eilanden/fuerteventura/costa-calma/sbh-monica-beach?tab=map-tab#acco-tabs-section",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Vlucht",
+    "href": "/spanje/canarische-eilanden/fuerteventura/costa-calma/sbh-monica-beach?tab=flight-tab#acco-tabs-section",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Periode 1/04/2026 - 31/10/2026",
+    "href": "#",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Periode 1/11/2026 - 30/04/2027",
+    "href": "#",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "NL",
+    "href": "javascript:void(0)",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "FR",
+    "href": "javascript:void(0)",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "LAST MINUTES",
+    "href": "https://www.corendon.be/vakanties/lastminutes",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "VERRE REIZEN",
+    "href": "https://www.corendon.be/vakanties/verre-reizen",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "ALL INCLUSIVE",
+    "href": "https://www.corendon.be/vakanties/all-inclusive",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Spanje",
+    "href": "https://www.corendon.be/spanje",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Canarische Eilanden",
+    "href": "https://www.corendon.be/spanje/canarische-eilanden",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Fuerteventura",
+    "href": "https://www.corendon.be/spanje/canarische-eilanden/fuerteventura",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Costa Calma",
+    "href": "https://www.corendon.be/spanje/canarische-eilanden/fuerteventura/costa-calma",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Meer lezen",
+    "href": "javascript://",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Augustus 920 p.p.",
+    "href": "javascript://",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "September 627 p.p.",
+    "href": "javascript://",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Oktober 650 p.p.",
+    "href": "javascript://",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "November 693 p.p.",
+    "href": "javascript://",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Online inchecken",
+    "href": "https://www.corendon.be/vragen/veelgestelde-vragen/online-inchecken/",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Handbagage bij Corendon",
+    "href": "https://www.corendon.be/vragen/bagage/handbagage/",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Naam wijzigen",
+    "href": "https://www.corendon.be/vragen/category/naam-wijzigen/",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Goedkope vakantie boeken met Corendon Vliegvakanties",
+    "href": "https://www.corendon.be/",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Home",
+    "href": "https://www.corendon.be/",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "ZOMER 2027",
+    "href": "https://www.corendon.be/zomervakantie",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "WINTERZON",
+    "href": "https://www.corendon.be/winterzon",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "VLIEGTICKETS",
+    "href": "https://www.corendon.com/?AgentID=1782&AgentNumber=2110",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Pakketgarantie",
+    "href": "https://www.corendon.be/voordelen",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Laagsteprijsgarantie*",
+    "href": "https://www.corendon.be/laagste-prijsgarantie",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Gratis annuleren*",
+    "href": "https://www.corendon.be/gratis-annuleren-bij-corendon",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Vaak gestelde vragen",
+    "href": "https://www.corendon.be/vragen",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Stoel reserveren",
+    "href": "https://www.corendon.be/stoelreservering",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Uw vlucht",
+    "href": "https://www.corendon.be/myaccount",
+    "role": "link",
+    "scope": "global"
+  }
+]

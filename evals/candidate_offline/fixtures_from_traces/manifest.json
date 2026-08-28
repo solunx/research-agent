@@ -1,0 +1,23 @@
+[
+  {
+    "label": "synthetic_multi_offer_list",
+    "page_text": "evals/candidate_offline/fixtures_from_traces/synthetic_list/page_text.txt",
+    "affordances": "evals/candidate_offline/fixtures_from_traces/synthetic_list/affordances.json",
+    "url": "https://example.test/offers",
+    "surface": "list_results"
+  },
+  {
+    "label": "02_monica_detail",
+    "page_text": "evals/candidate_offline/fixtures_from_traces/02_detail/step_000_page_text.txt",
+    "affordances": "evals/candidate_offline/fixtures_from_traces/02_detail/step_000_affordances.json",
+    "url": "https://www.corendon.be/spanje/canarische-eilanden/fuerteventura/costa-calma/sbh-monica-beach",
+    "surface": "live_detail"
+  },
+  {
+    "label": "01_flamenco_price_surface",
+    "page_text": "evals/candidate_offline/fixtures_from_traces/01_price_surface/step_000_page_text.txt",
+    "affordances": "evals/candidate_offline/fixtures_from_traces/01_price_surface/step_000_affordances.json",
+    "url": "https://www.corendon.be/egypte/rode-zee/marsa-alam/el-quseir/flamenco-beach-resort",
+    "surface": "list_results"
+  }
+]

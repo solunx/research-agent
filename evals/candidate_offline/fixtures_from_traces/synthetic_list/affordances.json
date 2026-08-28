@@ -1,0 +1,8 @@
+[
+  {"kind": "link", "text": "View deal Alpha", "href": "/offers/alpha-resort", "scope": "local", "role": "a"},
+  {"kind": "link", "text": "View deal Beta", "href": "/offers/beta-lodge", "scope": "local", "role": "a"},
+  {"kind": "link", "text": "View deal Gamma", "href": "/offers/gamma-inn", "scope": "local", "role": "a"},
+  {"kind": "link", "text": "Cookie policy", "href": "/legal/cookies", "scope": "global", "role": "a"},
+  {"kind": "link", "text": "FAQ", "href": "/help/faq", "scope": "global", "role": "a"},
+  {"kind": "button", "text": "Search", "href": "", "scope": "local", "role": "button"}
+]

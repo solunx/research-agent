@@ -1209,3 +1209,52 @@ even when units were visible.
   cost (LLM calls) remains high on large contracts
 - Prefer deeper DOM card structure later if blank-line clustering fails on
   some sites (still structural, not domain)
+
+## 2026-08-28 — Candidate layer (stop rabbit-hole of local fixes)
+
+### Trigger
+
+After packaging + item-link bias, task 01 reached price/offer surfaces with visible facts but outcomes stayed partially UNKNOWN / wrong surface labels. Task 02 remained CONTRACT_SATISFIED but sometimes needed an extra same-entity tab click because step-0 interpretation set `subject_instance=NOT_CONFIRMED` despite literal property name + board on the page — until a better-bound unit appeared.
+
+User + external review: successive fixes (STOP, anti-repeat, panels, provenance, packaging) each unlocked the *next* layer of the same underlying issue: **no stable “one object on the page” model.**
+
+### Decision (scientific order)
+
+1. Define Candidate as framework object (no domain fields).
+2. Offline extraction only — prove coherent candidates from page_text + affordances.
+3. Only then wire interpret-over-candidates + primary_action acquisition.
+4. Do **not** stack more surface/ranking patches as the main track.
+
+### Shipped
+
+| Artifact | Role |
+|----------|------|
+| `candidates.py` | `Candidate` dataclass, `extract_candidates`, rank, observations |
+| `scripts/run_candidate_extraction_offline_v0.py` | Offline campaign runner |
+| `evals/candidate_offline/fixtures_from_traces/` | Synthetic multi-offer + Monica detail + Flamenco price-surface |
+| `docs/CANDIDATE_LAYER.md` | Definition, boundary, offline protocol |
+| Updates | `FRAMEWORK_BOUNDARY.md`, `ARCHITECTURE_JOURNEY.md`, this log |
+
+### Offline smoke (same day)
+
+```text
+synthetic_multi_offer_list  → 3 candidates, each identity + primary_action + density
+02_monica_detail            → candidates extracted; dense price block + chrome units present
+01_flamenco_price_surface   → dense price candidate + primary_action; chrome still mixed
+```
+
+Synthetic pass proves structural multi-card separation. Real pages still emit chrome candidates — ranking/filtering by density+action is intentional and domain-agnostic; further live interpret should use **top-K by rank**, not all units equally.
+
+### Explicit non-goals this step
+
+- Live acquisition rewrite
+- 8-task batch
+- Domain outcome fields on Candidate
+- Raising max steps as substitute for binding
+
+### Next (only after offline review accepted)
+
+1. Interpretation consumes candidate evidence blobs (top-K), not 30+ unranked lines.
+2. Acquisition decide prefers candidate.primary_action when gaps remain.
+3. Re-run contract-driven 01 + 02; expect fewer UNKNOWNs when facts are on-page.
+4. Then full batch regression.

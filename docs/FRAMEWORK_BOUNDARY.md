@@ -3,7 +3,7 @@
 **Purpose:** prevent regression into domain hardcoding (travel, GPU, marketplace, …).  
 If a future change puts `board_type`, `visible_price`, `offer_state`, or similar **fixed enums** into the runtime, it violates this boundary.
 
-Last updated: 2026-08-28.
+Last updated: 2026-08-28 (candidate layer).
 
 ---
 
@@ -27,7 +27,8 @@ These are domain-agnostic and may live in code permanently:
 | Irreversible block | book/pay/checkout/submit (multi-lingual patterns, not site names) |
 | Affordance target enforcement | LLM may only choose observed controls |
 | Provenance tags | surface (`live_detail` / `live_offer_state` / `list_results` / `site_marketing`), same_entity_path, acquisition_step — structural, not domain enums. Marketing surfaces hard-blocked; list_results admissible even when path ≠ start_url |
-| **Candidate-unit packaging** | Structural clustering of co-occurring page lines + local item links into bound units (`candidate_units.py`). Blank-line blocks, link anchors, density signals (€/$/from shapes only). **No** hotel/board/SKU field names in the packager. Units feed interpretation as multi-line claims and acquisition as preferred item links |
+| **Candidate-unit packaging** | Structural clustering of co-occurring page lines + local item links into bound units (`candidate_units.py`). Blank-line blocks, link anchors, density signals (€/$/from shapes only). **No** hotel/board/SKU field names in the packager |
+| **Candidate objects** | First-class intermediate model (`candidates.py`): `identity_hints`, `evidence[]`, optional `primary_action`, `source_url`, `surface`. Code builds candidates; LLM interprets them into **contract** outcomes. Offline probe: `scripts/run_candidate_extraction_offline_v0.py`. See `docs/CANDIDATE_LAYER.md` |
 | Evidence store + claim status | UNKNOWN / evidence refs |
 | **Sufficiency gate** | STOP only when **frozen contract** required claims are satisfied — **code decides STOP**, LLM may only propose |
 | TraceSession / flush / job boundaries | Observability and isolation |
@@ -110,10 +111,11 @@ TASK.md
   → contract synthesis (iterative, LLM content)
   → FREEZE
   → loop:
-       observe → extract → interpret (LLM maps evidence→claims)
-       → evidence store + provenance
+       observe page
+       → extract Candidates (structural; code)
+       → interpret Candidates (LLM: bound evidence → contract outcomes)
        → sufficiency gate (CODE vs frozen contract)
-       → if insufficient: acquisition (LLM choose / CODE enforce)
+       → if insufficient: acquisition (prefer candidate.primary_action / observed affordances)
   → report + TraceSession
   → optional host sketch for later runs
 ```
@@ -152,6 +154,17 @@ code: frozen contract satisfied?
 LLM never finalizes a run that still has required gaps.
 
 ---
+
+
+### Candidate layer (2026-08-28)
+
+After multiple correct control-plane fixes (STOP, anti-repeat, panel options, provenance, packaging),
+task 01 still failed to *fill* contract outcomes on visible offer text. Task 02 showed a false-negative
+`subject_instance` until a better-bound unit appeared. Root issue: **loose claims force post-hoc
+reconstruction of object boundaries.**
+
+Framework response: promote structural units into first-class **Candidates** (no domain fields).
+Verify offline before more live ranking/surface patches. Do not encode hotel/offer enums into Candidates.
 
 ## Checklist before merging code
 
