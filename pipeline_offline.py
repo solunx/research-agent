@@ -331,14 +331,21 @@ def _obs_same_entity(o: dict[str, Any]) -> bool | None:
 
 def is_provenance_blocked_for_entity(o: dict[str, Any]) -> bool:
     """
-    Hard guard: marketing / left-entity surfaces cannot prove entity outcomes.
+    Hard guard: pure marketing / site-wide chrome cannot prove contract outcomes.
+
     Generic — no site-specific paths. Tagging happens upstream in the slice.
+
+    Design note (2026-08-28):
+    - Block surfaces that are explicitly marketing/chrome.
+    - Do NOT hard-block solely on same_entity_path=False.
+      When a task starts at a site root (or abstract entity like "one concrete
+      bookable"), navigation to a list/results page always yields
+      same_entity_path=False; those pages still contain admissible offer-bound
+      evidence. Binding is expressed by surface tags (list_results /
+      live_offer_state / live_detail), not by URL-path equality to start_url.
     """
     surface = _obs_surface(o)
-    if surface in ("site_marketing", "site_wide", "global_marketing"):
-        return True
-    same = _obs_same_entity(o)
-    if same is False:
+    if surface in ("site_marketing", "site_wide", "global_marketing", "page_chrome"):
         return True
     return False
 
@@ -447,8 +454,10 @@ def run_interpretation(
     """
     Interpret candidate_claim observations per decision.
 
-    Hard provenance: observations tagged site_marketing / same_entity_path=False
-    are never sent to the LLM for entity outcomes and cannot contribute PASS.
+    Hard provenance: observations tagged site_marketing / site_wide /
+    global_marketing / page_chrome are never sent to the LLM for contract
+    outcomes and cannot contribute PASS. List/results and live_offer_state
+    surfaces remain admissible (see is_provenance_blocked_for_entity).
 
     Cost control: claims are prioritized; after max_llm_per_decision calls or a
     high-confidence non-UNKNOWN on a required outcome, remaining claims are

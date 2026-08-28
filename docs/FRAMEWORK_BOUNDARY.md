@@ -26,7 +26,7 @@ These are domain-agnostic and may live in code permanently:
 | Action enum + execute | OPEN_URL, CLICK_TEXT, SCROLL, WAIT, STOP, … |
 | Irreversible block | book/pay/checkout/submit (multi-lingual patterns, not site names) |
 | Affordance target enforcement | LLM may only choose observed controls |
-| Provenance tags | surface, same_entity_path, acquisition_step (structural, not “hotel”) |
+| Provenance tags | surface (`live_detail` / `live_offer_state` / `list_results` / `site_marketing`), same_entity_path, acquisition_step — structural, not domain enums. Marketing surfaces hard-blocked; list_results admissible even when path ≠ start_url |
 | Evidence store + claim status | UNKNOWN / evidence refs |
 | **Sufficiency gate** | STOP only when **frozen contract** required claims are satisfied — **code decides STOP**, LLM may only propose |
 | TraceSession / flush / job boundaries | Observability and isolation |
@@ -133,7 +133,7 @@ Optional later: human API adapters for heavy hosts — still selected as tools/a
 | Repeated same CLICK with no URL/text change | **Framework anti-loop:** fingerprint action+target+path; block no-progress repeats — not site-specific ifs |
 | UI toggle changes state_sig without research progress (VERTREKPERIODE×3) | **Anti-repeat = block action_key after one attempt**, not only equal signatures |
 | LLM acquisition STOP while contract still has gaps | **Code rejects that STOP**; sufficiency gate remains the only “done” authority |
-| Page text shows filter options not in affordance list | Affordance extractor must surface interactive panel options (later step) |
+| Page text shows filter options not in affordance list | Affordance extractor surfaces **panel_option** (ARIA/labels/short clickables in expanded surfaces) — no domain lists |
 | List/home offer cards → provenance_blocked mass | Provenance must distinguish offer-fragment vs chrome (later step) |
 
 Do **not** “fix Monica” with hardcoded offer-state fields. Fix by **better task→contract** and generic sufficiency.

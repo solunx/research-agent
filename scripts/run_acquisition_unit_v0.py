@@ -202,11 +202,23 @@ def main() -> int:
         "channel": "candidate_claim",
         "provenance": {"surface": "live_detail", "same_entity_path": True},
     }
+    # List/results after a root start: same_entity_path=False must NOT block
+    list_obs = {
+        "text": "Grand Park Lara Ultra All Inclusive vanaf Brussel va 547 p.p.",
+        "channel": "candidate_claim",
+        "provenance": {"surface": "list_results", "same_entity_path": False},
+    }
     checks.append(
         {
             "id": "provenance_blocks_marketing",
             "ok": is_provenance_blocked_for_entity(marketing_obs)
             and not is_provenance_blocked_for_entity(entity_obs),
+        }
+    )
+    checks.append(
+        {
+            "id": "provenance_allows_list_results",
+            "ok": not is_provenance_blocked_for_entity(list_obs),
         }
     )
 

@@ -17,6 +17,7 @@ Production path should leave hints empty and rely on LLM + observed affordances.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 from evidence_acquisition import (
@@ -45,6 +46,62 @@ from run_ledger import RunLedger
 from trace_session import TraceSession
 
 ChatFnStr = Callable[[list[dict[str, str]]], str]
+
+# Generic item-list density: repeated price-like lines (not domain enums).
+_PRICE_LINE = re.compile(
+    r"(€|\$|£|\bp\.?\s*p\.?\b|\bfrom\b|\bva\.?\s*\d|\bvanaf\b)",
+    re.I,
+)
+
+
+def _classify_surface(
+    *,
+    start_url: str,
+    cur_url: str,
+    text: str,
+    step: int,
+) -> tuple[str, bool]:
+    """
+    Structural surface tag for provenance.
+
+    Returns (surface, same_entity_path).
+    - list_results when the page shows multi-item price density
+    - site_marketing only when path left the start entity AND no list density
+    - never site-specific host/path string matching
+    """
+    try:
+        from urllib.parse import urlparse
+
+        start_path = urlparse(start_url).path.rstrip("/")
+        cur_path = urlparse(cur_url).path.rstrip("/")
+        same_entity = bool(
+            start_path
+            and cur_path
+            and (
+                cur_path == start_path
+                or cur_path.startswith(start_path + "/")
+                or start_path.startswith(cur_path + "/")
+            )
+        )
+    except Exception:
+        same_entity = step == 0
+
+    # Count distinct price-like lines as a domain-agnostic list signal
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    price_hits = sum(1 for ln in lines if _PRICE_LINE.search(ln))
+    dense_list = price_hits >= 3
+
+    if step == 0 and same_entity:
+        return "live_detail", True
+    if dense_list:
+        return "list_results", same_entity
+    if same_entity:
+        return "live_offer_state", True
+    if step == 0:
+        # Root / search home: treat as list if dense, else live_detail seed
+        return ("list_results" if dense_list else "live_detail"), same_entity
+    # Left start path, no dense offer evidence → marketing/chrome surface
+    return "site_marketing", False
 
 
 def _pipeline_on_obs(
@@ -240,7 +297,7 @@ def run_acquisition_loop(
     for step in range(0, max_acquisition_steps + 1):
         if trace:
             trace.set_step(step)
-        aff = browser_list_affordances(max_items=40)
+        aff = browser_list_affordances(max_items=60)
         affordances = aff.get("affordances") or []
         ledger.log_action(
             "LIST_AFFORDANCES",
@@ -265,21 +322,20 @@ def run_acquisition_loop(
             text=text,
             max_claim_lines=max_claim_lines,
         )
-        # Tag surface + same-entity vs left-entity (generic path compare)
-        surface = "live_detail" if step == 0 else "live_offer_state"
-        try:
-            from urllib.parse import urlparse
-            start_path = urlparse(start_url).path.rstrip("/")
-            cur_path = urlparse(final_url).path.rstrip("/")
-            same_entity = bool(start_path and cur_path and (
-                cur_path == start_path
-                or cur_path.startswith(start_path + "/")
-                or start_path.startswith(cur_path + "/")
-            ))
-            if not same_entity and step > 0:
-                surface = "site_marketing"
-        except Exception:
-            same_entity = step == 0
+        # Surface taxonomy (generic, no site names):
+        #   live_detail      — starting detail page
+        #   live_offer_state — deeper same-entity surface
+        #   list_results     — multi-item listing / search results with
+        #                      offer-like density (prices, repeated cards)
+        #   site_marketing   — left entity path AND no dense item evidence
+        # Binding is surface + candidate_claim channel; path equality alone
+        # must not reject list evidence after a root-start task.
+        surface, same_entity = _classify_surface(
+            start_url=start_url,
+            cur_url=final_url,
+            text=text,
+            step=step,
+        )
         for o in obs:
             prov = o.setdefault("provenance", {})
             prov["surface"] = surface
@@ -560,7 +616,7 @@ def run_acquisition_loop(
         new_url = str(snap.get("url") or final_url)
         # Re-list affordances cheaply for signature (or use text-only if list fails)
         try:
-            aff_after = browser_list_affordances(max_items=40)
+            aff_after = browser_list_affordances(max_items=60)
             aff_after_list = aff_after.get("affordances") or []
         except Exception:
             aff_after_list = []
@@ -641,17 +697,19 @@ def run_acquisition_loop(
                 error=str(snap.get("error") or "") or None,
             )
         if not ok or len(new_text) < 40:
-            # Keep previous text; record failure; continue if force queue remains
+            # Soft-fail (2026-08-28): one broken click must not kill the run.
+            # Keep previous page state; action_key already blocked so the
+            # planner will try a different affordance on the next iteration.
+            # Terminal only when the loop budget is exhausted (handled by the
+            # for-range / max_acquisition_steps check at the top of next step).
             step_rec["execute_error"] = snap.get("error") or "empty_after_action"
-            if not force_queue:
-                # Prefer trying another affordance over hard-stop when we still have gaps
-                # and steps left — but acquisition_decide will STOP if all blocked.
-                if acquisition_steps >= max_acquisition_steps:
-                    ledger.set_stop("ACQUISITION_ACTION_FAILED")
-                    if trace:
-                        trace.log_stop("ACQUISITION_ACTION_FAILED")
-                    break
-                continue
+            step_rec["soft_fail"] = True
+            print(
+                f"[acquisition] soft_fail action={action_key} "
+                f"err={(snap.get('error') or 'empty')[:120]!s} "
+                f"— keeping prior page, will try other affordances",
+                flush=True,
+            )
             continue
 
         if no_progress:

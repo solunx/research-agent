@@ -422,7 +422,10 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
           } catch (e) {}
 
           const seen = new Set();
-          const buckets = { tab: [], button: [], local_link: [], other_link: [], global_link: [] };
+          // panel_option: visible choices inside open menus/panels/listboxes (generic)
+          const buckets = {
+            tab: [], panel_option: [], button: [], local_link: [], other_link: [], global_link: []
+          };
 
           const visible = (el) => {
             if (!el) return false;
@@ -431,6 +434,8 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             if (st.visibility === 'hidden' || st.display === 'none' || st.opacity === '0') return false;
             const r = el.getBoundingClientRect();
             if (r.width < 2 && r.height < 2) return false;
+            // off-screen or collapsed height
+            if (r.bottom < 0 || r.top > (window.innerHeight || 2000) + 200) return false;
             return true;
           };
 
@@ -443,11 +448,9 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             try {
               const u = new URL(h, pageUrl);
               if (u.origin !== pageOrigin) return 'global';
-              // same origin: treat as local if path shares prefix with current, else still site-local
               const p = u.pathname || '';
               if (pagePath && (p === pagePath || p.startsWith(pagePath + '/') || pagePath.startsWith(p + '/')))
                 return 'local';
-              // same origin but different section → still often useful; mark global only for pure top-nav destinations
               if (p.split('/').filter(Boolean).length <= 1) return 'global';
               return 'local';
             } catch (e) {
@@ -457,19 +460,27 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
 
           const push = (kind, text, href, role, preferredScope) => {
             text = cleanText(text);
-            if (!text || text.length < 2 || text.length > 120) return;
+            // Allow slightly longer option labels; reject paragraphs
+            if (!text || text.length < 2 || text.length > 100) return;
+            // Skip multi-line blobs (likely containers, not single options)
+            if ((text.match(/\\n/g) || []).length > 1) return;
             const key = (kind + '|' + text.toLowerCase()).slice(0, 160);
             if (seen.has(key)) return;
+            // Also de-dupe across kinds on same text (prefer earlier buckets)
+            const textKey = 'T|' + text.toLowerCase();
+            if (seen.has(textKey) && kind !== 'tab') return;
             seen.add(key);
+            seen.add(textKey);
             const scope = preferredScope || classifyHref(href);
             const item = {
               kind: kind,
-              text: text.slice(0, 120),
+              text: text.slice(0, 100),
               href: (href || '').slice(0, 300),
               role: role || '',
               scope: scope,
             };
             if (kind === 'tab') buckets.tab.push(item);
+            else if (kind === 'panel_option') buckets.panel_option.push(item);
             else if (kind === 'button') buckets.button.push(item);
             else if (scope === 'local') buckets.local_link.push(item);
             else if (scope === 'global') buckets.global_link.push(item);
@@ -482,7 +493,6 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             const t = el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '';
             push('tab', t, el.getAttribute('href') || '', el.getAttribute('role') || 'tab', 'local');
           });
-          // Clickable list items / spans inside tab-like containers
           document.querySelectorAll('[class*="tab" i] a, [class*="tab" i] button, [class*="nav-tabs" i] a, [data-tab], [aria-controls]').forEach(el => {
             if (!visible(el)) return;
             const t = el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '';
@@ -492,6 +502,115 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             if (role === 'tab' || el.getAttribute('aria-controls')) kind = 'tab';
             else if (el.tagName === 'BUTTON' || role === 'button') kind = 'button';
             push(kind, t, href, role, 'local');
+          });
+
+          // --- 1b. Panel / menu / listbox options (GENERIC) ---
+          // Goal: after a filter/tab opens, surface the *choices* (months, airports,
+          // categories, sizes, …) as clickable affordances — not domain keywords.
+          // Sources: ARIA roles, open containers, labeled form controls, short
+          // clickable nodes inside expanded surfaces.
+
+          const isExpandedSurface = (el) => {
+            if (!el) return false;
+            const ariaExp = el.getAttribute('aria-expanded');
+            if (ariaExp === 'true') return true;
+            if (el.hasAttribute('open')) return true;
+            const role = (el.getAttribute('role') || '').toLowerCase();
+            if (['listbox', 'menu', 'dialog', 'tree', 'grid', 'group'].includes(role)) return true;
+            // common open-state class hints (generic tokens only)
+            const cls = (el.className && String(el.className)) || '';
+            if (/\\b(open|opened|expanded|active|show|visible|is-open)\\b/i.test(cls)) return true;
+            return false;
+          };
+
+          // Explicit ARIA options / menu items / radios / checkboxes
+          document.querySelectorAll(
+            '[role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], ' +
+            '[role="treeitem"], [role="checkbox"], [role="radio"]'
+          ).forEach(el => {
+            if (!visible(el)) return;
+            const t = el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '';
+            push('panel_option', t, el.getAttribute('href') || '', el.getAttribute('role') || 'option', 'local');
+          });
+
+          // <select> options (visible selects only)
+          document.querySelectorAll('select').forEach(sel => {
+            if (!visible(sel)) return;
+            Array.from(sel.options || []).forEach(opt => {
+              const t = opt.text || opt.label || opt.value || '';
+              if (t) push('panel_option', t, '', 'option', 'local');
+            });
+          });
+
+          // Labels bound to inputs (checkbox/radio/option-like) — clickable choices
+          document.querySelectorAll('label').forEach(lab => {
+            if (!visible(lab)) return;
+            const t = lab.innerText || lab.getAttribute('aria-label') || '';
+            const short = cleanText(t);
+            if (!short || short.length > 80) return;
+            // Prefer labels that control an input
+            const forId = lab.getAttribute('for');
+            let controls = forId ? document.getElementById(forId) : null;
+            if (!controls) controls = lab.querySelector('input, select');
+            if (!controls) return;
+            const typ = (controls.getAttribute('type') || controls.tagName || '').toLowerCase();
+            if (['checkbox', 'radio', 'select-one', 'select-multiple', 'select'].includes(typ) ||
+                controls.tagName === 'SELECT' || controls.tagName === 'INPUT') {
+              push('panel_option', short, '', 'label', 'local');
+            }
+          });
+
+          // Short clickable nodes inside expanded / listbox / filter-like surfaces
+          const surfaceRoots = [];
+          document.querySelectorAll(
+            '[aria-expanded="true"], [open], [role="listbox"], [role="menu"], [role="dialog"], ' +
+            '[class*="dropdown" i], [class*="popover" i], [class*="filter" i], [class*="facet" i], ' +
+            '[class*="panel" i], [class*="drawer" i], [data-filter], [data-testid*="filter" i]'
+          ).forEach(root => {
+            if (!visible(root) && !isExpandedSurface(root)) return;
+            // Only treat as surface if expanded or role is explicitly a choice surface
+            const role = (root.getAttribute('role') || '').toLowerCase();
+            if (!isExpandedSurface(root) && !['listbox', 'menu', 'dialog'].includes(role)) {
+              // still allow if it has many short children (open panel heuristic)
+              const kids = root.querySelectorAll('li, a, button, label, [role="option"], span, div');
+              let shortKids = 0;
+              kids.forEach(k => {
+                if (!visible(k)) return;
+                const tt = cleanText(k.innerText || '');
+                if (tt.length >= 2 && tt.length <= 40) shortKids++;
+              });
+              if (shortKids < 3) return;
+            }
+            surfaceRoots.push(root);
+          });
+
+          const clickableLooks = (el) => {
+            if (!el) return false;
+            const tag = el.tagName;
+            if (['A', 'BUTTON', 'LABEL', 'OPTION'].includes(tag)) return true;
+            const role = (el.getAttribute('role') || '').toLowerCase();
+            if (['option', 'menuitem', 'button', 'link', 'checkbox', 'radio', 'treeitem'].includes(role)) return true;
+            if (el.getAttribute('tabindex') === '0' || el.getAttribute('tabindex') === '-1') return true;
+            if (el.onclick || el.getAttribute('onclick')) return true;
+            try {
+              const st = window.getComputedStyle(el);
+              if (st && st.cursor === 'pointer') return true;
+            } catch (e) {}
+            return false;
+          };
+
+          surfaceRoots.forEach(root => {
+            root.querySelectorAll('li, a, button, label, span, div, [role="option"]').forEach(el => {
+              if (!visible(el)) return;
+              if (!clickableLooks(el) && el.tagName !== 'LI') return;
+              // Prefer leaf-ish nodes: not huge containers
+              const t = cleanText(el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '');
+              if (!t || t.length < 2 || t.length > 60) return;
+              // Avoid taking the whole panel text
+              if (el.children && el.children.length > 6) return;
+              const href = el.getAttribute('href') || '';
+              push('panel_option', t, href, el.getAttribute('role') || el.tagName.toLowerCase(), 'local');
+            });
           });
 
           // --- 2. Buttons ---
@@ -508,7 +627,7 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             push('link', t, a.href || '', a.getAttribute('role') || 'link', null);
           });
 
-          // Merge in priority order
+          // Merge in priority order: tabs → panel options → buttons → links
           const out = [];
           const take = (arr) => {
             for (const it of arr) {
@@ -517,6 +636,7 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             }
           };
           take(buckets.tab);
+          take(buckets.panel_option);
           take(buckets.button);
           take(buckets.local_link);
           take(buckets.other_link);

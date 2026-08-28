@@ -18,9 +18,20 @@ Format per entry: **date → hypothesis → result → decision**.
 
 **Shipped (this step only):** stop-reject-on-gaps + anti-repeat-by-action-key in `live_offer_state_slice.py` / `evidence_acquisition.py`.
 
-**Next (ordered, one layer at a time):** affordance panel options → identity interpret → list-surface provenance → full 8-task batch.
-
 See also `FRAMEWORK_BOUNDARY.md` regression lessons.
+
+---
+
+## 2026-08-28 — Affordance panel options (step C)
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| Filter tabs alone enough | 01 opened VERTREKPERIODE; page_text had months; affordances only tabs | Extract **panel_option** generically |
+| Hardcode months/airports | Domain leak | ARIA option/menuitem, label+input, short clickables in expanded/listbox/filter-like surfaces |
+
+**Code:** `browser.browser_list_affordances` — `kind=panel_option` after tabs; acquisition `max_items=60`.
+
+**Test:** re-run **01 only**; expect panel options in affordances after filter open (no domain ifs).
 
 ---
 
@@ -1103,3 +1114,39 @@ LLM frozen contracts for batch_v0: 8/8 frozen. Contract **01** (package) uses ma
 
 ### Next
 Re-synthesize contracts with updated prompts; re-run batch with frozen contracts passed into the loop; read traces for premature vs correct stop.
+
+## 2026-08-28 — Provenance E + soft-fail (list/results admissible)
+
+### Context
+After panel_option affordances (C), task 01 reached `/kerstvakantie` with concrete offer cards
+(board, price, departure visible). All outcomes stayed UNKNOWN because every observation after
+leaving the start path was tagged `site_marketing` + `same_entity_path=False` → hard-blocked
+(`provenance_blocked_n=248`). One failed Playwright click on "Zoeken" ended the run with
+`ACQUISITION_ACTION_FAILED`.
+
+### Shipped
+1. **Surface taxonomy** (`live_offer_state_slice._classify_surface`)
+   - `live_detail` / `live_offer_state` / `list_results` / `site_marketing`
+   - `list_results` when page has multi-item price-like density (generic €/$/p.p./from/va patterns)
+   - `site_marketing` only when path left start entity **and** no dense item evidence
+   - No host- or site-specific path strings
+
+2. **Provenance gate** (`pipeline_offline.is_provenance_blocked_for_entity`)
+   - Blocks only explicit marketing/chrome surfaces
+   - **No longer** hard-blocks solely on `same_entity_path=False`
+   - Rationale: root-start / abstract-entity tasks always leave the start path; list cards
+     remain the correct evidence surface for "find one bookable …"
+
+3. **Soft-fail on action** (`live_offer_state_slice`)
+   - Failed click → block action_key, keep prior page text/url, continue
+   - Does **not** terminal-stop the run; max-steps / contract gaps still end the loop
+
+### Still framework (not domain)
+- No Corendon/month/hotel ifs
+- Contract content still LLM-owned; gate still code-owned
+
+### Expect on 01 re-run
+- `surface=list_results` on kerstvakantie / search lists
+- `provenance_blocked_n` much lower than 248
+- At least some decision outcomes ≠ UNKNOWN when offer text is present
+- Failed "Zoeken" does not alone yield `ACQUISITION_ACTION_FAILED`
