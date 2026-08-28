@@ -1258,3 +1258,49 @@ Synthetic pass proves structural multi-card separation. Real pages still emit ch
 2. Acquisition decide prefers candidate.primary_action when gaps remain.
 3. Re-run contract-driven 01 + 02; expect fewer UNKNOWNs when facts are on-page.
 4. Then full batch regression.
+
+## 2026-08-28 — Candidate quality v1 (offline)
+
+### Goal
+Reduce chrome, keep identity-bearing candidates, stricter primary_action — still offline only.
+
+### Changes (`candidates.py`)
+- `is_chrome` structural flag (nav/FAQ/season/review-date blocks)
+- `primary_action` only if item-ish (reject help paths, chrome labels, off-host)
+- `select_top_candidates`: dense first, then substantive identity (even dens=0), drop chrome
+- Ranking no longer prefers “any action” over identity
+
+### Offline results (manifest)
+
+| Fixture | Before (raw top-8) | After quality select |
+|---------|--------------------|----------------------|
+| synthetic multi-offer | 3 clean cards | 3 clean cards (unchanged GO) |
+| 02 Monica detail | 8 incl. FAQ, seasons, reviews | **4**: price block + Prijzen&boeken; disclaimer; Fly&Go tip; breadcrumb+name+board |
+| 01 Flamenco price | 8 incl. FAQ, reviews, seasons | **4**: price block + action; entity path; periods; score block |
+
+Chrome menu (ZOMER/LAST MINUTES), FAQ, review-date blocks largely removed.
+Property identity line (`SBH Monica Beach` / `Flamenco…` + board) retained via identity pass despite dens=0.
+
+### Remaining gaps (honest)
+- Price facts and hotel name still **separate candidates** (not one merged object).
+- Score/review aggregate can still appear (dens=0, multi-line).
+- Merging identity+offer on same-entity pages is a **later** generic problem — not fixed by domain ifs.
+
+### Next
+Offline accepted for “usable top-K set” → wire interpret over selected candidates + prefer primary_action in acquisition → live 01/02.
+
+
+## 2026-08-28 — Interpret over candidates (wiring)
+
+### Decision
+Do not merge candidates yet. Feed top-K quality-selected candidates into interpretation.
+
+### Shipped
+- `live_offer_state_slice`: observations from `extract_candidates` → `candidates_to_observations` (all surfaces); preferred_item_links from candidate.primary_action; trace `step_*_candidates.json`
+- `scripts/run_interpret_candidates_offline_v0.py`: offline interpret + sufficiency vs frozen contract
+- Docs: CANDIDATE_LAYER §11
+
+### Test order
+1. Offline interpret on Monica candidates + contract_02 (no browser)
+2. Live contract-driven 01+02
+3. Only if data shows split-binding failure → same-entity merge research

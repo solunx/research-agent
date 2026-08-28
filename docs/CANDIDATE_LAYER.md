@@ -205,3 +205,48 @@ Existing work is evidence, not waste:
 - Packaging + item-link bias proved structural clustering is feasible
 
 The Candidate layer **names and stabilizes** that clustering as the object the rest of the system reasons about.
+
+---
+
+## 10. Quality v1 (2026-08-28 offline)
+
+After first offline run showed chrome pollution and identity ranked below density:
+
+1. **Chrome flag** — nav/FAQ/season/review-date clusters marked `is_chrome` (structural patterns only).
+2. **primary_action gate** — help paths and chrome labels → no action (null preferred over wrong link).
+3. **select_top_candidates** — dense non-chrome first; always try to keep substantive identity candidates; drop chrome from interpret set.
+
+Synthetic multi-offer remains the regression for multi-card separation. Real detail pages: top-K should include both price-dense and name/board identity candidates without FAQ/menu.
+
+Still **not** solved: automatic merge of identity candidate + price candidate into one object on single-entity pages. That is a separate, explicit next research step if interpret still fails with split candidates.
+
+
+---
+
+## 11. Interpret over candidates (next measured step)
+
+**Hypothesis:** a quality-selected top-K candidate set is enough for the interpretation
+layer to fill frozen-contract outcomes — without mandatory same-entity merge.
+
+**Offline probe (no browser):**
+
+```bash
+python scripts/run_interpret_candidates_offline_v0.py \
+  --candidates evals/candidate_offline/<run>/candidates_02_monica_detail_*.json \
+  --contract evals/contract_synthesis/<run>/contract_02_web_hotel_property_only_*.json \
+  --llm --outdir ./evals/interpret_candidates
+```
+
+**Live path:** `live_offer_state_slice` builds observations from `extract_candidates` +
+`candidates_to_observations`; acquisition prefers `primary_action` links from selected
+candidates.
+
+**Pass criteria**
+
+| Task | Expect |
+|------|--------|
+| 02 property | From Monica candidates alone → subject CONFIRMED + board ALL_INCLUSIVE → sufficiency satisfied (0 acquisition steps ideal) |
+| 01 package | Outcomes move off all-UNKNOWN when price+identity candidates present; may still need navigation |
+
+If 02 fails offline with the candidate set that clearly contains name+board, the bug is interpretation prioritization, not packaging.
+If 01 fails only because name and price are in different candidates, revisit same-entity binding *then*.

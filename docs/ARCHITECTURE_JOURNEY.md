@@ -477,3 +477,11 @@ Humans bind first, then evaluate. The agent was extracting fragments first and r
 - Not hardcoded offer cards
 - Not abandoning contract synthesis
 - Not a full rewrite — packaging work is the embryo; Candidates stabilize it
+
+
+### Interpret over candidates (2026-08-28)
+
+Wiring step after offline quality v1: observations for the acquisition loop are produced
+from quality-selected Candidates, not ranked page-line soup. Acquisition preferred links
+come from `Candidate.primary_action`. Offline interpret script isolates "can outcomes be
+filled from candidates?" before live navigation cost.

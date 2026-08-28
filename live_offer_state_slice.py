@@ -20,6 +20,11 @@ from __future__ import annotations
 import re
 from typing import Any, Callable
 
+from candidates import (
+    candidates_preview,
+    candidates_to_observations,
+    extract_candidates,
+)
 from candidate_units import (
     package_candidate_units,
     unit_claim_preview,
@@ -334,9 +339,37 @@ def run_acquisition_loop(
             step=step,
         )
 
-        # Candidate-unit packaging (structural binding). On list_results we prefer
-        # unit-bound multi-line claims so interpretation sees co-occurring facts.
-        # On detail surfaces we still keep line observations; units are supplemental.
+        # Candidate layer (2026-08-28): structural extract → quality select →
+        # observations bound by candidate_id. Interpretation sees top-K candidates
+        # instead of whole-page claim soup. No domain merge required for this step.
+        selected = extract_candidates(
+            text=text,
+            affordances=affordances,
+            page_url=final_url,
+            surface=surface,
+            max_candidates=6,
+            max_units=16,
+        )
+        preferred_links = [
+            {
+                "text": str((c.primary_action or {}).get("text") or "")[:120],
+                "href": str((c.primary_action or {}).get("href") or "")[:400],
+            }
+            for c in selected
+            if c.has_action()
+        ]
+        # de-dupe preferred links
+        _seen_pref: set[str] = set()
+        _pref_clean: list[dict[str, str]] = []
+        for p in preferred_links:
+            k = f"{(p.get('text') or '').lower()}|{(p.get('href') or '').lower()}"
+            if k in _seen_pref or (not p.get("text") and not p.get("href")):
+                continue
+            _seen_pref.add(k)
+            _pref_clean.append(p)
+        preferred_links = _pref_clean
+        cand_preview = candidates_preview(selected)
+        # legacy unit artifacts for comparison / regression
         units = package_candidate_units(
             text=text,
             affordances=affordances,
@@ -344,45 +377,36 @@ def run_acquisition_loop(
             max_units=8,
             max_lines_per_unit=8,
         )
-        preferred_links = unit_item_link_targets(units)
         unit_preview = unit_claim_preview(units)
 
-        if surface == "list_results" and units:
-            obs = units_to_observations(
-                units, page_url=final_url, surface=surface, max_units=6
-            )
-            # Keep page identity crumbs so subject_instance-style decisions still work
-            if title:
-                obs.insert(
-                    0,
-                    {
-                        "observation_id": "live-title",
-                        "candidate_id": entity,
-                        "text": title[:300],
-                        "channel": "candidate_claim",
-                        "scope": "page_title",
-                        "provenance": {
-                            "origin": "browser_title",
-                            "source_url": final_url,
-                            "surface": surface,
-                        },
+        obs = candidates_to_observations(selected, max_candidates=6)
+        if title:
+            obs.insert(
+                0,
+                {
+                    "observation_id": "live-title",
+                    "candidate_id": entity,
+                    "text": title[:300],
+                    "channel": "candidate_claim",
+                    "scope": "page_title",
+                    "provenance": {
+                        "origin": "browser_title",
+                        "source_url": final_url,
+                        "surface": surface,
                     },
-                )
-        else:
-            obs = page_text_to_observations(
+                },
+            )
+        # Detail pages: keep a few ranked line observations as safety net if
+        # candidate set is very small (should be rare after quality v1).
+        if surface != "list_results" and len(selected) < 2:
+            line_obs = page_text_to_observations(
                 candidate_id=entity,
                 url=final_url,
                 title=title,
                 text=text,
-                max_claim_lines=max_claim_lines,
+                max_claim_lines=min(12, max_claim_lines),
             )
-            # Supplemental unit-bound claims (do not replace detail line evidence)
-            if units:
-                obs.extend(
-                    units_to_observations(
-                        units[:3], page_url=final_url, surface=surface, max_units=3
-                    )
-                )
+            obs.extend(line_obs)
 
         for o in obs:
             prov = o.setdefault("provenance", {})
@@ -392,19 +416,33 @@ def run_acquisition_loop(
         ledger.log_observations(obs)
         stage_d = stage_d_from_obs(obs)
         if trace:
-            claims_preview = [o["text"] for o in obs if o.get("channel") == "candidate_claim"][:24]
+            claims_preview = [
+                o["text"] for o in obs if o.get("channel") == "candidate_claim"
+            ][:24]
             trace.save_artifact(
                 f"step_{step:03d}_claims.json",
                 {
                     "url": final_url,
                     "stage_d": stage_d,
                     "claim_preview": claims_preview,
+                    "candidates_preview": cand_preview,
                     "candidate_units": units[:8],
                     "unit_preview": unit_preview,
                     "obs_n": len(obs),
                 },
             )
             try:
+                from candidates import candidates_to_jsonable
+
+                trace.save_artifact(
+                    f"step_{step:03d}_candidates.json",
+                    {
+                        "url": final_url,
+                        "surface": surface,
+                        "candidates": candidates_to_jsonable(selected),
+                        "preview": cand_preview,
+                    },
+                )
                 trace.save_artifact(
                     f"step_{step:03d}_candidate_units.json",
                     {"url": final_url, "surface": surface, "units": units[:8]},
@@ -505,7 +543,7 @@ def run_acquisition_loop(
             f"llm_calls={llm_calls_step} interp_s={interp_duration} "
             f"surface={surface} prov_blocked={prov_blocked} "
             f"blocked_n={len(blocked_action_keys)} "
-            f"units={len(units)} item_links={len(preferred_links)}",
+            f"cands={len(selected)} units={len(units)} item_links={len(preferred_links)}",
             flush=True,
         )
 
