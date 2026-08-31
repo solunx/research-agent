@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Local Research Agent – general-purpose Phase 1+
+LEGACY — pre-contract-driven retrieval agent (last substantive touch ~2026-08-20/23).
 
-- External notes + research_state (context stays smaller)
-- Memory: site tactics + strategies (self-improving tool routing)
-- Longer LLM timeout; forced report from notes on failure
-- Optional Docker-only guard
-- Tool timings in CLI
-- Optional planner/executor mode (--planned): split task, flush LLM
-  context between sub-tasks, synthesize at the end
+Deprecated as the recommended / default entry point on 2026-08-29.
+Canonical production path:
+    scripts/run_contract_driven_task_v0.py
+    (task.md → frozen contract → acquisition loop → code sufficiency STOP)
+
+This module and its harvest stack (storage.py, candidate_admissibility.py,
+member_role.py) are not the repair target. See docs/FRAMEWORK_BOUNDARY.md
+and docs/BOUNDARY_AUDIT_FINAL.md. Keep for old runs/ comparison only.
 """
 
 from __future__ import annotations

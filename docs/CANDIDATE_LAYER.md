@@ -50,23 +50,69 @@ That reconstruction produced a long chain of real but local fixes:
 
 > a recognizable potential entity or offer on a page, with evidence that can be structurally bound to it, and an optional primary action to inspect that candidate further.
 
-### Shape (no domain fields)
+### Shape (LOCKED — FRAMEWORK_BOUNDARY ground rules 2026-08-29)
 
-```text
-candidate_id       # stable id within the page extraction
-identity_hints[]   # short strings that appear to name/locate the object
-evidence[]         # ordered text fragments bound to this candidate
-primary_action?    # {text, href} — open/inspect further
-source_url
-surface            # structural tag from observer (list_results, live_detail, …)
-density_hits       # structural score (€ / from / va shapes only)
-packager_source    # blank_block | link_anchor | affordance_only
+Canonical target schema for contract-driven production. **Code may not yet match this** until the refactor plan lands; this section is the contract for that work.
+
+```python
+@dataclass
+class Candidate:
+    # Identity / binding (structural packaging)
+    candidate_id: str
+    # Reason: stable id within one page extraction (#9 unit packaging)
+
+    identity_hints: list[str]
+    # Reason: short strings co-located with the unit — not semantic labels (#9)
+
+    evidence: list[str]
+    # Reason: ordered bound fragments; pass-through after exact-byte dedupe only (#3)
+
+    primary_action: dict[str, str] | None
+    # Reason: {text, href, path_depth?, scope?} — itemish = structural only (#8)
+
+    source_url: str
+    # Reason: provenance of the page observation (framework)
+
+    surface: str
+    # Reason: observer tag (list_results / live_detail / …); detector language-neutral (#10)
+
+    packager_source: str
+    # Reason: how the unit was clustered (blank_block | link_anchor | …) — mechanism, not meaning (#9)
+
+    block_index: int | None
+    # Reason: order on page / structural position
+
+    # Structural signals only (no semantic pre-labels)
+    repeat_count: int
+    # Reason: bare count of exact normalized string elsewhere on same page (#1).
+    # No code threshold (>N ⇒ chrome).
+
+    currency_glyph_count: int
+    # Reason: count of currency glyphs in bound text (#2). Not “is price”.
+
+    digit_run_count: int
+    # Reason: count of digit runs; locale decimal/thousand separators allowed as
+    # character classes (#2). Not “is price”.
+
+    # Optional MinAC stats for the LLM (unlocked classifier — see Open items #4)
+    n_lines: int | None = None
+    max_repeat: int | None = None  # within-candidate; distinct from page-level repeat_count
 ```
+
+**Removed from schema (must not reappear as production fields):**
+
+| Field | Why removed |
+|-------|-------------|
+| `is_chrome: bool` | Pre-computed interpretation (#1, #5). LLM decides chrome/noise. |
+| `density_hits: int` (lexicon-scored) | Replaced by `currency_glyph_count` + `digit_run_count` (#2). Old hits included `vanaf`/`from`/`p.p.`. |
+| `offer_shape_score` | Legacy harvest / member_role relevance score — never a Candidate field on the CD path. |
 
 **Not candidate fields (never hardcode as schema):**
 
 - `board_type`, `price_scope`, `flight_inclusion`, `airport`, `SKU`, …
 - Those are **contract outcomes** produced when the LLM interprets candidate evidence under a frozen task contract.
+
+**Serialization note:** JSON dumps of candidates in traces should use the fields above. Until code is refactored, live artifacts may still emit `density_hits` / `is_chrome` — treat those as **legacy keys** to strip in the next refactor, not as schema.
 
 ---
 
@@ -208,17 +254,20 @@ The Candidate layer **names and stabilizes** that clustering as the object the r
 
 ---
 
-## 10. Quality v1 (2026-08-28 offline)
+## 10. Quality v1 (2026-08-28 offline) — HISTORICAL
 
-After first offline run showed chrome pollution and identity ranked below density:
+> **Pre-ground-rules (historisch, ≤2026-08-28). Canonical schema = §2 LOCKED.**  
+> This section records what the offline quality path *did* before FRAMEWORK_BOUNDARY ground rules (2026-08-29). It is **not** the production schema. Do not reintroduce `is_chrome` or lexicon `density_hits` as authoritative fields.
 
-1. **Chrome flag** — nav/FAQ/season/review-date clusters marked `is_chrome` (structural patterns only).
-2. **primary_action gate** — help paths and chrome labels → no action (null preferred over wrong link).
-3. **select_top_candidates** — dense non-chrome first; always try to keep substantive identity candidates; drop chrome from interpret set.
+After first offline run showed chrome pollution and identity ranked below density, the then-current code did:
 
-Synthetic multi-offer remains the regression for multi-card separation. Real detail pages: top-K should include both price-dense and name/board identity candidates without FAQ/menu.
+1. **Chrome flag** — nav/FAQ/season/review-date clusters marked `is_chrome` (later ruled **pre-computed interpretation** — MOVE; LLM decides chrome/noise).
+2. **primary_action gate** — help paths and chrome labels → no action (itemish remains structural under #8; lexicon chrome-drop on link text is removed).
+3. **select_top_candidates** — dense non-chrome first; drop chrome from interpret set (superseded by #5: no `is_chrome` gate; rank on structural glyph/digit counts + action + length only).
 
-Still **not** solved: automatic merge of identity candidate + price candidate into one object on single-entity pages. That is a separate, explicit next research step if interpret still fails with split candidates.
+Synthetic multi-offer remains a useful regression for multi-card separation. Real detail pages: top-K should still surface both price-dense and name/board identity evidence — via **pass-through + structural signals**, not a boolean chrome filter.
+
+Still **not** solved: automatic merge of identity candidate + price candidate into one object on single-entity pages. That remains a separate research step if interpret fails with split candidates.
 
 
 ---
@@ -250,3 +299,49 @@ candidates.
 
 If 02 fails offline with the candidate set that clearly contains name+board, the bug is interpretation prioritization, not packaging.
 If 01 fails only because name and price are in different candidates, revisit same-entity binding *then*.
+
+
+---
+
+## 12. Representation A/B (F1 Structural Observer)
+
+**Hypothesis:** candidate binding is a *representation* problem (solve at F1 with
+DOM structure) rather than only a downstream classification problem on flattened text.
+
+| Arm | Input | Module |
+|-----|--------|--------|
+| text | page_text + affordances | `candidates.extract_candidates` (blank-line/link) |
+| html | page.html leaf containers | `structural_observer.extract_candidates_via_html` |
+| html_b2 | page.html mixed-signal NCA | `structural_observer.extract_candidates_via_html_b2` |
+| ax | accessibility snapshot (optional) | `structural_observer.extract_candidates_via_ax` |
+
+**Why html_b2:** first A/B (leaf `html`) improved name+board co-location but not
+name+price. Possible confound: grouping on leaf tags vs the card container that
+holds both signals. `html_b2` groups on the nearest common ancestor of a heading
+anchor and a nearby price-shaped node, rejecting page-root / multi-card wrappers.
+Generic parent-duplicate filter drops strict container candidates that only repeat
+children (synthetic `ul` + articles).
+
+```bash
+python scripts/run_representation_ab_offline_v0.py \
+  --manifest evals/candidate_offline/fixtures_from_traces/manifest.json \
+  --arms text,html,html_b2 \
+  --outdir ./evals/representation_ab
+```
+
+Metrics: candidate_n, with_primary_action, with_identity, identity_price_colocated
+(coarse proxy — prefer % on larger lists later).
+Report language: directional signal (n=3 fixtures) until held-out grows.
+
+**Reading results**
+
+- If `html_b2` co-locates name+price on sketches → measure the same rule on live HTML.
+- If `html_b2` still splits sibling identity/price cards (NCA = main, rejected) →
+  structure alone does not bind those facets; next hypothesis is **interpret
+  neighbor-window** (give adjacent candidates together), not more DOM heuristics.
+- Under §2 LOCKED: there is no `is_chrome` field on Candidates. Extraction is pass-through
+  (exact-byte dedupe only); ranking uses structural density counts, not a chrome boolean.
+  Legacy `select_top_candidates` chrome-drop is pre-ground-rules behavior pending Fase 1b.
+
+Note: HTML fixtures for Monica/Flamenco are structural sketches unless replaced with
+live-captured HTML. Synthetic list is the controlled primary test.

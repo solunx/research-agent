@@ -1,0 +1,172 @@
+{
+  "schema": "contract-synthesis-batch-v0",
+  "campaign_dir": "evals/contract_synthesis/20260827T195209Z_synthesis",
+  "llm": true,
+  "max_passes": 3,
+  "counts": {
+    "total": 8,
+    "frozen": 8,
+    "unfrozen": 0,
+    "error": 0
+  },
+  "results": [
+    {
+      "job_id": "01_web_hotel_package_concrete",
+      "task_path": "tasks/batch_v0/01_web_hotel_package_concrete.md",
+      "status": "FROZEN",
+      "frozen": true,
+      "validation_ok": true,
+      "llm_calls": 2,
+      "remaining_gaps": [],
+      "contract_file": "contract_01_web_hotel_package_concrete_20260827T195209Z.json",
+      "subject": "unknown_subject",
+      "decision_ids": [
+        "package_exists",
+        "price_scope",
+        "board_type",
+        "flight_inclusion",
+        "departure_airport",
+        "date_scope",
+        "bookable_surface",
+        "traveller_count"
+      ]
+    },
+    {
+      "job_id": "02_web_hotel_property_only",
+      "task_path": "tasks/batch_v0/02_web_hotel_property_only.md",
+      "status": "FROZEN",
+      "frozen": true,
+      "validation_ok": true,
+      "llm_calls": 2,
+      "remaining_gaps": [],
+      "contract_file": "contract_02_web_hotel_property_only_20260827T195209Z.json",
+      "subject": "unknown_subject",
+      "decision_ids": [
+        "subject_instance",
+        "board_type"
+      ]
+    },
+    {
+      "job_id": "03_web_product_gpu",
+      "task_path": "tasks/batch_v0/03_web_product_gpu.md",
+      "status": "FROZEN",
+      "frozen": true,
+      "validation_ok": true,
+      "llm_calls": 2,
+      "remaining_gaps": [],
+      "contract_file": "contract_03_web_product_gpu_20260827T195209Z.json",
+      "subject": "unknown_subject",
+      "decision_ids": [
+        "subject_instance",
+        "region",
+        "shop_type",
+        "detail_link",
+        "price_scope",
+        "availability",
+        "vram_amount"
+      ]
+    },
+    {
+      "job_id": "04_web_marketplace_listing",
+      "task_path": "tasks/batch_v0/04_web_marketplace_listing.md",
+      "status": "FROZEN",
+      "frozen": true,
+      "validation_ok": true,
+      "llm_calls": 2,
+      "remaining_gaps": [],
+      "contract_file": "contract_04_web_marketplace_listing_20260827T195209Z.json",
+      "subject": "unknown_subject",
+      "decision_ids": [
+        "subject_instance",
+        "marketplace_platform",
+        "listing_title",
+        "listing_url",
+        "price_scope",
+        "location",
+        "condition_snippet"
+      ]
+    },
+    {
+      "job_id": "05_web_literature_abstract",
+      "task_path": "tasks/batch_v0/05_web_literature_abstract.md",
+      "status": "FROZEN",
+      "frozen": true,
+      "validation_ok": true,
+      "llm_calls": 2,
+      "remaining_gaps": [],
+      "contract_file": "contract_05_web_literature_abstract_20260827T195209Z.json",
+      "subject": "unknown_subject",
+      "decision_ids": [
+        "subject_instance",
+        "access_status",
+        "recency",
+        "topic_match",
+        "claim_extraction",
+        "citation_completeness"
+      ]
+    },
+    {
+      "job_id": "06_web_wiki_fact",
+      "task_path": "tasks/batch_v0/06_web_wiki_fact.md",
+      "status": "FROZEN",
+      "frozen": true,
+      "validation_ok": true,
+      "llm_calls": 2,
+      "remaining_gaps": [],
+      "contract_file": "contract_06_web_wiki_fact_20260827T195209Z.json",
+      "subject": "unknown_subject",
+      "decision_ids": [
+        "subject_instance",
+        "population_figure",
+        "population_year",
+        "article_url"
+      ]
+    },
+    {
+      "job_id": "07_fs_xlsx_summary",
+      "task_path": "tasks/batch_v0/07_fs_xlsx_summary.md",
+      "status": "FROZEN",
+      "frozen": true,
+      "validation_ok": true,
+      "llm_calls": 2,
+      "remaining_gaps": [],
+      "contract_file": "contract_07_fs_xlsx_summary_20260827T195209Z.json",
+      "subject": "unknown_subject",
+      "decision_ids": [
+        "subject_instance",
+        "sheet_inventory",
+        "header_fields",
+        "row_count_estimate",
+        "price_amount_columns"
+      ]
+    },
+    {
+      "job_id": "08_web_compare_two_prices",
+      "task_path": "tasks/batch_v0/08_web_compare_two_prices.md",
+      "status": "FROZEN",
+      "frozen": true,
+      "validation_ok": true,
+      "llm_calls": 2,
+      "remaining_gaps": [],
+      "contract_file": "contract_08_web_compare_two_prices_20260827T195209Z.json",
+      "subject": "unknown_subject",
+      "decision_ids": [
+        "subject_instance",
+        "site_a",
+        "site_b",
+        "price_a",
+        "price_b",
+        "url_a",
+        "url_b",
+        "comparability",
+        "detail_link"
+      ]
+    }
+  ],
+  "notes": [
+    "frozen=true means LLM (or heuristic) gap-check said ready_to_freeze",
+    "Inspect per-job contract_*.json for claim content — do not treat freeze as task success",
+    "Next: wire sufficiency gate to frozen contract (step 2)",
+    "See docs/FRAMEWORK_BOUNDARY.md"
+  ]
+}

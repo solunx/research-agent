@@ -2,23 +2,21 @@
 """
 Task.md batch campaign v0 — multi-domain surface area for the generic agent.
 
-Runs each selected task.md as an isolated job (subprocess agent.py), with optional
-LLM and flush between jobs. Collects campaign_report.json + per-job logs.
+Default path (canonical): each job is a subprocess of
+scripts/run_contract_driven_task_v0.py (frozen contract + acquisition +
+code sufficiency gate). Requires --contract-dir.
 
-This does **not** inject domain outcome enums. Contract content is expected to
-come from task text + agent/contract-discovery paths over time.
+Legacy path: --legacy-agent runs agent.py (pre-contract-driven retrieval).
+Do not use as the default. See docs/FRAMEWORK_BOUNDARY.md.
 
 Example
 -------
 docker compose run --rm research-agent \\
   python scripts/run_task_batch_campaign_v0.py \\
   --tasks-dir tasks/batch_v0 \\
+  --contract-dir evals/contract_synthesis/<synthesis_run> \\
   --outdir ./evals/task_batch \\
-  --llm --flush-between-jobs \\
-  --max-hours 6 --job-timeout-s 1800
-
-Subset:
-  --only 02_web_hotel_property_only,06_web_wiki_fact
+  --llm --flush-between-jobs
 """
 from __future__ import annotations
 
@@ -58,11 +56,26 @@ def run_job(
     timeout: int,
     planned: bool,
     contract_dir: Path | None = None,
+    legacy_agent: bool = False,
 ) -> dict:
     job_outdir.mkdir(parents=True, exist_ok=True)
     log_path = job_outdir / f"job_{task_path.stem}.log"
-    if contract_dir is not None:
-        # task.md → frozen contract → acquisition + code sufficiency gate
+    if legacy_agent:
+        cmd = [
+            sys.executable,
+            str(ROOT / "agent.py"),
+            "--task",
+            str(task_path),
+        ]
+        if planned:
+            cmd.append("--planned")
+    else:
+        # Canonical: task.md → frozen contract → acquisition + code sufficiency
+        if contract_dir is None:
+            raise ValueError(
+                "contract-driven batch requires --contract-dir "
+                "(or pass --legacy-agent for the deprecated agent.py path)"
+            )
         cmd = [
             sys.executable,
             str(ROOT / "scripts" / "run_contract_driven_task_v0.py"),
@@ -75,15 +88,6 @@ def run_job(
         ]
         if use_llm:
             cmd.append("--llm")
-    else:
-        cmd = [
-            sys.executable,
-            str(ROOT / "agent.py"),
-            "--task",
-            str(task_path),
-        ]
-        if planned:
-            cmd.append("--planned")
     env = None
     try:
         import os
@@ -93,7 +97,7 @@ def run_job(
             env["RESEARCH_AGENT_FLUSH_BETWEEN"] = "1"
         if use_llm:
             env["RESEARCH_AGENT_LLM"] = "1"
-        if contract_dir is not None:
+        if contract_dir is not None and not legacy_agent:
             env["RESEARCH_AGENT_CONTRACT_DIR"] = str(contract_dir)
     except Exception:
         env = None
@@ -125,7 +129,8 @@ def run_job(
             "stdout_tail": (proc.stdout or "")[-2500:],
             "stderr_tail": (proc.stderr or "")[-1500:],
             "log": str(log_path),
-            "path_mode": "contract_driven" if contract_dir is not None else "agent_retrieval",
+            "path_mode": "legacy_agent" if legacy_agent else "contract_driven",
+            "cmd": cmd,
         }
     except subprocess.TimeoutExpired as e:
         duration = round(time.monotonic() - t0, 2)
@@ -142,6 +147,7 @@ def run_job(
             "stdout_tail": out[-2500:],
             "stderr_tail": err[-1500:],
             "log": str(log_path),
+            "path_mode": "legacy_agent" if legacy_agent else "contract_driven",
         }
     except Exception as e:
         duration = round(time.monotonic() - t0, 2)
@@ -155,11 +161,14 @@ def run_job(
             "stdout_tail": "",
             "stderr_tail": str(e),
             "log": str(log_path),
+            "path_mode": "legacy_agent" if legacy_agent else "contract_driven",
         }
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Batch run tasks/*.md via agent.py")
+    ap = argparse.ArgumentParser(
+        description="Batch run tasks/*.md via contract-driven path (default)"
+    )
     ap.add_argument("--tasks-dir", type=Path, default=ROOT / "tasks" / "batch_v0")
     ap.add_argument("--outdir", type=Path, default=ROOT / "evals" / "task_batch")
     ap.add_argument("--only", type=str, default="", help="Comma-separated stems or filenames")
@@ -169,9 +178,16 @@ def main() -> int:
         type=Path,
         default=None,
         help=(
-            "If set: each job uses run_contract_driven_task_v0 "
-            "(frozen contract + acquisition + code sufficiency gate). "
-            "If omitted: legacy agent.py retrieval path."
+            "Dir of frozen contract_*.json (required unless --legacy-agent). "
+            "Each job uses run_contract_driven_task_v0."
+        ),
+    )
+    ap.add_argument(
+        "--legacy-agent",
+        action="store_true",
+        help=(
+            "DEPRECATED. Run agent.py instead of contract-driven. "
+            "Do not use for new campaigns."
         ),
     )
     ap.add_argument("--flush-between-jobs", action="store_true")
@@ -180,6 +196,13 @@ def main() -> int:
     ap.add_argument("--job-timeout-s", type=int, default=1800)
     ap.add_argument("--max-hours", type=float, default=6.0)
     args = ap.parse_args()
+
+    if not args.legacy_agent and args.contract_dir is None:
+        print(
+            "error: --contract-dir is required unless --legacy-agent",
+            file=sys.stderr,
+        )
+        return 2
 
     only = {x.strip() for x in args.only.split(",") if x.strip()} or None
     tasks_dir = args.tasks_dir
@@ -203,7 +226,8 @@ def main() -> int:
         "llm": bool(args.llm),
         "flush_between_jobs": bool(args.flush_between_jobs),
         "contract_dir": str(args.contract_dir) if args.contract_dir else None,
-        "path_mode": "contract_driven" if args.contract_dir else "agent_retrieval",
+        "path_mode": "legacy_agent" if args.legacy_agent else "contract_driven",
+        "legacy_agent": bool(args.legacy_agent),
     }
     (campaign_dir / "campaign_manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
@@ -211,6 +235,7 @@ def main() -> int:
 
     print(f"Campaign dir: {campaign_dir}")
     print(f"Planned jobs: {len(tasks)}")
+    print(f"path_mode={manifest['path_mode']}")
     deadline = time.monotonic() + max(0.1, args.max_hours) * 3600
     results = []
     planned = not args.no_planned
@@ -232,16 +257,14 @@ def main() -> int:
             timeout=args.job_timeout_s,
             planned=planned,
             contract_dir=cdir,
+            legacy_agent=bool(args.legacy_agent),
         )
         results.append(r)
         print(
             f"   status={r['status']} go={r['go']} duration={r['duration_s']}s exit={r['exit_code']}"
         )
         if args.flush_between_jobs:
-            # Best-effort Ollama VRAM flush if helper exists
             try:
-                flush_script = ROOT / "scripts" / "run_live_offer_state_slice_v0.py"
-                # no-op import path: call ollama stop via shell if available
                 subprocess.run(
                     ["ollama", "stop", "llama3.2"],
                     capture_output=True,
@@ -264,24 +287,25 @@ def main() -> int:
         "counts": counts,
         "results": results,
         "notes": [
-            "go=true means agent exit_code 0; inspect per-job logs and runs/ for quality.",
-            "Do not treat exit 0 as contract-satisfied until sufficiency gate is fully wired to frozen contracts.",
+            "Default path is contract-driven; --legacy-agent is deprecated.",
+            "go=true means subprocess exit_code 0; inspect per-job logs for quality.",
             "See docs/FRAMEWORK_BOUNDARY.md",
         ],
     }
     report_path = campaign_dir / "campaign_report.json"
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    # also latest pointer
-    latest = (args.outdir if args.outdir.is_absolute() else ROOT / args.outdir) / "LATEST_REPORT.json"
-    latest.parent.mkdir(parents=True, exist_ok=True)
-    latest.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    latest = campaign_dir.parent / "LATEST_REPORT.json"
+    try:
+        latest.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
 
     print("=== TASK BATCH CAMPAIGN ===")
     print(f"counts: {counts}")
     for r in results:
         print(f"  {r['job_id']}: status={r['status']} go={r['go']}")
     print(f"wrote {report_path}")
-    return 0 if counts["failed"] == 0 and counts["timeout"] == 0 else 1
+    return 0 if counts["failed"] == 0 and counts["error"] == 0 and counts["timeout"] == 0 else 1
 
 
 if __name__ == "__main__":

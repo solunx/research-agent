@@ -1,0 +1,141 @@
+{
+  "frozen": true,
+  "contract": {
+    "schema_version": "0.3",
+    "subject": {
+      "name": "unknown_subject",
+      "definition": "A concrete consumer product offer for an NVIDIA GeForce RTX 4070 or RTX 4070 Super graphics card, sold by a well-known electronics/computer shop in Belgium or the Netherlands, with a direct product page URL, VAT-inclusive price, and availability hint."
+    },
+    "observables": [
+      "shop_name",
+      "product_page_url",
+      "price_including_vat",
+      "availability_status",
+      "product_title",
+      "vram_amount",
+      "region (BE or NL)",
+      "gpu_model (RTX 4070 or RTX 4070 Super)"
+    ],
+    "decisions": [
+      {
+        "id": "subject_instance",
+        "question": "Is the listed product a consumer NVIDIA GeForce RTX 4070 or RTX 4070 Super (not a server, workstation, or unrelated GPU)?",
+        "outcomes": [
+          "CONFIRMED",
+          "REJECTED",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "region",
+        "question": "Is the shop operating in Belgium or the Netherlands (BE/NL market, local currency or EUR with local VAT)?",
+        "outcomes": [
+          "BE",
+          "NL",
+          "OTHER",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "shop_type",
+        "question": "Is the seller a well-known electronics or computer shop (e.g., Coolblue, Bol.com, MediaMarkt, Alza, PC-Experten, etc.)?",
+        "outcomes": [
+          "WELL_KNOWN",
+          "UNKNOWN_VENDOR",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "detail_link",
+        "question": "Does the offer include a concrete, navigable product page URL (not merely a 'from €X' aggregator listing)?",
+        "outcomes": [
+          "CONCRETE_URL",
+          "AGGREGATOR_ONLY",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "price_scope",
+        "question": "Is a single price including VAT explicitly shown on the product page?",
+        "outcomes": [
+          "VAT_INCLUSIVE_SHOWN",
+          "VAT_EXCLUSIVE_ONLY",
+          "NO_PRICE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "availability",
+        "question": "Does the page indicate stock status (in stock, orderable, out of stock, or no indication)?",
+        "outcomes": [
+          "IN_STOCK",
+          "ORDERABLE",
+          "OUT_OF_STOCK",
+          "NO_INDICATION",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "vram_amount",
+        "question": "Is the VRAM capacity (e.g., 12 GB) stated on the product page?",
+        "outcomes": [
+          "STATED",
+          "NOT_STATED",
+          "UNKNOWN"
+        ]
+      }
+    ],
+    "sufficiency": {
+      "required": [
+        "subject_instance = CONFIRMED",
+        "region in [BE, NL]",
+        "detail_link = CONCRETE_URL",
+        "price_scope = VAT_INCLUSIVE_SHOWN"
+      ],
+      "blocking_unknowns": [
+        "product_page_url",
+        "price_including_vat",
+        "availability_status"
+      ]
+    },
+    "missing_to_solve": [
+      "Identify a specific BE or NL shop (e.g., Coolblue, Bol.com, MediaMarkt, Alza, PC-Experten, Alternate) that currently lists an RTX 4070 or 4070 Super.",
+      "Obtain the exact product page URL for that listing.",
+      "Confirm the displayed price is VAT-inclusive and record the numeric value.",
+      "Capture the availability/stock indicator from the page.",
+      "Verify the GPU model is RTX 4070 or RTX 4070 Super (not 4070 Ti, 4060, or other).",
+      "Record VRAM amount if present (expected 12 GB for 4070 / 12 GB for 4070 Super).",
+      "Note any uncertainties (e.g., price may vary by variant, stock may change)."
+    ],
+    "_source": "cd0_provisional+frozen",
+    "frozen": true,
+    "freeze_rationale": "The contract clearly defines the subject (concrete RTX 4070/4070 Super offer in BE/NL with URL, VAT-inclusive price, availability), all seven decisions include UNKNOWN outcomes, the sufficiency.required set captures the four hard requirements (correct GPU, correct region, concrete URL, VAT-inclusive price) while blocking_unknowns ensures the agent must resolve URL, price, and availability before stopping. The missing_to_solve items are all runtime discoveries (finding a specific shop, scraping the page), not structural omissions. The 'prefer well-known shop' constraint is appropriately modeled as a decision (shop_type) rather than a hard sufficiency gate, matching the task's 'prefer' language. The aggregator-only guard (detail_link = AGGREGATOR_ONLY) directly encodes the task's instruction to keep searching if only 'from' prices are found. No structural gaps remain."
+  },
+  "passes": [
+    {
+      "pass_index": 0,
+      "mode": "CD0",
+      "contract_source": "cd0_provisional",
+      "ready_to_freeze": true,
+      "remaining_gaps": [],
+      "gap_source": "llm_gap_check"
+    }
+  ],
+  "llm_calls": 2,
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "decisions[0] (subject_instance) missing evidence_signals",
+      "decisions[1] (region) missing evidence_signals",
+      "decisions[2] (shop_type) missing evidence_signals",
+      "decisions[3] (detail_link) missing evidence_signals",
+      "decisions[4] (price_scope) missing evidence_signals",
+      "decisions[5] (availability) missing evidence_signals",
+      "decisions[6] (vram_amount) missing evidence_signals"
+    ]
+  },
+  "remaining_gaps": [],
+  "task_path": "tasks/batch_v0/03_web_product_gpu.md",
+  "task_id": "03_web_product_gpu"
+}

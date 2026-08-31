@@ -1304,3 +1304,94 @@ Do not merge candidates yet. Feed top-K quality-selected candidates into interpr
 1. Offline interpret on Monica candidates + contract_02 (no browser)
 2. Live contract-driven 01+02
 3. Only if data shows split-binding failure → same-entity merge research
+
+
+## 2026-08-28 — Representation A/B experiment (F1)
+
+### Trigger
+Claude Sonnet challenge + rabbit-hole recognition: polishing candidates.py heuristics
+may be solving the wrong problem. Structure may need to be preserved upstream.
+
+### Decision
+Stop candidate-polish; run offline A/B: text clustering vs HTML structural containers.
+DOM/AX is a representation axis (F1), orthogonal to access tiers 0–3.
+
+### Shipped
+- `structural_observer.py` — text / html / ax arms + metrics
+- `scripts/run_representation_ab_offline_v0.py`
+- HTML fixtures: synthetic_list, 02_detail, 01_price_surface
+- manifest includes `html` paths
+
+### First run (directional, n=3)
+- Synthetic: both arms recover 3 offer cards with actions (html briefly double-counts parent)
+- Monica HTML arm: separates **identity+board** (`SBH Monica Beach · All Inclusive`) from price card — coloc of name+board without merge heuristics
+- Text arm still splits name vs price across candidates on real-ish pages
+
+### Not yet
+- Live-captured HTML from Playwright
+- AX arm fixtures
+- Wiring HTML observer into live acquisition path
+- Multi-domain held-out
+
+
+## 2026-08-29 — Long-horizon / local-LLM horizon notes (roadmap only)
+
+### Source
+Architecture challenge with Claude Sonnet (Anthropic research multi-agent, MemGPT/Letta, local VRAM constraints). Documented so future work does not re-litigate the same choices.
+
+### Agreements locked as direction
+1. **Bounded parallel workers + external plan** beat one long continuous session.
+2. **Roaster** (human → sharp task.md) = same ambiguity-before-cost rule as Contract Discovery.
+3. **Citation/verification against raw sources** is a separate concern from “the lead agent remembers.”
+4. **MinAC principle** generalizes to representation and memory compression (consumer-relative).
+5. **Local 7B–32B**: compensate with structured I/O and source pointers; do not assume free-text summary chains preserve essentials.
+
+### Explicit non-goals for the next engineering slice
+- Full multi-day autonomous single-thread research
+- Default vision-primary observation
+- Building orchestrator/roaster before F1 representation experiment results and non-travel live evidence
+
+### Pointers
+- `docs/ARCHITECTURE_JOURNEY.md` — Long-horizon research (future horizon)
+- `docs/METHODOLOGY.md` §8 — MinAC as principle + representation ladder
+- `docs/FRAMEWORK_BOUNDARY.md` — externalized plan / memory compression
+
+
+## 2026-08-29 — Representation A/B + arm B2 (mixed-signal NCA)
+
+### Context
+First A/B (text vs leaf-html) was PARTIAL: html improved name+board identity, not
+name+price co-location. Claude challenge: possible confound — we grouped on leaf
+tags (h2/h3/article), not the card container that binds both signals.
+
+### What we built
+- Arm **html_b2**: nearest common ancestor of heading-anchor + nearby price-shaped
+  node; reject body/main/multi-card wrappers
+- Generic **parent-duplicate** filter (strict content-subset parents dropped)
+- Applied to both `html` and `html_b2`
+- Docs: CANDIDATE_LAYER §12 updated
+
+### How to run
+```bash
+docker compose run --rm research-agent \
+  python scripts/run_representation_ab_offline_v0.py \
+  --manifest evals/candidate_offline/fixtures_from_traces/manifest.json \
+  --arms text,html,html_b2 \
+  --outdir ./evals/representation_ab
+```
+
+### Expected directional signals (sketches, n=3)
+| Fixture | html_b2 expectation |
+|---------|---------------------|
+| synthetic | 3 cards, parent-dupe gone, coloc=3 |
+| Monica / Flamenco | identity + price as **separate** candidates if NCA is main; coloc still 1 |
+
+If sibling identity/price cards remain split under B2 → representation is not the
+binding solution for detail-page facets; next measured step is interpret
+neighbor-window (no merge heuristic, no live 01 rerun on sketches).
+
+### Explicit non-goals this slice
+- Automatic same-entity merge
+- Chrome filter changes (out of extraction scope)
+- Live HTML capture (P1b, after B2 reading)
+- AX arm until B/B2 exhausted

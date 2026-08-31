@@ -1,0 +1,128 @@
+{
+  "frozen": true,
+  "contract": {
+    "schema_version": "0.3",
+    "subject": {
+      "name": "unknown_subject",
+      "definition": "A recent (2023–2026) open-access or abstract-visible scientific paper on large language model agents or tool-using LLM agents, with extracted title, authors, year/venue, one-sentence main claim, and URL"
+    },
+    "observables": [
+      "paper_title",
+      "authors",
+      "year_venue",
+      "main_claim_one_sentence",
+      "url",
+      "access_status"
+    ],
+    "decisions": [
+      {
+        "id": "subject_instance",
+        "question": "Which specific paper (title + URL) satisfies all constraints?",
+        "outcomes": [
+          "SELECTED",
+          "NOT_FOUND",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "access_status",
+        "question": "Is the paper open-access or only abstract-visible?",
+        "outcomes": [
+          "OPEN_ACCESS",
+          "ABSTRACT_ONLY",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "recency",
+        "question": "Does the publication year fall within 2023–2026?",
+        "outcomes": [
+          "IN_RANGE",
+          "OUT_OF_RANGE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "topic_match",
+        "question": "Is the paper about LLM agents or tool-using LLM agents?",
+        "outcomes": [
+          "MATCH",
+          "MISMATCH",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "claim_extraction",
+        "question": "Can a one-sentence main claim or conclusion be extracted from the abstract or intro?",
+        "outcomes": [
+          "EXTRACTED",
+          "NOT_AVAILABLE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "citation_completeness",
+        "question": "Are title, authors, year/venue, and URL all present in the output?",
+        "outcomes": [
+          "COMPLETE",
+          "PARTIAL",
+          "UNKNOWN"
+        ]
+      }
+    ],
+    "sufficiency": {
+      "required": [
+        "subject_instance = SELECTED",
+        "access_status in [OPEN_ACCESS, ABSTRACT_ONLY]",
+        "recency = IN_RANGE",
+        "topic_match = MATCH",
+        "claim_extraction = EXTRACTED",
+        "citation_completeness in [COMPLETE, PARTIAL]"
+      ],
+      "blocking_unknowns": [
+        "subject_instance",
+        "access_status",
+        "claim_extraction"
+      ]
+    },
+    "missing_to_solve": [
+      "Identify a concrete paper title and URL that satisfies all constraints",
+      "Verify the paper is open-access or at least has a visible abstract (no paywall blocking)",
+      "Confirm publication year is within 2023–2026",
+      "Confirm the paper's topic is specifically about LLM agents or tool-using LLM agents",
+      "Extract a faithful one-sentence main claim or conclusion from the abstract or introduction",
+      "Record authors if visible; note if not available",
+      "Record venue (conference, journal, or preprint server) if shown",
+      "Note explicitly what was not verified (e.g., full-text claims, reproducibility, peer-review status)"
+    ],
+    "_source": "cd0_provisional+frozen",
+    "frozen": true,
+    "freeze_rationale": "The contract clearly defines the subject (a specific 2023–2026 LLM-agent paper with extractable metadata), all six decisions include UNKNOWN as an outcome, sufficiency.required names every decision that must be proven (subject_instance, access_status, recency, topic_match, claim_extraction, citation_completeness), and missing_to_solve lists only runtime discoveries (finding the paper, verifying access, extracting the claim, noting unverified items) rather than structural omissions. The task's output requirement of 'citation-style line + URL + claimed finding + what was not verified' is fully covered by the observables and the citation_completeness decision (which permits PARTIAL, matching the task's 'if visible' / 'if shown' language). No structural gaps remain."
+  },
+  "passes": [
+    {
+      "pass_index": 0,
+      "mode": "CD0",
+      "contract_source": "cd0_provisional",
+      "ready_to_freeze": true,
+      "remaining_gaps": [],
+      "gap_source": "llm_gap_check"
+    }
+  ],
+  "llm_calls": 2,
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "decisions[0] (subject_instance) missing evidence_signals",
+      "decisions[1] (access_status) missing evidence_signals",
+      "decisions[2] (recency) missing evidence_signals",
+      "decisions[3] (topic_match) missing evidence_signals",
+      "decisions[4] (claim_extraction) missing evidence_signals",
+      "decisions[5] (citation_completeness) missing evidence_signals"
+    ]
+  },
+  "remaining_gaps": [],
+  "task_path": "tasks/batch_v0/05_web_literature_abstract.md",
+  "task_id": "05_web_literature_abstract"
+}

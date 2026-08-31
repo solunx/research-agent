@@ -210,6 +210,36 @@ def _snapshot(
     return out
 
 
+def _resolve_navigation_url(url: str, *, base_url: str | None = None) -> str:
+    """
+    Resolve relative hrefs against the current page (or explicit base).
+
+    Absolute URLs (scheme + netloc) pass through unchanged. Relative paths
+    (e.g. "/egypte/.../tab=price-calculation") and scheme-relative //host
+    paths are joined with urllib.parse.urljoin — no site-specific logic.
+    """
+    from urllib.parse import urljoin, urlparse
+
+    u = (url or "").strip()
+    if not u:
+        return u
+    parsed = urlparse(u)
+    # Absolute http(s) (or other schemes with netloc)
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return u
+    if parsed.scheme and parsed.netloc:
+        return u
+    base = (base_url or "").strip() or None
+    if not base and _page is not None:
+        try:
+            base = str(_page.url or "") or None
+        except Exception:
+            base = None
+    if base:
+        return urljoin(base, u)
+    return u
+
+
 def browser_open(
     url: str,
     wait_seconds: float = 3.0,
@@ -220,7 +250,8 @@ def browser_open(
     """Navigate to URL, dismiss cookies, return visible text + price hints."""
     try:
         page = _ensure_browser(headless=headless, user_agent=user_agent)
-        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        resolved = _resolve_navigation_url(url)
+        page.goto(resolved, wait_until="domcontentloaded", timeout=60000)
         time.sleep(max(0.4, float(wait_seconds)))
         n = _dismiss_cookies(page)
         time.sleep(0.5)

@@ -537,10 +537,20 @@ def run_interpretation(
                 )
                 continue
 
+            prov = o.get("provenance") or {}
+            page_context = {
+                "page_url": prov.get("source_url") or o.get("source_url"),
+                "surface": prov.get("surface") or o.get("surface"),
+            }
+            if "same_entity_path" in prov:
+                page_context["same_entity_path"] = prov.get("same_entity_path")
+            # drop empty values so payload stays minimal when context missing
+            page_context = {k: v for k, v in page_context.items() if v is not None and v != ""}
             ir = interpret_observation(
                 str(o.get("text") or ""),
                 contract_decision=d,
                 chat_fn=chat_dict,
+                page_context=page_context or None,
             )
             if chat_dict is not None:
                 llm_calls += 1

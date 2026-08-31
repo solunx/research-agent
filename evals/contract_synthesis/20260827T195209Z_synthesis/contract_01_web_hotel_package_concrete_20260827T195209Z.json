@@ -1,0 +1,159 @@
+{
+  "frozen": true,
+  "contract": {
+    "schema_version": "0.3",
+    "subject": {
+      "name": "unknown_subject",
+      "definition": "One concrete bookable all-inclusive (or volpension) flight+hotel package for 3 adults, departing Brussels (BRU or CRL), stay in December 2026, with visible price, board type, and flight-inclusion evidence"
+    },
+    "observables": [
+      "Total or per-person price for a specific 3-adult configuration (not only a 'from' teaser)",
+      "Board type explicitly stated (all-inclusive / volpension / half-board)",
+      "Flight leg included in the same offer card or price-calculation surface (not site-wide marketing)",
+      "Departure airport: BRU or CRL",
+      "Stay dates within December 2026",
+      "Number of travellers: 3 adults",
+      "A real offer card, price-calculation widget, or availability surface (not a generic brochure)",
+      "Price ≤ €1200 per person if visible"
+    ],
+    "decisions": [
+      {
+        "id": "package_exists",
+        "question": "Does at least one concrete, bookable flight+hotel package matching all constraints exist on a BE/NL package site?",
+        "outcomes": [
+          "CONFIRMED",
+          "NOT_FOUND",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "price_scope",
+        "question": "Is a visible total or per-person price shown for a specific 3-adult configuration, and is it ≤ €1200 pp?",
+        "outcomes": [
+          "WITHIN_BUDGET",
+          "OVER_BUDGET",
+          "PRICE_NOT_VISIBLE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "board_type",
+        "question": "Is the board type (all-inclusive / volpension / half-board) explicitly stated on the offer surface?",
+        "outcomes": [
+          "ALL_INCLUSIVE",
+          "VOLPENSION",
+          "HALF_BOARD",
+          "NOT_STATED",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "flight_inclusion",
+        "question": "Is there direct evidence on the same offer card / price-calculation surface that a flight is part of this specific package (not just site-wide marketing)?",
+        "outcomes": [
+          "FLIGHT_IN_OFFER",
+          "FLIGHT_SEPARATE",
+          "FLIGHT_EVIDENCE_WEAK",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "departure_airport",
+        "question": "Is the departure airport BRU or CRL confirmed for this package?",
+        "outcomes": [
+          "BRU",
+          "CRL",
+          "OTHER",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "date_scope",
+        "question": "Are the stay dates within December 2026 for 3 adults?",
+        "outcomes": [
+          "DEC_2026_CONFIRMED",
+          "OUT_OF_RANGE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "bookable_surface",
+        "question": "Is the information presented on a real offer card / price-calculation / availability surface rather than a generic brochure or marketing page?",
+        "outcomes": [
+          "OFFER_CARD",
+          "PRICE_CALC",
+          "AVAILABILITY_SURFACE",
+          "GENERIC_BROCHURE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "traveller_count",
+        "question": "Is the configuration explicitly for 3 adults?",
+        "outcomes": [
+          "3_ADULTS",
+          "OTHER_COUNT",
+          "UNKNOWN"
+        ]
+      }
+    ],
+    "sufficiency": {
+      "required": [
+        "package_exists = CONFIRMED",
+        "price_scope in [WITHIN_BUDGET, PRICE_NOT_VISIBLE]",
+        "board_type in [ALL_INCLUSIVE, VOLPENSION, HALF_BOARD]",
+        "flight_inclusion in [FLIGHT_IN_OFFER, FLIGHT_EVIDENCE_WEAK]",
+        "departure_airport in [BRU, CRL]",
+        "date_scope = DEC_2026_CONFIRMED",
+        "bookable_surface in [OFFER_CARD, PRICE_CALC, AVAILABILITY_SURFACE]",
+        "traveller_count = 3_ADULTS"
+      ],
+      "blocking_unknowns": [
+        "package_exists = UNKNOWN",
+        "flight_inclusion = UNKNOWN",
+        "price_scope = UNKNOWN"
+      ]
+    },
+    "missing_to_solve": [
+      "Actual per-person or total price for 3 adults on a specific December 2026 date — need to navigate a price-calculation or availability widget",
+      "Whether the flight leg is bundled in the same SKU/offer or sold as a separate add-on",
+      "Exact board type label as displayed on the offer card (all-inclusive vs volpension vs half-board)",
+      "Confirmation that the departure airport is BRU or CRL (not a third airport)",
+      "Whether the offer is genuinely bookable (has a 'book' / 'reserve' CTA) vs. a teaser with no deeper availability",
+      "Specific hotel name, location, and star rating tied to the package",
+      "Any hidden fees (taxes, resort fees, transfer) that would push the effective price over €1200 pp",
+      "Whether Corendon.be (suggested start) actually lists a qualifying package, or whether another BE/NL package site (e.g., TUI, Thomas Cook, Sunweb, Anex) is needed"
+    ],
+    "_source": "cd0_provisional+frozen",
+    "frozen": true,
+    "freeze_rationale": "The contract clearly defines the subject (one concrete bookable AI/volpension flight+hotel package, 3 adults, BRU/CRL, Dec 2026), every decision includes UNKNOWN as an outcome, the sufficiency block names all eight decisions that must be proven with acceptable outcome sets, and the missing_to_solve list contains only runtime discoveries (actual price, flight bundling, board label, airport confirmation, bookability, hotel identity, hidden fees, site selection) rather than structural omissions. The combination of the bookable_surface requirement (OFFER_CARD/PRICE_CALC/AVAILABILITY_SURFACE) with the price_scope and flight_inclusion decisions adequately enforces the task's preference for a real offer surface over a brochure, and the allowance of PRICE_NOT_VISIBLE / FLIGHT_EVIDENCE_WEAK preserves the 'honest UNKNOWN' instruction without letting the agent stop prematurely at a generic marketing page."
+  },
+  "passes": [
+    {
+      "pass_index": 0,
+      "mode": "CD0",
+      "contract_source": "cd0_provisional",
+      "ready_to_freeze": true,
+      "remaining_gaps": [],
+      "gap_source": "llm_gap_check"
+    }
+  ],
+  "llm_calls": 2,
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "decisions[0] (package_exists) missing evidence_signals",
+      "decisions[1] (price_scope) missing evidence_signals",
+      "decisions[2] (board_type) missing evidence_signals",
+      "decisions[3] (flight_inclusion) missing evidence_signals",
+      "decisions[4] (departure_airport) missing evidence_signals",
+      "decisions[5] (date_scope) missing evidence_signals",
+      "decisions[6] (bookable_surface) missing evidence_signals",
+      "decisions[7] (traveller_count) missing evidence_signals"
+    ]
+  },
+  "remaining_gaps": [],
+  "task_path": "tasks/batch_v0/01_web_hotel_package_concrete.md",
+  "task_id": "01_web_hotel_package_concrete"
+}

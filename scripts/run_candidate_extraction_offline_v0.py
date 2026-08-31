@@ -87,7 +87,7 @@ def _run_one(
     cands = rank_candidates(cands)
     with_action = sum(1 for c in cands if c.has_action())
     with_identity = sum(1 for c in cands if c.identity_hints)
-    dense = sum(1 for c in cands if c.density_hits > 0)
+    dense = sum(1 for c in cands if c.structural_density() > 0)
     return {
         "label": label,
         "url": url,
@@ -148,7 +148,7 @@ def main() -> int:
     ap.add_argument("--artifacts-dir", default="", help="Trace dir with step_*_page_text.txt")
     ap.add_argument("--manifest", default="", help="JSON list of jobs")
     ap.add_argument("--outdir", default="./evals/candidate_offline", help="Output directory")
-    ap.add_argument("--max-candidates", type=int, default=8)
+    ap.add_argument("--max-candidates", type=int, default=3)
     args = ap.parse_args()
 
     jobs: list[dict] = []

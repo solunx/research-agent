@@ -49,17 +49,20 @@ def _load(path: Path) -> Any:
 
 
 def _make_chat_fn():
+    """Match other runners: llm.OllamaClient().chat → message dict."""
     try:
-        from llm import chat as llm_chat  # type: ignore
+        from llm import OllamaClient
+    except Exception as e:
+        raise RuntimeError(
+            "LLM requested but cannot import llm.OllamaClient"
+        ) from e
 
-        return llm_chat
-    except Exception:
-        try:
-            from llm import chat_ollama as llm_chat  # type: ignore
+    client = OllamaClient()
 
-            return llm_chat
-        except Exception as e:
-            raise RuntimeError("LLM requested but llm.chat unavailable") from e
+    def chat_fn(messages: list[dict[str, Any]]) -> dict[str, Any]:
+        return client.chat(messages)
+
+    return chat_fn
 
 
 def _decisions_from_contract(contract: dict[str, Any]) -> list[dict[str, Any]]:
@@ -82,10 +85,15 @@ def _candidates_from_payload(payload: dict[str, Any]) -> list[Candidate]:
                 primary_action=c.get("primary_action"),
                 source_url=str(c.get("source_url") or payload.get("url") or ""),
                 surface=str(c.get("surface") or payload.get("surface") or ""),
-                density_hits=int(c.get("density_hits") or 0),
+                currency_glyph_count=int(c.get("currency_glyph_count") or 0),
+                digit_run_count=int(
+                    c.get("digit_run_count")
+                    or c.get("density_hits")  # legacy JSON pre-1b
+                    or 0
+                ),
                 packager_source=str(c.get("packager_source") or ""),
                 block_index=c.get("block_index"),
-                is_chrome=bool(c.get("is_chrome") or False),
+                repeat_count=int(c.get("repeat_count") or 0),
             )
         )
     return out

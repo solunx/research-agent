@@ -1,0 +1,98 @@
+{
+  "frozen": true,
+  "contract": {
+    "schema_version": "0.3",
+    "subject": {
+      "name": "unknown_subject",
+      "definition": "Fuerteventura (island, Canary Islands, Spain) — English Wikipedia article"
+    },
+    "observables": [
+      "Population figure stated in the article (infobox or body text)",
+      "Year or reference period associated with the population figure",
+      "Source note or citation attached to the figure on the page",
+      "Canonical English Wikipedia article URL for Fuerteventura"
+    ],
+    "decisions": [
+      {
+        "id": "subject_instance",
+        "question": "Is the retrieved page the official English Wikipedia article for the island of Fuerteventura (not a disambiguation page, not a different language edition)?",
+        "outcomes": [
+          "CONFIRMED",
+          "WRONG_ARTICLE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "population_figure",
+        "question": "What is the approximate population figure stated in the article?",
+        "outcomes": [
+          "FIGURE_FOUND",
+          "NOT_STATED",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "population_year",
+        "question": "What year or reference period is the population figure associated with (if given)?",
+        "outcomes": [
+          "YEAR_FOUND",
+          "NOT_GIVEN",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "article_url",
+        "question": "What is the canonical English Wikipedia URL for the Fuerteventura article?",
+        "outcomes": [
+          "URL_FOUND",
+          "UNKNOWN"
+        ]
+      }
+    ],
+    "sufficiency": {
+      "required": [
+        "subject_instance = CONFIRMED",
+        "population_figure = FIGURE_FOUND",
+        "article_url = URL_FOUND"
+      ],
+      "blocking_unknowns": [
+        "population_figure",
+        "article_url"
+      ]
+    },
+    "missing_to_solve": [
+      "Exact population number as printed in the English Wikipedia infobox or lead paragraph",
+      "Census year or estimate year attached to that number",
+      "Any source/citation note displayed alongside the figure on the page",
+      "Verification that the page is the primary article (not a redirect or disambiguation)",
+      "Canonical URL (en.wikipedia.org/wiki/Fuerteventura or equivalent)"
+    ],
+    "_source": "cd0_provisional+frozen",
+    "frozen": true,
+    "freeze_rationale": "The subject is clearly defined (Fuerteventura island, English Wikipedia article). All four decisions include UNKNOWN as a valid outcome. Sufficiency.required correctly names the three decisions that must be proven (subject_instance=CONFIRMED, population_figure=FIGURE_FOUND, article_url=URL_FOUND), while population_year is appropriately optional per the task's 'if given' language. The missing_to_solve list contains only runtime discoveries (exact number, year, citation note, URL verification), not structural gaps. The contract will not stop prematurely because it requires an actual figure to be found, not merely a property-level acknowledgment."
+  },
+  "passes": [
+    {
+      "pass_index": 0,
+      "mode": "CD0",
+      "contract_source": "cd0_provisional",
+      "ready_to_freeze": true,
+      "remaining_gaps": [],
+      "gap_source": "llm_gap_check"
+    }
+  ],
+  "llm_calls": 2,
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "decisions[0] (subject_instance) missing evidence_signals",
+      "decisions[1] (population_figure) missing evidence_signals",
+      "decisions[2] (population_year) missing evidence_signals",
+      "decisions[3] (article_url) missing evidence_signals"
+    ]
+  },
+  "remaining_gaps": [],
+  "task_path": "tasks/batch_v0/06_web_wiki_fact.md",
+  "task_id": "06_web_wiki_fact"
+}

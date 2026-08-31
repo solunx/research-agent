@@ -387,3 +387,38 @@ python scripts/run_candidate_extraction_offline_v0.py \
 ```
 
 Live contract-driven runs remain the integration test *after* offline GO. See `docs/CANDIDATE_LAYER.md`.
+
+
+---
+
+## 8. MinAC as a principle (not only a recon checklist)
+
+**Minimal Awareness Context** is the general rule: *what is the cheapest signal that lets this consumer safely proceed?* Escalate only when that signal is insufficient.
+
+Today MinAC is written for recon/retrieve (page_usable, subject_identity, primary_values, entity_value_link). The same *principle* applies on other axes:
+
+| Axis | Cheap → expensive | Consumer examples |
+|------|-------------------|-------------------|
+| **Access** (Tier 0–3) | memory → HTTP → Playwright → browser-use | reach a usable page |
+| **Representation** (F1) | light HTML tags → AX tree → AX+viewport vision | structure for CD samples *and* candidates |
+| **Memory compression** (future) | structured JSON facts + raw pointers → free-text summary | survive long multi-step work without drift |
+
+**Consumer-relative MinAC:** Contract Discovery and candidate extraction do **not** need the same richness (Agent-E: different DOM forms for interaction vs summarization). Prefer:
+
+```text
+MinAC(consumer, signal) → adequate | partial | insufficient + missing_dims
+```
+
+Escalation triggers must stay **structural** (token size, presence of semantic tags/roles, empty containers) — never domain `if site == …`.
+
+**Perception ladder (aligned with existing note in §4b):**
+
+```text
+R0  semantic HTML / light DOM tags     (cheapest)
+R1  computed AX tree                   (moderate)
+R2  AX + selective viewport screenshot (expensive; supporting signal, not default primary)
+```
+
+Same rule as host tiers: cheapest first; escalate on MinAC insufficient. Literature is mixed on whether vision always helps — **measure**, do not assume. Offline A/B: `scripts/run_representation_ab_offline_v0.py`.
+
+Do not implement R1/R2 as live default until offline metrics justify the cost.

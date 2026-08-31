@@ -10,18 +10,37 @@ General-purpose local research agent (Ollama + tools + Docker).
 - **[docs/DECISION_CONTRACT_EXECUTION.md](docs/DECISION_CONTRACT_EXECUTION.md)**
 - **[docs/DECISION_INTERPRETATION.md](docs/DECISION_INTERPRETATION.md)** — Interpretation v0 (raw → normalized outcome → dumb gate) — Contract Execution v0.1 (generic decision executor)
 
-```bash
-# Learning only (no shortlist) — probes interface structure, not deals
-docker compose run --rm research-agent python agent.py --planned \
-  --run-kind recon --task tasks/recon_packages_hosts.md --browser-backend playwright
+## Quick start (canonieke productiepad)
 
-# Task delivery / web retrieval (default) — memory first
-docker compose run --rm research-agent python agent.py --planned \
-  --run-kind retrieval --task tasks/compare_packages_dec2026.md --browser-backend playwright
-# alias: --run-kind research
+Contract-driven: `task.md` → frozen contract → acquisition loop → code sufficiency STOP.  
+Zie `docs/FRAMEWORK_BOUNDARY.md`. **Niet** `agent.py` — dat is legacy (onderaan).
+
+```bash
+# 1) Contract synthesis (eenmalig per task-set, of opnieuw bij task-wijziging)
+docker compose run --rm research-agent \
+  python scripts/run_contract_synthesis_batch_v0.py \
+  --tasks-dir tasks/batch_v0 \
+  --outdir ./evals/contract_synthesis \
+  --llm --max-passes 3
+
+# 2) Live run (01 + 02 smoke)
+docker compose run --rm research-agent \
+  python scripts/run_contract_driven_task_v0.py \
+  --tasks 01_web_hotel_package_concrete,02_web_hotel_property_only \
+  --tasks-dir tasks/batch_v0 \
+  --contract-dir evals/contract_synthesis/<synthesis_run> \
+  --llm --outdir ./evals/contract_driven
+
+# 3) Batch (default = contract-driven; vereist --contract-dir)
+docker compose run --rm research-agent \
+  python scripts/run_task_batch_campaign_v0.py \
+  --tasks-dir tasks/batch_v0 \
+  --contract-dir evals/contract_synthesis/<synthesis_run> \
+  --outdir ./evals/task_batch \
+  --llm --flush-between-jobs
 ```
 
-**Recon** learns how hosts work. **Retrieval** gathers evidence for the user task (whole system = *research agent*).  
+**Recon** (legacy agent) leert hoe hosts werken; **contract-driven retrieval** verzamelt bewijs t.o.v. een frozen contract.  
 `tasks/recon_*.md` files are **dev helpers**; core logic stays domain-agnostic.
 
 ## Phases implemented
@@ -77,10 +96,9 @@ docker compose run --rm research-agent python agent.py --planned \
 
 ```bash
 docker compose build
-docker compose run --rm research-agent python agent.py --task tasks/example_vakantie.md
-# optional flush architecture:
-docker compose run --rm research-agent python agent.py --planned --task tasks/example_vakantie.md
 ```
+
+Canonieke live-entry: `scripts/run_contract_driven_task_v0.py` (zie Quick start).
 
 Smoke browser:
 
@@ -94,16 +112,6 @@ Inspect learnings:
 cat memory/site_tactics.json
 cat memory/site_recipes.json
 cat memory/events.jsonl | tail
-# after a run:
-cat runs/<run_id>/host_learnings.md
-```
-
-### Browser Use (optional backend)
-
-```bash
-docker compose build   # installs browser-use from requirements.txt
-docker compose run --rm research-agent python agent.py --planned \
-  --task tasks/compare_packages_dec2026.md --browser-backend browser_use
 ```
 
 ## Config highlights
@@ -127,13 +135,36 @@ python scripts/run_candidate_extraction_offline_v0.py \
   --outdir ./evals/candidate_offline
 ```
 
-### Contract-driven live smoke (after offline GO)
+## Legacy (pre-contract-driven, wordt uitgefaseerd)
+
+`agent.py` is het pre-contract-driven retrieval-pad (laatste inhoudelijke touch ~2026-08-20/23).  
+Het is **niet** het aanbevolen productiepad. Boundary-audit 2026-08-29: dit pad loopt via `storage.py` / `candidate_admissibility.py` / `member_role.py` (lexicon-gates). Niet repareren — uitfaseren.
+
+Alleen voor vergelijking met oude `runs/`-artifacts of `--legacy-agent` batches:
 
 ```bash
+# Learning only (no shortlist) — probes interface structure
+docker compose run --rm research-agent python agent.py --planned \
+  --run-kind recon --task tasks/recon_packages_hosts.md --browser-backend playwright
+
+# Task delivery / web retrieval (legacy)
+docker compose run --rm research-agent python agent.py --planned \
+  --run-kind retrieval --task tasks/compare_packages_dec2026.md --browser-backend playwright
+
+docker compose run --rm research-agent python agent.py --task tasks/example_vakantie.md
+docker compose run --rm research-agent python agent.py --planned --task tasks/example_vakantie.md
+
+# Browser Use backend (legacy agent only)
+docker compose run --rm research-agent python agent.py --planned \
+  --task tasks/compare_packages_dec2026.md --browser-backend browser_use
+
+# Batch via legacy agent (expliciete vlag vereist)
 docker compose run --rm research-agent \
-  python scripts/run_contract_driven_task_v0.py \
-  --tasks 01_web_hotel_package_concrete,02_web_hotel_property_only \
+  python scripts/run_task_batch_campaign_v0.py \
+  --legacy-agent \
   --tasks-dir tasks/batch_v0 \
-  --contract-dir evals/contract_synthesis/<synthesis_run> \
-  --llm --outdir ./evals/contract_driven
+  --outdir ./evals/task_batch
 ```
+
+`tasks/recon_*.md` blijven dev helpers. Core logic blijft domain-agnostic; criteria komen uit het frozen contract, niet uit `agent.py`.
+

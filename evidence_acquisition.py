@@ -557,7 +557,14 @@ def execute_acquisition_action(decision: dict[str, Any], *, max_chars: int = 200
         href = decision.get("target_href") or ""
         if not href:
             return {"ok": False, "error": "missing_href"}
-        snap = browser_open(href, wait_seconds=3.0, max_chars=max_chars)
+        # Relative hrefs (path-only) must be resolved against the live page URL
+        # before Page.goto — see browser._resolve_navigation_url.
+        from browser import _resolve_navigation_url  # local import avoids cycles at module load
+
+        resolved = _resolve_navigation_url(str(href))
+        snap = browser_open(resolved, wait_seconds=3.0, max_chars=max_chars)
+        snap["requested_href"] = str(href)[:400]
+        snap["resolved_url"] = resolved[:400]
         snap["ok"] = not bool(snap.get("error")) and len(str(snap.get("text") or "")) > 40
         return snap
     if action == "CLICK_TEXT":

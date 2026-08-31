@@ -1,0 +1,75 @@
+{
+  "frozen": true,
+  "contract": {
+    "schema_version": "0.3",
+    "subject": {
+      "name": "unknown_subject",
+      "definition": "SBH Monica Beach (Fuerteventura, Costa Calma) as listed on Corendon.be public detail page"
+    },
+    "observables": [
+      "Board-type label or badge displayed on the hotel detail page (e.g. 'All Inclusive', 'Half Board', 'Bed & Breakfast', 'Logies', 'Pension')",
+      "Hotel name and location string confirming the page is for SBH Monica Beach in Fuerteventura",
+      "Any explicit 'board' or 'logies' field in the property summary or amenities section"
+    ],
+    "decisions": [
+      {
+        "id": "subject_instance",
+        "question": "Is the page at the given URL (or its canonical equivalent) the public detail page for SBH Monica Beach in Fuerteventura on Corendon.be?",
+        "outcomes": [
+          "CONFIRMED",
+          "NOT_CONFIRMED",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "board_type",
+        "question": "Does the public detail page advertise 'All Inclusive' as the board type for SBH Monica Beach?",
+        "outcomes": [
+          "ALL_INCLUSIVE",
+          "NOT_ALL_INCLUSIVE",
+          "UNKNOWN"
+        ]
+      }
+    ],
+    "sufficiency": {
+      "required": [
+        "subject_instance = CONFIRMED",
+        "board_type in [ALL_INCLUSIVE, NOT_ALL_INCLUSIVE]"
+      ],
+      "blocking_unknowns": [
+        "board_type = UNKNOWN"
+      ]
+    },
+    "missing_to_solve": [
+      "Whether the detail page explicitly renders a board-type label (All Inclusive / Half Board / B&B / Logies) or only implies it via package naming",
+      "Whether the page is accessible without triggering a booking flow or login wall",
+      "Whether Corendon lists multiple board options for the same hotel and which one is the default/advertised one",
+      "Exact wording or badge text to quote as evidence"
+    ],
+    "_source": "cd0_provisional+frozen",
+    "frozen": true,
+    "freeze_rationale": "The subject is clearly scoped to the SBH Monica Beach public detail page on Corendon.be, matching the task's property-level check. Both decisions (subject_instance, board_type) include UNKNOWN outcomes. Sufficiency correctly requires subject confirmation plus a definitive board_type answer, which aligns with the task's 'Yes/no/unclear' output. All items in missing_to_solve are runtime discoveries (page accessibility, exact badge wording, whether multiple board options exist) rather than structural gaps. The contract appropriately stops at board-type identification without requiring booking flows, consistent with the task's explicit instruction."
+  },
+  "passes": [
+    {
+      "pass_index": 0,
+      "mode": "CD0",
+      "contract_source": "cd0_provisional",
+      "ready_to_freeze": true,
+      "remaining_gaps": [],
+      "gap_source": "llm_gap_check"
+    }
+  ],
+  "llm_calls": 2,
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "decisions[0] (subject_instance) missing evidence_signals",
+      "decisions[1] (board_type) missing evidence_signals"
+    ]
+  },
+  "remaining_gaps": [],
+  "task_path": "tasks/batch_v0/02_web_hotel_property_only.md",
+  "task_id": "02_web_hotel_property_only"
+}

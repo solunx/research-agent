@@ -1,5 +1,13 @@
 """
-Run storage: conversation log, sources, report, candidates, research state.
+LEGACY harvest/run storage for agent.py (pre-contract-driven).
+
+Deprecated as part of the recommended path on 2026-08-29.
+Canonical evidence/acquisition path does not go through this module's
+admissibility / offer_shape / member_role stack.
+
+See docs/FRAMEWORK_BOUNDARY.md and docs/BOUNDARY_AUDIT_FINAL.md.
+Still used by agent.py and some offline notes helpers — do not treat as
+the production observation model.
 """
 
 from __future__ import annotations

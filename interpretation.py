@@ -116,7 +116,24 @@ Rules:
 """
 
 
-def build_user_prompt(contract_decision: dict[str, Any], source_text: str) -> str:
+def build_user_prompt(
+    contract_decision: dict[str, Any],
+    source_text: str,
+    page_context: dict[str, Any] | None = None,
+) -> str:
+    """
+    Build the user JSON payload for one observation × one decision.
+
+    page_context (optional): structural fields only — page_url, surface,
+    same_entity_path — so page-identity decisions (e.g. subject_instance)
+    can see which URL was observed. No new semantics; omitted when None
+    (backwards-compatible with prior call sites).
+    """
+    observation: dict[str, Any] = {"source_text": source_text}
+    if page_context:
+        for key in ("page_url", "surface", "same_entity_path"):
+            if key in page_context and page_context[key] is not None:
+                observation[key] = page_context[key]
     payload = {
         "decision": {
             "id": contract_decision.get("id"),
@@ -125,7 +142,7 @@ def build_user_prompt(contract_decision: dict[str, Any], source_text: str) -> st
             "definitions": contract_decision.get("definitions") or {},
             "notes": contract_decision.get("notes") or [],
         },
-        "observation": {"source_text": source_text},
+        "observation": observation,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
@@ -147,10 +164,14 @@ def interpret_observation(
     *,
     contract_decision: dict[str, Any] | None = None,
     chat_fn: ChatFn | None = None,
+    page_context: dict[str, Any] | None = None,
 ) -> InterpretationResult:
     """
     Map raw text → contract outcome via LLM.
     Without chat_fn: returns UNKNOWN (fail-closed), for offline dry-run of the gate.
+
+    page_context: optional structural dict (page_url, surface, same_entity_path)
+    forwarded into the user prompt so page-identity decisions can ground on URL.
     """
     decision = contract_decision or BOARD_TYPE_CONTRACT["decision"]
     outcomes = [str(o) for o in (decision.get("outcomes") or [])]
@@ -168,7 +189,10 @@ def interpret_observation(
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": build_user_prompt(decision, source_text)},
+        {
+            "role": "user",
+            "content": build_user_prompt(decision, source_text, page_context=page_context),
+        },
     ]
     try:
         msg = chat_fn(messages)

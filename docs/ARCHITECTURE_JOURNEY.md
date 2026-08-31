@@ -3,7 +3,7 @@
 **Purpose:** Durable record of *why* the architecture looks the way it does.  
 Read this before changing harvest, admissibility, contracts, or LLM wiring.
 
-**Last major update:** 2026-08-28 (candidate layer = missing intermediate abstraction).
+**Last major update:** 2026-08-29 (canonical entry = contract-driven; `agent.py` deprecated as default).
 
 ---
 
@@ -37,6 +37,17 @@ Or:
 | **Code** | What is physically/structurally there? (text, DOM, links, neighbors, channels, HTTP status, URL change, missing field) |
 | **LLM** | What does it mean? (candidate? chrome? offer? board type? study design? relevant?) |
 | **Code** | What are we allowed to conclude/do given normalized results? (PASS/FAIL/UNKNOWN, eligibility AND, rankable) |
+
+### Canonical vs legacy entry (LOCKED — 2026-08-29)
+
+`agent.py` = legacy pre-contract-driven retrieval (2026-08-20/23).  
+Deprecated as default/recommended entry on **2026-08-29**. Not deleted.
+
+Canonical production path = `scripts/run_contract_driven_task_v0.py`.
+
+This sentence exists so a later session does not re-open “is agent.py
+still the live agent?” from zero. Answer: no — unless `--legacy-agent`.
+
 
 ### Anti-patterns (repeat rabbit holes — stop)
 
@@ -485,3 +496,61 @@ Wiring step after offline quality v1: observations for the acquisition loop are 
 from quality-selected Candidates, not ranked page-line soup. Acquisition preferred links
 come from `Candidate.primary_action`. Offline interpret script isolates "can outcomes be
 filled from candidates?" before live navigation cost.
+
+
+### F1 Structural Observer / representation axis (2026-08-28)
+
+Access tiers answer *how we reach a page*. F1 answers *how we structure what we see*.
+`structural_observer.py` implements text vs HTML (vs optional AX) candidate extraction
+for offline A/B before any further candidate heuristics. See `docs/CANDIDATE_LAYER.md` §12.
+
+
+---
+
+## Long-horizon research (future horizon — not current implementation)
+
+Captured from architecture review (Claude Sonnet, 2026-08-28/29) so the direction stays explicit without derailing current F1/contract work.
+
+### What "hours of research" should mean
+
+| Pattern | Verdict |
+|---------|---------|
+| One long continuous autonomous session (growing context) | **Avoid as primary design** — error accumulation, goal drift, loops (already seen at short scale) |
+| Many short, bounded, parallel worker runs under an **externalized plan** | **Preferred** — matches Anthropic research multi-agent pattern and our existing external contract/sufficiency/trace |
+
+Our stack already externalizes plan-like artifacts (frozen contract, TraceSession, sufficiency gate, host memory). Long horizon = **orchestrate** those workers, not replace them with an unbounded single brain.
+
+### Layer stack (target shape)
+
+```text
+Human (vague intent)
+  → Roaster / clarifier          → sharp task.md     (same principle as CD: resolve ambiguity before expensive work)
+  → Contract Discovery CD0–2     → frozen contract   (exists)
+  → Orchestrator / lead          → parallel bounded workers (our acquisition/interpret/sufficiency stack)
+  → Citation / verification pass → report grounded in raw sources (not summary-of-summary only)
+```
+
+Roaster is **not** a side project: it is Contract Discovery’s rule applied one boundary earlier (human → task).
+
+### External memory (MemGPT/Letta-class)
+
+Long work needs archival memory outside the context window. Design constraints for **local** models (e.g. RTX 3090, 7B–32B quant):
+
+- Prefer **structured extraction** (schema/JSON/enums + code validation) over free-text recursive summarization.
+- Always keep **pointers to raw sources** beside any compression (CitationAgent lesson: final claims check against originals).
+- Summarization drift is an open problem even at SOTA — treat memory compression with the same offline/golden-set discipline as candidates (precision/recall of facts retained).
+
+### Capacity honesty
+
+Frontier multi-agent research is expensive (~15× tokens vs chat in published Anthropic numbers) and still imperfect on long-horizon benchmarks. Open models that close the gap are often too large for 24GB VRAM. Local design must compensate with: smaller steps, more frequent disk writes, structured I/O, redundant source pointers — not with optimism about 7B free-text summary chains.
+
+### What we do *now* vs later
+
+| Now (near-term) | Later (after F1 + multi-domain evidence) |
+|-----------------|------------------------------------------|
+| Representation A/B (text vs HTML) | Wire chosen F1 arm into live path |
+| Contract + sufficiency on small tasks | Orchestrator over parallel workers |
+| Relative-URL / execute hygiene | Roaster agent for vague human briefs |
+| Held-out / non-travel live runs | Citation verification pass + memory MinAC |
+
+Do not start “days of continuous autonomy” as the next engineering milestone.

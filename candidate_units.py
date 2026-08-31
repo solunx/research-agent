@@ -17,35 +17,91 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-# UI chrome labels (language-agnostic shapes + common chrome words). Not domain outcomes.
-_CHROME_LINE = re.compile(
-    r"^(cookie|privacy|login|log in|registreer|register|newsletter|instagram|"
-    r"facebook|twitter|copyright|©|menu|zoeken|search|home|back|sluiten|close|"
-    r"meer info|more info|contact|klantenservice|faq|veelgestelde|"
-    r"inloggen|sign in|cart|winkelwagen)$",
-    re.I,
-)
-
-# Structural density signals only (currency / "from" / per-unit price shapes).
-_DENSITY = re.compile(
-    r"(€|\$|£|¥|\bp\.?\s*p\.?\b|\bfrom\b|\bva\.?\s*\d|\bvanaf\b|\bper\s+\w+)",
-    re.I,
-)
+# Structural density only (FRAMEWORK_BOUNDARY #2): currency glyphs + digit runs.
+# No language words (vanaf / from / p.p. / per …). Locale decimal/thousand seps allowed
+# as character classes inside digit runs.
+_CURRENCY_GLYPH = re.compile(r"[€$£¥]")
+# Digit run: 2+ digits, optional groups with . or , as separators (structural, not lexical).
+_DIGIT_RUN = re.compile(r"\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d{2,}")
 
 
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip()).lower()
 
 
-def _is_chrome(line: str) -> bool:
+def _skip_line_structural(line: str) -> bool:
+    """Empty / tiny / extreme length only — no lexicon chrome filter (#3, #8)."""
     t = (line or "").strip()
     if not t or len(t) < 2:
         return True
     if len(t) > 240:
         return True
-    if _CHROME_LINE.match(t):
-        return True
     return False
+
+
+def _currency_glyph_count(texts: list[str]) -> int:
+    return sum(len(_CURRENCY_GLYPH.findall(t or "")) for t in texts)
+
+
+def _digit_run_count(texts: list[str]) -> int:
+    return sum(len(_DIGIT_RUN.findall(t or "")) for t in texts)
+
+
+def currency_glyph_count(texts: list[str]) -> int:
+    """Public structural density helper (FRAMEWORK_BOUNDARY #2)."""
+    return _currency_glyph_count(texts)
+
+
+def digit_run_count(texts: list[str]) -> int:
+    """Public structural density helper (FRAMEWORK_BOUNDARY #2)."""
+    return _digit_run_count(texts)
+
+
+def has_structural_price_signal(text: str) -> bool:
+    """True if line/blob has currency glyph or digit run — no language words."""
+    t = text or ""
+    return bool(_CURRENCY_GLYPH.search(t) or _DIGIT_RUN.search(t))
+
+
+# Date-like numeric groups with 2+ separators (DD/MM/YYYY, YYYY-MM-DD) — structural, not lexical.
+_DATE_LIKE = re.compile(r"(?<!\d)\d{1,4}\s*[/\-]\s*\d{1,2}\s*[/\-]\s*\d{1,4}(?!\d)")
+
+
+def line_has_price_form_d2c(text: str) -> bool:
+    """
+    D2c price-form digit signal (price-shape sub-experiment, 2026-08-29).
+
+    True when a digit run looks money-shaped:
+      - not part of a multi-separator date pattern
+      - not a bare year 19xx/20xx
+      - not a 1–2 digit score without further magnitude
+      - magnitude: >=3 digits OR decimal with 2+ chars after separator
+    No language words (vanaf/from/p.p.).
+    """
+    cleaned = _DATE_LIKE.sub(" ", text or "")
+    for m in re.finditer(r"(?<!\d)(\d{1,6})([.,]\d{1,3})?(?!\d)", cleaned):
+        num, dec = m.group(1), m.group(2)
+        if re.fullmatch(r"(?:19|20)\d{2}", num) and not dec:
+            continue
+        if len(num) <= 2 and not dec:
+            continue
+        if len(num) >= 3 or (dec and len(dec) >= 2):
+            return True
+    return False
+
+
+def line_is_price_like(text: str) -> bool:
+    """glyph OR D2c — Fase-3 surface detector (replaces language-specific _PRICE_LINE)."""
+    t = text or ""
+    if _CURRENCY_GLYPH.search(t):
+        return True
+    return line_has_price_form_d2c(t)
+
+
+def count_price_like_lines(text: str) -> int:
+    """Count non-empty lines that pass line_is_price_like."""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    return sum(1 for ln in lines if line_is_price_like(ln))
 
 
 def _path_depth(href: str) -> int:
@@ -73,8 +129,8 @@ def _is_itemish_link(a: dict[str, Any], *, page_url: str = "") -> bool:
     depth = _path_depth(href)
     if depth < 1:
         return False
-    # Same-page tab anchors with long query still ok if text is non-chrome
-    if _is_chrome(text):
+    # Link text is passed through (#8); no lexicon chrome drop on label.
+    if _skip_line_structural(text) and not href:
         return False
     try:
         page_path = urlparse(page_url or "").path.rstrip("/")
@@ -98,8 +154,8 @@ def _blank_line_blocks(raw_text: str) -> list[list[str]]:
                 cur = []
             continue
         t = ln.strip()
-        if _is_chrome(t):
-            # chrome breaks a block
+        if _skip_line_structural(t):
+            # structural skip only (empty/tiny/huge) — does not break on word lists
             if cur:
                 blocks.append(cur)
                 cur = []
@@ -130,7 +186,7 @@ def package_candidate_units(
     Returns list of:
       {
         unit_id, texts, item_link: {text, href}|None,
-        line_span, density_hits, source
+        line_span, currency_glyph_count, digit_run_count, source
       }
 
     Priority:
@@ -157,28 +213,55 @@ def package_candidate_units(
                 }
         return None
 
-    # 1) Dense blank-line blocks first (preserve card boundaries)
+    def _density_fields(texts: list[str]) -> dict[str, int]:
+        return {
+            "currency_glyph_count": _currency_glyph_count(texts),
+            "digit_run_count": _digit_run_count(texts),
+        }
+
+    # 1) Dense blank-line blocks first (preserve card boundaries).
+    # Oversized blocks are chunked (not truncated-and-discarded): a block
+    # longer than max_lines_per_unit is split into consecutive windows so
+    # content past the old cutoff still reaches a unit, instead of being
+    # silently dropped. Purely structural (fixed-size windows on line
+    # position) — no repeat/threshold judgment on which lines "matter".
     for bi, block in enumerate(blocks):
         if len(units) >= max_units:
             break
         if len(block) < 2:
             continue
-        dens = sum(1 for t in block if _DENSITY.search(t))
-        linked = _link_for_block(block)
-        if dens < 1 and not linked:
-            continue
-        texts = block[:max_lines_per_unit]
-        units.append(
-            {
-                "unit_id": f"u{len(units)}",
-                "texts": texts,
-                "item_link": linked,
-                "line_span": None,
-                "density_hits": dens,
-                "source": "blank_block",
-                "block_index": bi,
-            }
-        )
+        chunks = [
+            block[i : i + max_lines_per_unit]
+            for i in range(0, len(block), max_lines_per_unit)
+        ] or [block]
+        for ci, chunk in enumerate(chunks):
+            if len(units) >= max_units:
+                break
+            if len(chunk) < 2 and len(chunks) > 1:
+                # tiny tail chunk: merge into previous unit instead of a
+                # near-empty extra unit
+                if units and units[-1].get("block_index") == bi:
+                    prev = units[-1]
+                    merged = (prev["texts"] + chunk)[:max_lines_per_unit]
+                    prev["texts"] = merged
+                    prev.update(_density_fields(merged))
+                continue
+            dens_f = _density_fields(chunk)
+            linked = _link_for_block(chunk)
+            structural = dens_f["currency_glyph_count"] + dens_f["digit_run_count"]
+            if structural < 1 and not linked:
+                continue
+            units.append(
+                {
+                    "unit_id": f"u{len(units)}",
+                    "texts": chunk,
+                    "item_link": linked,
+                    "line_span": None,
+                    **dens_f,
+                    "source": "blank_block",
+                    "block_index": bi,
+                }
+            )
         used_block_idxs.add(bi)
 
     # 2) Link anchors not yet covered
@@ -205,25 +288,27 @@ def package_candidate_units(
                 found_bi = bi
                 break
         if found_block is None:
+            dens_f = _density_fields([label])
             units.append(
                 {
                     "unit_id": f"u{len(units)}",
                     "texts": [label][:max_lines_per_unit],
                     "item_link": {"text": label[:120], "href": href[:400]},
                     "line_span": None,
-                    "density_hits": 0,
+                    **dens_f,
                     "source": "affordance_only",
                 }
             )
             continue
         texts = found_block[:max_lines_per_unit]
+        dens_f = _density_fields(texts)
         units.append(
             {
                 "unit_id": f"u{len(units)}",
                 "texts": texts,
                 "item_link": {"text": label[:120], "href": href[:400]},
                 "line_span": None,
-                "density_hits": sum(1 for t in texts if _DENSITY.search(t)),
+                **dens_f,
                 "source": "link_anchor",
                 "block_index": found_bi,
             }
@@ -232,9 +317,12 @@ def package_candidate_units(
             used_block_idxs.add(found_bi)
 
     def _rank(u: dict[str, Any]) -> tuple:
+        structural = int(u.get("currency_glyph_count") or 0) + int(
+            u.get("digit_run_count") or 0
+        )
         return (
             0 if u.get("item_link") else 1,
-            -int(u.get("density_hits") or 0),
+            -structural,
             -len(u.get("texts") or []),
         )
 
@@ -278,7 +366,8 @@ def units_to_observations(
                     "surface": surface,
                     "unit_id": uid,
                     "unit_source": u.get("source"),
-                    "density_hits": u.get("density_hits"),
+                    "currency_glyph_count": u.get("currency_glyph_count"),
+                    "digit_run_count": u.get("digit_run_count"),
                 },
             }
         )

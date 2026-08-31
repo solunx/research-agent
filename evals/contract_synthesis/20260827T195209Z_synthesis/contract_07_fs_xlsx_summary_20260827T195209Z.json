@@ -1,0 +1,114 @@
+{
+  "frozen": true,
+  "contract": {
+    "schema_version": "0.3",
+    "subject": {
+      "name": "unknown_subject",
+      "definition": "workspace_spreadsheet"
+    },
+    "observables": [
+      "file_path",
+      "sheet_names",
+      "header_fields_first_data_sheet",
+      "row_count_estimate",
+      "price_or_amount_column_names"
+    ],
+    "decisions": [
+      {
+        "id": "subject_instance",
+        "question": "Does a spreadsheet file exist in the workspace (inputs/ or a runtime-provided path)?",
+        "outcomes": [
+          "FOUND",
+          "NOT_FOUND",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "sheet_inventory",
+        "question": "What sheet names are present in the spreadsheet?",
+        "outcomes": [
+          "IDENTIFIED",
+          "EMPTY",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "header_fields",
+        "question": "What are the header row fields of the first data sheet?",
+        "outcomes": [
+          "IDENTIFIED",
+          "NO_DATA_SHEET",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "row_count_estimate",
+        "question": "What is the approximate number of data rows in the first data sheet?",
+        "outcomes": [
+          "ESTIMATED",
+          "UNDETERMINABLE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "price_amount_columns",
+        "question": "Which column names look like a price or amount?",
+        "outcomes": [
+          "IDENTIFIED",
+          "NONE_DETECTED",
+          "UNKNOWN"
+        ]
+      }
+    ],
+    "sufficiency": {
+      "required": [
+        "subject_instance in [FOUND, NOT_FOUND]",
+        "sheet_inventory in [IDENTIFIED, EMPTY]",
+        "header_fields in [IDENTIFIED, NO_DATA_SHEET]",
+        "row_count_estimate in [ESTIMATED, UNDETERMINABLE]",
+        "price_amount_columns in [IDENTIFIED, NONE_DETECTED]"
+      ],
+      "blocking_unknowns": [
+        "actual file path or directory listing in workspace",
+        "file format (xlsx, csv, ods, xls, etc.)",
+        "whether the file is readable and parseable by available tooling"
+      ]
+    },
+    "missing_to_solve": [
+      "Confirm whether any file matching spreadsheet extensions exists under inputs/ or a runtime path",
+      "Enumerate all sheet names from the workbook",
+      "Read the first data sheet header row and record field names verbatim",
+      "Count or estimate data rows (excluding header)",
+      "Heuristically identify columns whose names suggest price, amount, cost, fee, or monetary value",
+      "Record all paths attempted if no spreadsheet is found, to satisfy the 'say so clearly and stop' requirement"
+    ],
+    "_source": "cd0_provisional+frozen",
+    "frozen": true,
+    "freeze_rationale": "The contract clearly defines the subject (workspace spreadsheet inspection), lists all five required observables matching the task (paths, sheets, headers, row count, price/amount columns), every decision includes UNKNOWN as an outcome, sufficiency.required names the specific decisions that must be resolved, and missing_to_solve contains only runtime discovery steps (file existence check, sheet enumeration, header reading, row counting, column heuristics, path logging). The NOT_FOUND outcome on subject_instance implicitly handles the task's 'say so clearly and stop' early-exit requirement. No structural pieces are absent."
+  },
+  "passes": [
+    {
+      "pass_index": 0,
+      "mode": "CD0",
+      "contract_source": "cd0_provisional",
+      "ready_to_freeze": true,
+      "remaining_gaps": [],
+      "gap_source": "llm_gap_check"
+    }
+  ],
+  "llm_calls": 2,
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "decisions[0] (subject_instance) missing evidence_signals",
+      "decisions[1] (sheet_inventory) missing evidence_signals",
+      "decisions[2] (header_fields) missing evidence_signals",
+      "decisions[3] (row_count_estimate) missing evidence_signals",
+      "decisions[4] (price_amount_columns) missing evidence_signals"
+    ]
+  },
+  "remaining_gaps": [],
+  "task_path": "tasks/batch_v0/07_fs_xlsx_summary.md",
+  "task_id": "07_fs_xlsx_summary"
+}

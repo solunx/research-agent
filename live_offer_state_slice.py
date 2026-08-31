@@ -26,6 +26,8 @@ from candidates import (
     extract_candidates,
 )
 from candidate_units import (
+    count_price_like_lines,
+    line_is_price_like,
     package_candidate_units,
     unit_claim_preview,
     unit_item_link_targets,
@@ -58,11 +60,15 @@ from trace_session import TraceSession
 
 ChatFnStr = Callable[[list[dict[str, str]]], str]
 
-# Generic item-list density: repeated price-like lines (not domain enums).
-_PRICE_LINE = re.compile(
-    r"(€|\$|£|\bp\.?\s*p\.?\b|\bfrom\b|\bva\.?\s*\d|\bvanaf\b)",
-    re.I,
-)
+# Surface density: glyph ∨ D2c via shared candidate_units helpers (Fase 3).
+# Replaces language-specific _PRICE_LINE (vanaf/from/p.p.) — FRAMEWORK_BOUNDARY #10.
+# Provisional list-density threshold (Open #10 — NOT locked).
+# Fixture basis (post glyph∨D2c): synthetic multi-offer list ≈3 price-like lines;
+# detail pages can score much higher (Monica≈29) because D2c still flags some
+# non-price numerics — so this threshold alone does NOT separate list vs detail.
+# step==0 + same_entity → live_detail short-circuit remains the property-page guard.
+# Recalibrate across diverse page types before locking.
+_PRICE_LIKE_LIST_THRESHOLD = 3  # provisional; see Open #10 in FRAMEWORK_BOUNDARY.md
 
 
 def _classify_surface(
@@ -97,10 +103,10 @@ def _classify_surface(
     except Exception:
         same_entity = step == 0
 
-    # Count distinct price-like lines as a domain-agnostic list signal
-    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
-    price_hits = sum(1 for ln in lines if _PRICE_LINE.search(ln))
-    dense_list = price_hits >= 3
+    # glyph ∨ D2c line count (shared helper — no third density implementation)
+    price_hits = count_price_like_lines(text or "")
+    # Open #10: provisional threshold, not validated across diverse page types — not locked
+    dense_list = price_hits >= _PRICE_LIKE_LIST_THRESHOLD
 
     if step == 0 and same_entity:
         return "live_detail", True
@@ -342,13 +348,16 @@ def run_acquisition_loop(
         # Candidate layer (2026-08-28): structural extract → quality select →
         # observations bound by candidate_id. Interpretation sees top-K candidates
         # instead of whole-page claim soup. No domain merge required for this step.
+        # Provisional budget (FRAMEWORK_BOUNDARY Open #6 — not locked across page types).
+        # Fase 1b defaults: max_candidates=3, max_units=6 (token-volume target ~≤550).
+        # Was temporarily raised to 6/16 during candidate-layer debugging; restore defaults.
         selected = extract_candidates(
             text=text,
             affordances=affordances,
             page_url=final_url,
             surface=surface,
-            max_candidates=6,
-            max_units=16,
+            max_candidates=3,
+            max_units=6,
         )
         preferred_links = [
             {
@@ -374,12 +383,12 @@ def run_acquisition_loop(
             text=text,
             affordances=affordances,
             page_url=final_url,
-            max_units=8,
+            max_units=6,  # align with extract_candidates provisional budget (Open #6)
             max_lines_per_unit=8,
         )
         unit_preview = unit_claim_preview(units)
 
-        obs = candidates_to_observations(selected, max_candidates=6)
+        obs = candidates_to_observations(selected, max_candidates=3)
         if title:
             obs.insert(
                 0,

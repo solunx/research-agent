@@ -1,0 +1,162 @@
+{
+  "frozen": true,
+  "contract": {
+    "schema_version": "0.3",
+    "subject": {
+      "name": "unknown_subject",
+      "definition": "Price comparison of a single product class (e.g., a specific SSD model or a specific hotel night) listed on two independent websites, capturing identity, listed price, and URL for each, plus a one-sentence comparability judgment."
+    },
+    "observables": [
+      "product/offer identity (model, config, or room type) on site A",
+      "listed or offer price on site A",
+      "canonical URL on site A",
+      "product/offer identity on site B",
+      "listed or offer price on site B",
+      "canonical URL on site B",
+      "comparability statement (same config / not same config)"
+    ],
+    "decisions": [
+      {
+        "id": "subject_instance",
+        "question": "Which specific product or offer class is being compared (e.g., Samsung 990 Pro 2 TB NVMe SSD, or a specific hotel room-night)?",
+        "outcomes": [
+          "SSD_MODEL",
+          "HOTEL_NIGHT",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "site_a",
+        "question": "Which website serves as site A for the price listing?",
+        "outcomes": [
+          "RETAILER_A",
+          "RETAILER_B",
+          "RETAILER_C",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "site_b",
+        "question": "Which website serves as site B for the price listing (must differ from site A)?",
+        "outcomes": [
+          "RETAILER_A",
+          "RETAILER_B",
+          "RETAILER_C",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "price_a",
+        "question": "What is the listed/offer price on site A for the chosen product class?",
+        "outcomes": [
+          "NUMERIC_PRICE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "price_b",
+        "question": "What is the listed/offer price on site B for the same product class?",
+        "outcomes": [
+          "NUMERIC_PRICE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "url_a",
+        "question": "What is the canonical product/offer URL on site A?",
+        "outcomes": [
+          "VALID_URL",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "url_b",
+        "question": "What is the canonical product/offer URL on site B?",
+        "outcomes": [
+          "VALID_URL",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "comparability",
+        "question": "Are the two listings the same configuration/class (same model, capacity, room type, dates)?",
+        "outcomes": [
+          "SAME_CONFIG",
+          "DIFFERENT_CONFIG",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "detail_link",
+        "question": "Are both URLs resolvable and pointing to the correct product/offer page?",
+        "outcomes": [
+          "BOTH_RESOLVED",
+          "ONE_RESOLVED",
+          "NEITHER_RESOLVED",
+          "UNKNOWN"
+        ]
+      }
+    ],
+    "sufficiency": {
+      "required": [
+        "subject_instance in [SSD_MODEL, HOTEL_NIGHT]",
+        "site_a in [RETAILER_A, RETAILER_B, RETAILER_C]",
+        "site_b in [RETAILER_A, RETAILER_B, RETAILER_C]",
+        "price_a = NUMERIC_PRICE",
+        "price_b = NUMERIC_PRICE",
+        "url_a = VALID_URL",
+        "url_b = VALID_URL",
+        "comparability in [SAME_CONFIG, DIFFERENT_CONFIG]",
+        "detail_link in [BOTH_RESOLVED, ONE_RESOLVED]"
+      ],
+      "blocking_unknowns": [
+        "subject_instance",
+        "price_a",
+        "price_b",
+        "url_a",
+        "url_b",
+        "comparability"
+      ]
+    },
+    "missing_to_solve": [
+      "Confirm the exact product model and configuration (capacity, interface, warranty) so both listings are truly the same class.",
+      "Obtain the current listed price on site A with a working URL.",
+      "Obtain the current listed price on site B with a working URL.",
+      "Verify that both URLs resolve to the correct product page and are not redirects to a different variant.",
+      "Determine whether any hidden fees, taxes, or bundle differences affect comparability.",
+      "Write the one-sentence comparability caveat (same config vs. not)."
+    ],
+    "_source": "cd0_provisional+frozen",
+    "frozen": true,
+    "freeze_rationale": "The contract maps every task requirement to a concrete decision with UNKNOWN outcomes: product/offer identity (subject_instance), prices (price_a, price_b), URLs (url_a, url_b), comparability judgment (comparability), and URL verification (detail_link). The sufficiency block names exactly which decisions must be resolved to non-UNKNOWN values, and blocking_unknowns correctly flags the critical ones. All items in missing_to_solve are runtime discoveries (picking a specific SSD or hotel, fetching live prices, verifying URLs, writing the caveat sentence) rather than structural omissions. The task's 'pick one and stick to it' instruction is honored by the subject_instance decision, and the 'two different websites' constraint is enforced by the site_a/site_b pair. No structural gap prevents the agent from producing the required side-by-side notes plus comparability caveat."
+  },
+  "passes": [
+    {
+      "pass_index": 0,
+      "mode": "CD0",
+      "contract_source": "cd0_provisional",
+      "ready_to_freeze": true,
+      "remaining_gaps": [],
+      "gap_source": "llm_gap_check"
+    }
+  ],
+  "llm_calls": 2,
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "decisions[0] (subject_instance) missing evidence_signals",
+      "decisions[1] (site_a) missing evidence_signals",
+      "decisions[2] (site_b) missing evidence_signals",
+      "decisions[3] (price_a) missing evidence_signals",
+      "decisions[4] (price_b) missing evidence_signals",
+      "decisions[5] (url_a) missing evidence_signals",
+      "decisions[6] (url_b) missing evidence_signals",
+      "decisions[7] (comparability) missing evidence_signals",
+      "decisions[8] (detail_link) missing evidence_signals"
+    ]
+  },
+  "remaining_gaps": [],
+  "task_path": "tasks/batch_v0/08_web_compare_two_prices.md",
+  "task_id": "08_web_compare_two_prices"
+}

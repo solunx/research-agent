@@ -1,0 +1,133 @@
+{
+  "frozen": true,
+  "contract": {
+    "schema_version": "0.3",
+    "subject": {
+      "name": "unknown_subject",
+      "definition": "One second-hand RTX 3080 or RTX 3090 GPU listing on a Belgian/Netherlands public marketplace (2dehands or Marktplaats), including title, URL, asking price, location, and condition snippet."
+    },
+    "observables": [
+      "listing_title",
+      "listing_url",
+      "asking_price",
+      "location",
+      "condition_or_description_snippet",
+      "gpu_model (RTX 3080 or RTX 3090)",
+      "marketplace_platform (2dehands or Marktplaats)",
+      "listing_status (active/visible)"
+    ],
+    "decisions": [
+      {
+        "id": "subject_instance",
+        "question": "Which GPU model does the selected listing advertise?",
+        "outcomes": [
+          "RTX_3080",
+          "RTX_3090",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "marketplace_platform",
+        "question": "On which public marketplace is the listing hosted?",
+        "outcomes": [
+          "2dehands",
+          "Marktplaats",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "listing_title",
+        "question": "What is the exact listing title text?",
+        "outcomes": [
+          "RESOLVED",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "listing_url",
+        "question": "What is the direct URL to the listing?",
+        "outcomes": [
+          "RESOLVED",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "price_scope",
+        "question": "What is the asking price in EUR?",
+        "outcomes": [
+          "RESOLVED",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "location",
+        "question": "What location (city/region) is displayed on the listing?",
+        "outcomes": [
+          "RESOLVED",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "id": "condition_snippet",
+        "question": "What condition or description snippet is available?",
+        "outcomes": [
+          "RESOLVED",
+          "UNKNOWN"
+        ]
+      }
+    ],
+    "sufficiency": {
+      "required": [
+        "subject_instance in [RTX_3080, RTX_3090]",
+        "marketplace_platform in [2dehands, Marktplaats]",
+        "listing_title = RESOLVED",
+        "listing_url = RESOLVED",
+        "price_scope = RESOLVED"
+      ],
+      "blocking_unknowns": [
+        "subject_instance = UNKNOWN",
+        "listing_url = UNKNOWN",
+        "price_scope = UNKNOWN"
+      ]
+    },
+    "missing_to_solve": [
+      "Confirm the listing is still active and publicly visible at the time of reporting.",
+      "Verify the GPU model stated in the title/description matches RTX 3080 or RTX 3090 (not a different model).",
+      "Determine whether the marketplace is 2dehands (BE) or Marktplaats (NL) and record the exact URL.",
+      "Capture the asking price in EUR as displayed.",
+      "Record the location field if the marketplace shows one; otherwise mark UNKNOWN.",
+      "Extract a short condition or description snippet (e.g. 'used', 'like new', hours of use) if present; otherwise mark UNKNOWN.",
+      "Ensure no contact with the seller or purchase action is initiated."
+    ],
+    "_source": "cd0_provisional+frozen",
+    "frozen": true,
+    "freeze_rationale": "The contract clearly defines the subject (one second-hand RTX 3080/3090 listing on 2dehands or Marktplaats), every decision includes UNKNOWN in its outcomes, sufficiency.required correctly names the decisions that must be proven (GPU model, platform, title, URL, price) while allowing location and condition to remain UNKNOWN per the task's 'mark missing fields as unknown' instruction, and missing_to_solve lists only runtime discovery/verification steps rather than structural omissions. The 'e.g.' in the task is satisfied by the two primary BE/NL second-hand marketplaces named in the contract. No structural gaps remain."
+  },
+  "passes": [
+    {
+      "pass_index": 0,
+      "mode": "CD0",
+      "contract_source": "cd0_provisional",
+      "ready_to_freeze": true,
+      "remaining_gaps": [],
+      "gap_source": "llm_gap_check"
+    }
+  ],
+  "llm_calls": 2,
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [
+      "decisions[0] (subject_instance) missing evidence_signals",
+      "decisions[1] (marketplace_platform) missing evidence_signals",
+      "decisions[2] (listing_title) missing evidence_signals",
+      "decisions[3] (listing_url) missing evidence_signals",
+      "decisions[4] (price_scope) missing evidence_signals",
+      "decisions[5] (location) missing evidence_signals",
+      "decisions[6] (condition_snippet) missing evidence_signals"
+    ]
+  },
+  "remaining_gaps": [],
+  "task_path": "tasks/batch_v0/04_web_marketplace_listing.md",
+  "task_id": "04_web_marketplace_listing"
+}
