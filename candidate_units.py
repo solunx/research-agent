@@ -220,13 +220,14 @@ def package_candidate_units(
         }
 
     # 1) Dense blank-line blocks first (preserve card boundaries).
-    # Oversized blocks are chunked (not truncated-and-discarded): a block
-    # longer than max_lines_per_unit is split into consecutive windows so
-    # content past the old cutoff still reaches a unit, instead of being
-    # silently dropped. Purely structural (fixed-size windows on line
-    # position) — no repeat/threshold judgment on which lines "matter".
+    # Collect-then-cap (2026-08-31): scan the FULL page first; do NOT stop when
+    # len(units) reaches max_units. Early stop caused homepage regressions where
+    # a long chrome/filter prefix filled the budget before offer cards appear.
+    # max_units is applied only AFTER ranking (selection), not during collection.
+    # collect_cap is a performance ceiling only (huge pages), not a selection gate.
+    collect_cap = max(50, int(max_units) * 8)
     for bi, block in enumerate(blocks):
-        if len(units) >= max_units:
+        if len(units) >= collect_cap:
             break
         if len(block) < 2:
             continue
@@ -235,7 +236,7 @@ def package_candidate_units(
             for i in range(0, len(block), max_lines_per_unit)
         ] or [block]
         for ci, chunk in enumerate(chunks):
-            if len(units) >= max_units:
+            if len(units) >= collect_cap:
                 break
             if len(chunk) < 2 and len(chunks) > 1:
                 # tiny tail chunk: merge into previous unit instead of a
@@ -264,9 +265,9 @@ def package_candidate_units(
             )
         used_block_idxs.add(bi)
 
-    # 2) Link anchors not yet covered
+    # 2) Link anchors not yet covered — also collect fully before rank/cap
     for a in item_links:
-        if len(units) >= max_units:
+        if len(units) >= collect_cap:
             break
         label = str(a.get("text") or "").strip()
         href = str(a.get("href") or "").strip()

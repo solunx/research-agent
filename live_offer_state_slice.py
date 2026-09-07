@@ -204,6 +204,46 @@ def _decisions_from_frozen_contract(contract: dict[str, Any]) -> list[dict[str, 
     return decisions
 
 
+def _merge_outcomes(
+    best: dict[str, dict[str, Any]],
+    new_outcomes: dict[str, str],
+    step: int,
+) -> dict[str, dict[str, Any]]:
+    """
+    Behoud het sterkste eerder-bevestigde outcome per decision_id over
+    acquisition-stappen heen. Puur structureel: confirming outcomes
+    worden niet overschreven door een latere UNKNOWN/NOT_STATED — een stap
+    die de info niet meer toont mag niet eerder bewijs laten "verdwijnen".
+
+    Een latere, ANDERE confirming waarde (echte tegenspraak, ander concreet
+    label) overschrijft wel — de nieuwste concrete waarneming wint bij een
+    conflict. Geen domeinkennis: enkel weak (UNKNOWN / NOT_STATED) vs
+    confirming, en gelijkheid van strings.
+
+    Open #11: "tegenspraak wint"-regel is provisional (getest op 01/02
+    pattern only).
+    """
+    # Weak = absence / no positive claim. NOT_STATED is treated like UNKNOWN
+    # for persistence: a later page that simply does not repeat evidence must
+    # not erase an earlier confirmed label (run 20260831T063112Z pattern).
+    _WEAK = {"UNKNOWN", "NOT_STATED", ""}
+    for decision_id, outcome in (new_outcomes or {}).items():
+        outcome = str(outcome or "UNKNOWN")
+        cur = best.get(decision_id)
+        if outcome in _WEAK:
+            # Never overwrite a better (confirming) outcome with weak absence.
+            if cur is None:
+                best[decision_id] = {"outcome": outcome, "step": step}
+            continue
+        if (
+            cur is None
+            or str(cur.get("outcome") or "") in _WEAK
+            or cur.get("outcome") != outcome
+        ):
+            best[decision_id] = {"outcome": outcome, "step": step}
+    return best
+
+
 def run_acquisition_loop(
     *,
     entity: str,
@@ -306,6 +346,8 @@ def run_acquisition_loop(
     force_queue = list(force_click_texts or [])
     steps_log: list[dict[str, Any]] = []
     last_pipe: dict[str, Any] = {}
+    # Strongest confirmed outcome per decision_id across steps (Open #19).
+    best_outcomes: dict[str, dict[str, Any]] = {}
     acquisition_steps = 0
     # Generic anti-loop: fingerprints of actions that produced no state change
     blocked_action_keys: list[str] = []
@@ -473,6 +515,9 @@ def run_acquisition_loop(
         )
         interp_duration = round(_time.monotonic() - t_interp0, 3)
         last_pipe = pipe
+        best_outcomes = _merge_outcomes(
+            best_outcomes, pipe.get("outcomes") or {}, step
+        )
         interp_meta = pipe.get("interpretation") or {}
         llm_calls_step = int(interp_meta.get("llm_calls") or 0)
         # Count CU call when interpretation was skipped (still 1 CU llm call)
@@ -503,19 +548,22 @@ def run_acquisition_loop(
 
         # Prefer frozen-contract sufficiency (production). Legacy eligibility only
         # when no frozen contract (PACKAGES fixture path).
+        # Use merged best_outcomes so earlier confirming labels survive pages that
+        # no longer repeat the evidence (Open #19 / run 20260831T063112Z).
+        merged_flat = {k: v["outcome"] for k, v in best_outcomes.items()}
         if frozen_contract is not None:
-            gaps = gaps_from_frozen_contract(
-                frozen_contract, pipe.get("outcomes") or {}
-            )
-            suf = sufficiency_stop(frozen_contract, pipe.get("outcomes") or {})
+            gaps = gaps_from_frozen_contract(frozen_contract, merged_flat)
+            suf = sufficiency_stop(frozen_contract, merged_flat)
             contract_satisfied = bool(suf.get("satisfied"))
         else:
-            gaps = gaps_from_eligibility(pipe.get("eligibility"), pipe.get("outcomes"))
+            gaps = gaps_from_eligibility(
+                pipe.get("eligibility"), merged_flat or (pipe.get("outcomes") or {})
+            )
             suf = None
             contract_satisfied = bool(pipe.get("eligible"))
 
         if trace:
-            trace.log_gaps(gaps, outcomes=pipe.get("outcomes") or {})
+            trace.log_gaps(gaps, outcomes=merged_flat or (pipe.get("outcomes") or {}))
         claims = [o["text"] for o in obs if o.get("channel") == "candidate_claim"]
         step_rec = {
             "step": step,
@@ -832,7 +880,12 @@ def run_acquisition_loop(
         title = str(snap.get("title") or title)
 
     eligible = bool(last_pipe.get("eligible"))
-    outcomes = last_pipe.get("outcomes") or {}
+    # Prefer persisted best outcomes; fall back to last step if merge is empty
+    # (e.g. 0 interpretable steps) so step-0 CONTRACT_SATISFIED still works.
+    outcomes = (
+        {k: v["outcome"] for k, v in best_outcomes.items()}
+        or (last_pipe.get("outcomes") or {})
+    )
 
     # Final sufficiency from frozen contract (production) or last step_rec
     final_suf = None

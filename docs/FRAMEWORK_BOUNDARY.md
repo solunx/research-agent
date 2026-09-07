@@ -167,6 +167,13 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - Evidence of divergence: Monica detail fixture PRICE_LINE hits **7** vs glyph/digit hits **37**.  
 - Re-calibrate on multi-page / multi-surface traces (with `same_entity_path`) before locking a number.
 
+### #19 — outcomes persistence across acquisition steps (provisional)
+
+- **Problem:** each step re-interpreted outcomes from the *current* page only; final result used `last_pipe` only. A confirming label (e.g. `board_type=ALL_INCLUSIVE` on steps 1–2) was silently lost when a later page did not repeat the evidence (`NOT_STATED` / `UNKNOWN` on step 3) — run `20260831T063112Z`.  
+- **Fix direction (code, not LLM memory):** `_merge_outcomes` keeps the strongest confirming outcome per `decision_id`. Weak labels (`UNKNOWN`, `NOT_STATED`) never overwrite a confirming value. A later *different confirming* label overwrites (newest concrete observation wins on conflict).  
+- **Provisional:** “contradiction wins” and the weak-label set are tested on the 01/02 patterns only — not locked across diverse contracts. Revisit if contracts introduce graded confidence or multi-valued decisions.  
+- (Numbered #19 to avoid collision with ground-rules **#11 claim order**.)
+
 ---
 
 ## Hardcoded (framework) — allowed
