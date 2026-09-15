@@ -10,6 +10,10 @@ Find a **recent open-access or abstract-visible scientific paper** about **large
 
 Do not download paywalled full text if blocked; abstract-only is acceptable.
 
+# Suggested start
+
+https://arxiv.org/
+
 # Output
 
 - Citation-style line + URL + claimed finding + what was not verified

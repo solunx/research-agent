@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT))
 
 from observation_builder import build_from_run_dir_rich  # noqa: E402
 from pipeline_offline import (  # noqa: E402
+    PACKAGES_DECISIONS,
     PACKAGES_TASK_TEXT,
     go_no_go,
     run_pipeline_one,
@@ -230,6 +231,7 @@ def main() -> int:
             row,
             chat_fn=chat_fn,
             task_text=PACKAGES_TASK_TEXT,
+            decisions=PACKAGES_DECISIONS,  # explicit lab fixture (ISOLATE #16)
             require_candidate_admit=not args.skip_candidate_gate,
         )
         results.append(pr)

@@ -1395,3 +1395,132 @@ neighbor-window (no merge heuristic, no live 01 rerun on sketches).
 - Chrome filter changes (out of extraction scope)
 - Live HTML capture (P1b, after B2 reading)
 - AX arm until B/B2 exhausted
+
+## 2026-09-07 — Outcomes persistence live + 01/02 baseline
+
+### Campaign
+`evals/contract_driven/` runs `20260907T110322Z` (01) and `20260907T113643Z` (02).
+
+| Task | stop | satisfied | duration | notes |
+|------|------|-----------|----------|-------|
+| 01 package concrete | MAX_ACQUISITION_STEPS | false | ~2001s | 2 gaps left |
+| 02 property only | CONTRACT_SATISFIED | true | ~394s | 3 acquisition steps |
+
+### Outcomes persistence (Open #19) — confirmed
+Task 01 step 3 raw `board_type: NOT_STATED` (Grand Park Lara page no longer shows board text);
+**final** `outcomes.board_type: ALL_INCLUSIVE` from earlier steps. Step log stays honest; end state keeps strongest confirming label. Same mechanism: task 02 `board_type` UNKNOWN steps 0–2 → ALL_INCLUSIVE step 3 → final PASS.
+
+### Task 01 remaining gaps (not architecture bugs)
+- **date_scope = OUT_OF_RANGE:** LLM chose “Kerstvakantie 2026” then opened offer dated **03 jan 2027** (`…030127…` in URL). Site holiday window spans into January; agent did not re-filter to calendar December before OPEN. Planning/verification weakness within 3 steps.
+- **traveller_count = UNKNOWN:** “Wijzig Reisgezelschap” was visible in affordances early but never selected under max_steps=3. Strategy/budget, not data loss.
+
+Other decisions on 01 **PASS:** package_exists, price_scope, board_type (persisted), flight_inclusion, departure_airport, bookable_surface.
+
+### Task 02 path
+Not 0-step: identity confirmed early; board evidence dominated by **carousel other hotels** on detail page → LLM correctly avoided attributing Abora “All Inclusive” to Monica → tried Beschrijving / Verzorging → Fly & Go page finally had “All Inclusive - Aparthotel” / Verzorging blocks bound to Monica → CONTRACT_SATISFIED. Shows gap-driven navigation + interpret caution, not a false early STOP.
+
+### NOT_STATED herkomst (no code change)
+Literal in `_WEAK` is **contract-synthesis vocabulary**, not `OUTCOME_*` framework default. Documented under FRAMEWORK_BOUNDARY Open #19 with preferred future direction: weak = non-satisfying set from frozen contract (option B). Implement only when a second task needs it.
+
+### Next measurement
+Cross-domain contract-driven mini-batch (non-travel web tasks 03/05/06 first) after (re)synthesis of frozen contracts. FS task 07 needs separate path (no start_url). Do not keep patching Corendon until that baseline exists.
+
+## 2026-09-08 — First non-travel generality mini-batch (03/05/06)
+
+### Campaign
+Synthesis `20260908T061529Z_synthesis` (8/8 FROZEN). Contract-driven run on
+`06_web_wiki_fact`, `05_web_literature_abstract`, `03_web_product_gpu`
+(contract-dir = synthesis **folder**, not the campaign_report JSON).
+
+### Results (directional)
+| Task | Domain | stop | satisfied | Dominant cost driver |
+|------|--------|------|-----------|----------------------|
+| 06 wiki fact | Wikipedia | CONTRACT_SATISFIED | true | ~5 decisions; STOP-gate correctly rejected premature LLM soft-STOP while gaps=1 |
+| 05 literature abstract | arXiv | not satisfied (max steps / search strategy) | false | ~8 decisions; stayed on search/category surfaces; little deep-page evidence |
+| 03 product GPU | Coolblue | not satisfied | false | ~7 decisions; category crawl; explicit `Zoeken` click timeout |
+
+### What this proves
+- **Core loop is not travel-only:** contract → candidates → interpret → code STOP works on Wikipedia (06). Premature LLM STOP was rejected while gaps remained — same authority model as 01/02.
+- **01/02 fixes did not regress:** candidate budget (cands≈3, units≈6), ranking, outcomes path remained stable on these runs.
+- **New failure class (not old bugs):** open-domain **search strategy** — planner prefers menu/category links over using a visible search field; no recovery after search-control timeout.
+
+### Cost scaling (first quantitative visibility)
+Time was **not** spent visiting many sites. Most wall time is interpret LLM calls:
+
+| Task | ~# decisions | ~LLM calls / step | ~time / step |
+|------|--------------|-------------------|--------------|
+| travel 01/02 (baseline) | 2 | 8–16 | lower |
+| 06 wiki | 5 | 16–22 | ~90–135s |
+| 05 arxiv | 8 | 42–50 | ~330–390s |
+| 03 coolblue | 7 | 38–44 | ~430–470s |
+
+Pattern: cost ≈ f(n_decisions × candidates/units per step). Hidden while all tests used 2-decision travel contracts.
+
+### Observability added (no behaviour change)
+- `llm_calls_total`, `n_decisions`, `llm_calls_per_decision` on loop result, task result JSON, campaign report, and DONE log line.
+- Documented as FRAMEWORK_BOUNDARY Open **#20**.
+
+### Search preference — hypothesis only (Open #21)
+Do **not** implement “always prefer search field” yet. Re-test on tasks **04** (marketplace) and **08** (compare two prices). If the same pattern repeats, design a **generic** affordance bias (search control present + specific entity in task → prefer fill/submit search) with offline measurement first — never site-specific selectors.
+
+### Explicit non-actions this slice
+- No acquisition-policy code change
+- No contract thinning to reduce cost
+- No Corendon-specific patches
+- Task 07 (xlsx) still out of web start_url path
+
+## 2026-09-15 — Fase D entity-binding leak (task 02)
+
+Offline A/B (`fase_d_binding_20260915T073132Z`): live PASS `board_type=ALL_INCLUSIVE` depended entirely on the **Abora Continental** carousel claim (other hotel). Removing that claim → `UNKNOWN`. Root cause: `aggregate_outcome` had no subject/entity binding — any high-confidence contract-satisfying label from any candidate won.
+
+**Fix:** Open #22 — structural subject_candidate_ref + fail-closed unbound rows. Expected live effect on 02: fewer false PASS until hero board is in subject-bound candidates.
+
+
+## 2026-09-15 — Post-#22 live: 02 fail-closed (desired) + Fase E coverage diagnosis
+
+### Binding fix live outcome
+- **02:** `board_type=UNKNOWN` across steps, `MAX_ACQUISITION_STEPS` — **expected** after #22. Carousel Abora is no longer accepted for Monica. Not a regression.
+- **06:** still `CONTRACT_SATISFIED` / `population_figure=FIGURE_FOUND` — binding does not harm same-entity evidence.
+
+Document for later sessions: **UNKNOWN on 02 after #22 = honest coverage gap**, not "agent broke."
+
+### Fase E — why hero board never sticks in top-K (diagnosis only, no fix)
+
+| Question | Finding |
+|----------|---------|
+| Does raw page contain hero board? | **Yes** — e.g. `SBH Monica Beach` + `All Inclusive - Aparthotel` near top of `step_000_page_text.txt`. |
+| Is there a unit with low block_index that includes Aparthotel? | **Offline** on attached text+affordances: **yes** (large bi=0 block chunked; one 8-line window includes title+board+times). **Live** step_000 units/candidates across 054Z / 602Z / 070819Z / 3× reruns: **no** Aparthotel in top-6/3. |
+| Ranking loss vs extraction miss? | **Both possible.** Gate `structural < 1 and not linked → drop` can omit a pure title/board window without digits/link text. Live tops are item_link-heavy distant blocks (Fly&Go bi≈2, carousel bi≈79). Dual rank: units prefer early `block_index`; `extract_candidates` prefers **action/glyphs** then position — carousel-friendly. |
+| Same as 01 homepage chrome-prefix? | **Related class, different mechanism.** Homepage was collect early-stop before cards (fixed by collect-then-cap). Monica detail is **one merged chrome+hero block + chunk/gate + dual rank under max_units=6 / max_candidates=3**. block_index-before-density in units helped other fixtures; it does **not** guarantee hero survival on this live path. |
+
+**Root-cause statement (provisional):** coverage gap is **packaging/selection under budget on detail pages where subject board co-occurs with chrome in an early mega-block**, not absence of text and not binding. Open **#23**. No code change until offline experiment isolates gate vs rank vs live/docker text drift.
+
+## 2026-09-15 — Open #23 downgraded + task-02 stability (9/9 SUCCESS)
+
+### Correction of earlier Fase E narrative
+- Run **074757Z** was misread as UNKNOWN; raw result: `CONTRACT_SATISFIED`, Aparthotel in saved candidates, step 0.
+- Pre-#22 “coverage gap” mixed false-PASS (carousel) with packaging; not proven as a post-#22 defect.
+- Docker container confirmed bi-first `_rank` (commit 7927859); stale-image hypothesis for current tree rejected.
+
+### Stability batch (same contract, current code)
+All campaign reports grepped: **CONTRACT_SATISFIED / ok=true** for `02_web_hotel_property_only`:
+
+| created_at | duration_s | llm_calls | calls/dec |
+|------------|------------|-----------|-----------|
+| 20260915T161056Z | 72.41 | 6 | 2.0 |
+| 20260915T161209Z | 61.78 | 6 | 2.0 |
+| 20260915T161312Z | 42.46 | 5 | 1.67 |
+| 20260915T161936Z | 47.48 | 5 | 1.67 |
+| 20260915T162024Z | 99.44 | 8 | 2.67 |
+| 20260915T162204Z | 45.68 | 5 | 1.67 |
+| 20260915T162617Z | 45.65 | 5 | 1.67 |
+| 20260915T162703Z | 41.14 | 5 | 1.67 |
+| 20260915T162745Z | 55.46 | 6 | 2.0 |
+
+Spot-check outcomes (161312Z, 162204Z, 162745Z + loop 162617/162703/162745):  
+`subject_instance=CONFIRMED`, `detail_link=VALID_DETAIL_PAGE`, `board_type=ALL_INCLUSIVE`, Aparthotel in saved candidates **True**, `acquisition_steps=0`.
+
+**9/9 SUCCESS on step 0.** No rank/gate fix needed. Open #23 downgraded in FRAMEWORK_BOUNDARY.md.
+
+### Process rule locked
+Any future regression claim: grep `stop_reason` / `outcomes` from raw `result_*.json` **before** a diagnosis round.

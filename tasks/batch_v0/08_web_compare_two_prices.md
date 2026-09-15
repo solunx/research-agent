@@ -10,6 +10,12 @@ Required:
 
 Do not purchase anything.
 
+# Suggested start
+
+https://www.coolblue.be/
+
+(Second site is free choice during the run — e.g. another BE/NL retailer — do not hardcode a pair in the agent.)
+
 # Output
 
 - Side-by-side notes + comparability caveat

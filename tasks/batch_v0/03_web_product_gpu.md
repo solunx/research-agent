@@ -15,6 +15,10 @@ Do not add to cart or checkout.
 - One solid candidate is enough
 - If only “from” prices without a product page, keep searching or mark incomplete
 
+# Suggested start
+
+https://www.coolblue.be/
+
 # Output
 
 - Product title, shop, URL, price, stock note, uncertainties

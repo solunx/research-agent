@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse, unquote
 
-from interpretation import interpret_observation
+from interpretation import interpret_observation, interpret_observation_multi
 
 ChatFnDict = Callable[[list[dict[str, Any]]], dict[str, Any]]
 ChatFnStr = Callable[[list[dict[str, str]]], str]
@@ -212,11 +212,12 @@ Decide only one of:
 
 Question (CANDIDATE_UNIT):
   Could this fragment/cluster be a meaningful evidence unit relevant to the USER TASK?
-  Incomplete is OK — a hotel name can be ADMISSIBLE even without price/board/dates on this unit.
+  Incomplete is OK — a named fragment can be ADMISSIBLE even without every supporting
+  field present on this unit.
 
 Rules:
-- ADMISSIBLE = plausible primary content (offer card, hotel name, package fragment).
-- NOT_ADMISSIBLE = pure UI chrome, navigation, marketing slogan without offer substance, or clearly off-topic.
+- ADMISSIBLE = plausible primary content for the task (named fragment with supporting evidence).
+- NOT_ADMISSIBLE = pure UI chrome, navigation chrome, empty marketing without substance, or clearly off-topic.
 - UNKNOWN = insufficient information.
 - Use ONLY the payload. Do not invent facts.
 - Reply JSON only:
@@ -295,9 +296,133 @@ def channel_allowed(decision: dict[str, Any], channel: str) -> bool:
     return channel in allowed
 
 
-def aggregate_outcome(per_text: list[dict[str, Any]]) -> str:
-    # Hard provenance: site_marketing / cross-entity evidence may never
-    # contribute a PASS-grade outcome for entity-level decisions.
+def _row_block_index(r: dict[str, Any]) -> int | None:
+    v = r.get("block_index")
+    if v is None:
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _row_item_href(r: dict[str, Any]) -> str:
+    href = r.get("item_link_href")
+    if href:
+        return str(href).strip()
+    link = r.get("item_link") or {}
+    if isinstance(link, dict):
+        return str(link.get("href") or "").strip()
+    return ""
+
+
+def subject_candidate_ref_from_rows(per_text: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """
+    From subject_instance per_text rows, pick the best confirming row and
+    return structural anchors (candidate_id, block_index, item_link_href, scope).
+    """
+    confirmed = [
+        r
+        for r in per_text
+        if r.get("outcome")
+        and str(r.get("outcome")) not in ("UNKNOWN", "MISMATCH", "NOT_FOUND", "")
+        and not r.get("skipped")
+        and not r.get("provenance_blocked")
+    ]
+    if not confirmed:
+        return None
+    # Prefer high confidence, then earlier list order
+    for conf in ("high", "medium", "low"):
+        for r in confirmed:
+            if r.get("confidence") == conf:
+                return {
+                    "candidate_id": str(r.get("candidate_id") or "") or None,
+                    "block_index": _row_block_index(r),
+                    "item_link_href": _row_item_href(r) or None,
+                    "scope": str(r.get("scope") or "") or None,
+                }
+    r = confirmed[0]
+    return {
+        "candidate_id": str(r.get("candidate_id") or "") or None,
+        "block_index": _row_block_index(r),
+        "item_link_href": _row_item_href(r) or None,
+        "scope": str(r.get("scope") or "") or None,
+    }
+
+
+def _is_subject_bound(
+    row: dict[str, Any],
+    subject_ref: dict[str, Any] | None,
+    *,
+    block_cluster_k: int = 8,
+) -> bool:
+    """
+    Structural binding only (Open #22): same candidate_id, nearby block_index,
+    or same item_link href target. No domain lexicon.
+    """
+    if not subject_ref:
+        return False
+    cid = str(row.get("candidate_id") or "")
+    s_cid = str(subject_ref.get("candidate_id") or "")
+    if cid and s_cid and cid == s_cid:
+        return True
+    r_bi = _row_block_index(row)
+    s_bi = subject_ref.get("block_index")
+    if r_bi is not None and s_bi is not None:
+        try:
+            if abs(int(r_bi) - int(s_bi)) <= block_cluster_k:
+                return True
+        except (TypeError, ValueError):
+            pass
+    # Title/page_identity anchor (no unit block_index): bind only candidates
+    # whose block_index is near the earliest observed content blocks.
+    # Implemented via caller passing subject_ref with block_index=None and
+    # optional "earliest_block_index" from the batch.
+    earliest = subject_ref.get("earliest_block_index")
+    if (
+        s_bi is None
+        and r_bi is not None
+        and earliest is not None
+        and str(subject_ref.get("scope") or "") in ("page_title", "page_identity", "")
+    ):
+        try:
+            if int(r_bi) <= int(earliest) + block_cluster_k:
+                return True
+        except (TypeError, ValueError):
+            pass
+    r_href = _row_item_href(row)
+    s_href = str(subject_ref.get("item_link_href") or "").strip()
+    if r_href and s_href and r_href == s_href:
+        return True
+    return False
+
+
+def aggregate_outcome(
+    per_text: list[dict[str, Any]],
+    *,
+    preferred_outcomes: list[str] | set[str] | None = None,
+    subject_candidate_ref: dict[str, Any] | None = None,
+    require_subject_binding: bool = False,
+) -> str:
+    """
+    Combine per-claim interpretation rows into one outcome for a decision.
+
+    Confidence order is high > medium > low, but when *preferred_outcomes*
+    is provided (typically decision.required_for_eligibility / sufficiency
+    allowed set), a contract-satisfying label always outranks an absence /
+    non-satisfying label — even if the absence row has higher confidence.
+
+    Rationale (Open #19 follow-up, run 20260908T081349Z task 06): a high-
+    confidence NOT_STATED on an irrelevant candidate must not erase
+    FIGURE_FOUND on another candidate that actually answers the contract.
+
+    Entity binding (Open #22, fase_d_binding 20260915T073132Z): when
+    *require_subject_binding* is True and *subject_candidate_ref* is set,
+    only rows structurally bound to the subject-confirming candidate are
+    eligible. Unbound non-UNKNOWN rows (e.g. carousel board for another
+    property) do **not** count — fail-closed to UNKNOWN if no bound answer.
+    Domain-free: candidate_id / block_index / item_link only.
+    """
     eligible_rows = [
         r
         for r in per_text
@@ -308,11 +433,27 @@ def aggregate_outcome(per_text: list[dict[str, Any]]) -> str:
     ]
     if not eligible_rows:
         return "UNKNOWN"
-    for pref in ("high", "medium", "low"):
-        for r in eligible_rows:
-            if r.get("confidence") == pref:
+
+    if require_subject_binding and subject_candidate_ref is not None:
+        bound = [r for r in eligible_rows if _is_subject_bound(r, subject_candidate_ref)]
+        if bound:
+            eligible_rows = bound
+        else:
+            # Cross-entity-only answers → fail closed (do not use Abora for Monica).
+            return "UNKNOWN"
+
+    pref_set = {str(x) for x in (preferred_outcomes or []) if x and str(x) != "UNKNOWN"}
+    pool = eligible_rows
+    if pref_set:
+        satisfying = [r for r in eligible_rows if str(r.get("outcome")) in pref_set]
+        if satisfying:
+            pool = satisfying
+
+    for conf in ("high", "medium", "low"):
+        for r in pool:
+            if r.get("confidence") == conf:
                 return str(r["outcome"])
-    return str(eligible_rows[0]["outcome"])
+    return str(pool[0]["outcome"])
 
 
 def _obs_surface(o: dict[str, Any]) -> str:
@@ -327,6 +468,113 @@ def _obs_same_entity(o: dict[str, Any]) -> bool | None:
     if isinstance(prov, dict) and "same_entity_path" in prov:
         return bool(prov.get("same_entity_path"))
     return None
+
+
+def _obs_binding_fields(o: dict[str, Any]) -> dict[str, Any]:
+    """Structural fields copied onto interpretation rows for Open #22 binding."""
+    prov = o.get("provenance") or {}
+    bi = o.get("block_index")
+    if bi is None and isinstance(prov, dict):
+        bi = prov.get("block_index")
+    link = o.get("item_link") if isinstance(o.get("item_link"), dict) else None
+    href = ""
+    if link:
+        href = str(link.get("href") or "").strip()
+    if not href and isinstance(prov, dict):
+        href = str(prov.get("item_link_href") or "").strip()
+    return {
+        "candidate_id": str(o.get("candidate_id") or "") or None,
+        "block_index": bi,
+        "item_link": link,
+        "item_link_href": href or None,
+        "scope": str(o.get("scope") or "") or None,
+    }
+
+
+def _earliest_block_index(rows: list[dict[str, Any]]) -> int | None:
+    bis = []
+    for r in rows:
+        bi = _row_block_index(r)
+        if bi is not None:
+            bis.append(bi)
+    return min(bis) if bis else None
+
+
+def _finalize_outcomes_with_binding(
+    texts_by_did: dict[str, list[dict[str, Any]]],
+    decisions: list[dict[str, Any]],
+) -> tuple[dict[str, str], dict[str, Any], dict[str, Any] | None]:
+    """
+    Two-pass aggregate: subject_instance without binding → ref → other decisions
+    with require_subject_binding when a subject ref exists.
+    """
+    outcomes: dict[str, str] = {}
+    traces: dict[str, Any] = {}
+    subject_ref: dict[str, Any] | None = None
+
+    # Pass 1: subject_instance (if present)
+    if "subject_instance" in texts_by_did:
+        rows = texts_by_did["subject_instance"]
+        active = [r for r in rows if not r.get("skipped") and not r.get("provenance_blocked")]
+        preferred = []
+        for d in decisions:
+            if d.get("id") == "subject_instance":
+                preferred = list(d.get("required_for_eligibility") or [])
+                break
+        outcomes["subject_instance"] = aggregate_outcome(
+            active, preferred_outcomes=preferred, require_subject_binding=False
+        )
+        subject_ref = subject_candidate_ref_from_rows(active)
+        if subject_ref is not None:
+            earliest = _earliest_block_index(
+                [r for rows in texts_by_did.values() for r in rows]
+            )
+            if earliest is not None:
+                subject_ref = {**subject_ref, "earliest_block_index": earliest}
+        traces["subject_instance"] = {
+            "per_text": rows,
+            "aggregated": outcomes["subject_instance"],
+            "preferred_outcomes": preferred,
+            "subject_candidate_ref": subject_ref,
+            "require_subject_binding": False,
+        }
+
+    # Pass 2: all other decisions
+    for d in decisions:
+        did = str(d.get("id") or "")
+        if not did or did == "subject_instance":
+            continue
+        rows = texts_by_did.get(did) or []
+        active = [r for r in rows if not r.get("skipped") and not r.get("provenance_blocked")]
+        preferred = list(d.get("required_for_eligibility") or [])
+        bind = subject_ref is not None
+        outcomes[did] = aggregate_outcome(
+            active,
+            preferred_outcomes=preferred,
+            subject_candidate_ref=subject_ref,
+            require_subject_binding=bind,
+        )
+        traces[did] = {
+            "per_text": rows,
+            "aggregated": outcomes[did],
+            "preferred_outcomes": preferred,
+            "subject_candidate_ref": subject_ref,
+            "require_subject_binding": bind,
+        }
+
+    # Decisions that never appeared in texts_by_did
+    for d in decisions:
+        did = str(d.get("id") or "")
+        if did and did not in outcomes:
+            outcomes[did] = "UNKNOWN"
+            traces[did] = {
+                "per_text": [],
+                "aggregated": "UNKNOWN",
+                "preferred_outcomes": list(d.get("required_for_eligibility") or []),
+                "subject_candidate_ref": subject_ref,
+                "require_subject_binding": subject_ref is not None and did != "subject_instance",
+            }
+    return outcomes, traces, subject_ref
 
 
 def is_provenance_blocked_for_entity(o: dict[str, Any]) -> bool:
@@ -408,36 +656,19 @@ def _adapt_chat_fn(chat_fn: ChatFnStr | None) -> ChatFnDict | None:
     return _fn
 
 
-def _claim_priority(text: str, decision_id: str) -> int:
+def _claim_priority(text: str, decision_id: str = "", *, list_index: int = 0) -> int:
     """
-    Lower = interpret first. Prefer lines that look relevant to the decision
-    so we can early-stop and avoid 30×N LLM calls on every page.
-    Structural heuristics only (regex shape), not domain outcome mapping.
+    Lower = interpret first.
+
+    MOVE #11 (LOCKED): no decision_id-specific lexicon (board_type / flight /
+    travel phrases). Stable order is FIFO on the original observation list
+    (`list_index`). Optional domain-free length bias only: slightly prefer
+    shorter snippets (cheaper LLM context), never regex on content words.
     """
-    t = (text or "").lower()
-    score = 50
-    if decision_id == "board_type":
-        if re.search(
-            r"all[-\s]?inclusive|volpension|half.?pension|full\s+board|"
-            r"room\s+only|enkel\s+kamer|ontbijt|breakfast",
-            t,
-        ):
-            score = 0
-        elif re.search(r"verzorging|meal|board|pension|inclusive", t):
-            score = 10
-    elif decision_id == "package_includes_flight":
-        if re.search(
-            r"vlucht\s*\+|pakketreis\s+met\s+vlucht|heen-?\s*en\s*terug|"
-            r"flight\s+included|vlucht\s+inbegrepen|directe\s+vlucht|"
-            r"brussels\s+airlines|vluchtnummer|vertrek.*aankomst",
-            t,
-        ):
-            score = 0
-        elif re.search(r"vlucht|flight|bru\b|airport|luchthaven|airline", t):
-            score = 10
-        elif re.search(r"vanaf\s+brussel|fly\s*&\s*go|pakket", t):
-            score = 15
-    # shorter, denser claims slightly preferred
+    _ = decision_id  # call-site compat; unused — no lexicon boost
+    t = text or ""
+    # Base = list position (FIFO). index*10 dominates length nudge (±2).
+    score = int(list_index) * 10
     if len(t) < 120:
         score -= 2
     return score
@@ -450,35 +681,247 @@ def run_interpretation(
     chat_fn: ChatFnStr | None,
     max_llm_per_decision: int = 8,
     early_stop_on_high: bool = True,
+    batch_decisions: bool = False,
 ) -> dict[str, Any]:
     """
-    Interpret candidate_claim observations per decision.
+    Interpret candidate_claim observations against contract decisions.
+
+    Default path (batch_decisions=False): one LLM call per (claim × decision)
+    via interpret_observation — restored after live task-02 regression
+    (board_type stuck UNKNOWN under multi-decision batch, 2026-09-14).
+
+    Optional path (batch_decisions=True, Fase B): one LLM call per claim for
+    ALL decisions (interpret_observation_multi). Available explicitly for
+    experiments; not default until live parity on 02/06 is restored.
 
     Hard provenance: observations tagged site_marketing / site_wide /
     global_marketing / page_chrome are never sent to the LLM for contract
-    outcomes and cannot contribute PASS. List/results and live_offer_state
-    surfaces remain admissible (see is_provenance_blocked_for_entity).
+    outcomes and cannot contribute PASS.
 
-    Cost control: claims are prioritized; after max_llm_per_decision calls or a
-    high-confidence non-UNKNOWN on a required outcome, remaining claims are
-    skipped (logged as early_stop). This cuts wall-time from ~12min to ~1-2min
-    per page on local models without changing the contract semantics.
+    Cost control: claims ordered FIFO (#11); after max_llm_per_decision
+    *claims* (batch) or *calls per decision* (legacy), or when every
+    decision already has a high-confidence satisfying outcome, remaining
+    claims are skipped. Fase A skip-satisfied (acquisition loop) is
+    independent of this flag.
     """
+    if not batch_decisions:
+        return _run_interpretation_legacy(
+            observations=observations,
+            decisions=decisions,
+            chat_fn=chat_fn,
+            max_llm_per_decision=max_llm_per_decision,
+            early_stop_on_high=early_stop_on_high,
+        )
+
     chat_dict = _adapt_chat_fn(chat_fn)
-    outcomes: dict[str, str] = {}
-    traces: dict[str, Any] = {}
+    search_ctx = [o for o in observations if o.get("channel") == "search_context"]
+    provenance_blocked_n = 0
+    llm_calls = 0
+
+    # Per-decision row lists (filled as we process claims once).
+    texts_by_did: dict[str, list[dict[str, Any]]] = {str(d["id"]): [] for d in decisions if d.get("id")}
+    required_by_did: dict[str, set[str]] = {
+        str(d["id"]): set(d.get("required_for_eligibility") or [])
+        for d in decisions
+        if d.get("id")
+    }
+    found_high_by_did: dict[str, bool] = {did: False for did in texts_by_did}
+
+    # Build ordered claim list once (union of channel-allowed + not blocked).
+    # A claim is kept if it is allowed for *any* decision and not provenance-blocked.
+    ordered: list[dict[str, Any]] = []
+    blocked_or_skipped_global: list[dict[str, Any]] = []
+    for idx, o in enumerate(observations):
+        ch = o.get("channel") or ""
+        any_allowed = any(channel_allowed(d, ch) for d in decisions)
+        if not any_allowed:
+            blocked_or_skipped_global.append(
+                {
+                    "text": o.get("text"),
+                    "channel": ch,
+                    "skipped": True,
+                    "reason": "channel_not_allowed",
+                    "outcome": "UNKNOWN",
+                }
+            )
+            continue
+        if is_provenance_blocked_for_entity(o):
+            provenance_blocked_n += 1
+            blocked_or_skipped_global.append(
+                {
+                    "text": o.get("text"),
+                    "channel": ch,
+                    "skipped": True,
+                    "reason": "provenance_blocked_site_marketing",
+                    "outcome": "UNKNOWN",
+                    "provenance_blocked": True,
+                    "surface": _obs_surface(o),
+                }
+            )
+            continue
+        ordered.append({**o, "_obs_index": idx})
+
+    ordered.sort(
+        key=lambda o: _claim_priority(
+            str(o.get("text") or ""),
+            "",
+            list_index=int(o.get("_obs_index") or 0),
+        )
+    )
+
+    # Seed each decision's trace with global channel/provenance skips.
+    for did in texts_by_did:
+        texts_by_did[did].extend(dict(r) for r in blocked_or_skipped_global)
+
+    claims_interpreted = 0
+    for o in ordered:
+        # Global early-stop: every decision already has high+satisfying evidence.
+        if early_stop_on_high and texts_by_did and all(found_high_by_did.values()):
+            for did in texts_by_did:
+                texts_by_did[did].append(
+                    {
+                        "text": o.get("text"),
+                        "channel": o.get("channel"),
+                        "skipped": True,
+                        "reason": "early_stop_all_decisions_high",
+                        "outcome": "UNKNOWN",
+                    }
+                )
+            continue
+        if claims_interpreted >= max_llm_per_decision and chat_dict is not None:
+            for did in texts_by_did:
+                texts_by_did[did].append(
+                    {
+                        "text": o.get("text"),
+                        "channel": o.get("channel"),
+                        "skipped": True,
+                        "reason": "max_llm_per_decision",
+                        "outcome": "UNKNOWN",
+                    }
+                )
+            continue
+
+        prov = o.get("provenance") or {}
+        page_context = {
+            "page_url": prov.get("source_url") or o.get("source_url"),
+            "surface": prov.get("surface") or o.get("surface"),
+        }
+        if "same_entity_path" in prov:
+            page_context["same_entity_path"] = prov.get("same_entity_path")
+        page_context = {k: v for k, v in page_context.items() if v is not None and v != ""}
+
+        # Only ask the model for decisions this claim's channel is allowed for.
+        decisions_for_claim = [
+            d
+            for d in decisions
+            if d.get("id") and channel_allowed(d, o.get("channel") or "")
+        ]
+        multi = interpret_observation_multi(
+            str(o.get("text") or ""),
+            decisions=decisions_for_claim or decisions,
+            chat_fn=chat_dict,
+            page_context=page_context or None,
+        )
+        if chat_dict is not None:
+            llm_calls += 1
+            claims_interpreted += 1
+
+        answered_ids = {str(d["id"]) for d in (decisions_for_claim or decisions) if d.get("id")}
+        for did in texts_by_did:
+            if did not in answered_ids:
+                texts_by_did[did].append(
+                    {
+                        "text": o.get("text"),
+                        "channel": o.get("channel"),
+                        "skipped": True,
+                        "reason": "channel_not_allowed_for_decision",
+                        "outcome": "UNKNOWN",
+                    }
+                )
+                continue
+            ir = multi.get(did)
+            bind = _obs_binding_fields(o)
+            if ir is None:
+                row = {
+                    "text": o.get("text"),
+                    "channel": o.get("channel"),
+                    "skipped": False,
+                    "outcome": "UNKNOWN",
+                    "confidence": "low",
+                    "reason": "missing from multi result",
+                    "source": "error",
+                    "surface": _obs_surface(o),
+                    **bind,
+                }
+            else:
+                row = {
+                    "text": o.get("text"),
+                    "channel": o.get("channel"),
+                    "skipped": False,
+                    "outcome": ir.outcome,
+                    "confidence": ir.confidence,
+                    "reason": ir.reason,
+                    "source": ir.source,
+                    "surface": _obs_surface(o),
+                    **bind,
+                }
+            texts_by_did[did].append(row)
+            required = required_by_did.get(did) or set()
+            if (
+                early_stop_on_high
+                and row.get("confidence") == "high"
+                and row.get("outcome")
+                and row["outcome"] != "UNKNOWN"
+                and (not required or row["outcome"] in required)
+            ):
+                found_high_by_did[did] = True
+
+    outcomes, traces, _subject_ref = _finalize_outcomes_with_binding(texts_by_did, decisions)
+    for did, tr in traces.items():
+        tr["batch_decisions"] = True
+        tr["llm_calls_this_decision"] = claims_interpreted
+
+    elig = eligibility_from_outcomes(outcomes, decisions)
+    return {
+        "outcomes": outcomes,
+        "eligibility": elig,
+        "decision_traces": traces,
+        "search_context_obs": [
+            {"text": o.get("text"), "channel": o.get("channel")} for o in search_ctx
+        ],
+        "llm_calls": llm_calls,
+        "provenance_blocked_n": provenance_blocked_n,
+        "batch_decisions": True,
+        "claims_interpreted": claims_interpreted,
+        "subject_candidate_ref": _subject_ref,
+    }
+
+
+def _run_interpretation_legacy(
+    *,
+    observations: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+    chat_fn: ChatFnStr | None,
+    max_llm_per_decision: int = 8,
+    early_stop_on_high: bool = True,
+) -> dict[str, Any]:
+    """Pre-Fase-B path: one LLM call per (claim × decision). For parity tests."""
+    chat_dict = _adapt_chat_fn(chat_fn)
     llm_calls = 0
     provenance_blocked_n = 0
     search_ctx = [o for o in observations if o.get("channel") == "search_context"]
+    texts_by_did: dict[str, list[dict[str, Any]]] = {
+        str(d["id"]): [] for d in decisions if d.get("id")
+    }
+    calls_by_did: dict[str, int] = {did: 0 for did in texts_by_did}
 
     for d in decisions:
         did = d["id"]
-        texts: list[dict[str, Any]] = []
+        texts: list[dict[str, Any]] = texts_by_did[did]
         required = set(d.get("required_for_eligibility") or [])
 
-        # Order: allowed-channel + not provenance-blocked, by priority
         ordered: list[dict[str, Any]] = []
-        for o in observations:
+        for idx, o in enumerate(observations):
             ch = o.get("channel") or ""
             if not channel_allowed(d, ch):
                 texts.append(
@@ -505,10 +948,14 @@ def run_interpretation(
                     }
                 )
                 continue
-            ordered.append(o)
+            ordered.append({**o, "_obs_index": idx})
 
         ordered.sort(
-            key=lambda o: _claim_priority(str(o.get("text") or ""), did)
+            key=lambda o: _claim_priority(
+                str(o.get("text") or ""),
+                did,
+                list_index=int(o.get("_obs_index") or 0),
+            )
         )
 
         found_high = False
@@ -544,7 +991,6 @@ def run_interpretation(
             }
             if "same_entity_path" in prov:
                 page_context["same_entity_path"] = prov.get("same_entity_path")
-            # drop empty values so payload stays minimal when context missing
             page_context = {k: v for k, v in page_context.items() if v is not None and v != ""}
             ir = interpret_observation(
                 str(o.get("text") or ""),
@@ -555,6 +1001,7 @@ def run_interpretation(
             if chat_dict is not None:
                 llm_calls += 1
                 calls_this += 1
+            bind = _obs_binding_fields(o)
             row = {
                 "text": o.get("text"),
                 "channel": o.get("channel"),
@@ -564,6 +1011,7 @@ def run_interpretation(
                 "reason": ir.reason,
                 "source": ir.source,
                 "surface": _obs_surface(o),
+                **bind,
             }
             texts.append(row)
             if (
@@ -575,13 +1023,12 @@ def run_interpretation(
             ):
                 found_high = True
 
-        active = [t for t in texts if not t.get("skipped") and not t.get("provenance_blocked")]
-        outcomes[did] = aggregate_outcome(active)
-        traces[did] = {
-            "per_text": texts,
-            "aggregated": outcomes[did],
-            "llm_calls_this_decision": calls_this,
-        }
+        calls_by_did[did] = calls_this
+
+    outcomes, traces, _subject_ref = _finalize_outcomes_with_binding(texts_by_did, decisions)
+    for did, tr in traces.items():
+        tr["batch_decisions"] = False
+        tr["llm_calls_this_decision"] = calls_by_did.get(did, 0)
 
     elig = eligibility_from_outcomes(outcomes, decisions)
     return {
@@ -593,6 +1040,8 @@ def run_interpretation(
         ],
         "llm_calls": llm_calls,
         "provenance_blocked_n": provenance_blocked_n,
+        "batch_decisions": False,
+        "subject_candidate_ref": _subject_ref,
     }
 
 
@@ -627,8 +1076,18 @@ def run_pipeline_one(
     """
     If require_candidate_admit and CU does not admit → skip interpretation,
     eligible=False (fail-closed).
+
+    ISOLATE #16: PACKAGES_DECISIONS is not a silent default. Callers must pass
+    decisions=... explicitly (or this raises). Offline experiment scripts that
+    historically relied on the packages fixture must pass PACKAGES_DECISIONS
+    themselves.
     """
-    decisions = decisions or PACKAGES_DECISIONS
+    if decisions is None:
+        raise RuntimeError(
+            "run_pipeline_one: decisions is required. Pass an explicit decision "
+            "list (e.g. PACKAGES_DECISIONS for lab fixtures). Silent fallback "
+            "disabled (FRAMEWORK_BOUNDARY ISOLATE #16)."
+        )
     cid = str(row.get("entity") or row.get("candidate_id") or "unknown")
     expected_elig = row.get("expected_eligible")
     if expected_elig is not None:

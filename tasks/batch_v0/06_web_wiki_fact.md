@@ -8,6 +8,10 @@ From **English Wikipedia**, answer: what is the **approximate population of Fuer
 - Do not invent statistics
 - One reliable figure is enough
 
+# Suggested start
+
+https://en.wikipedia.org/wiki/Fuerteventura
+
 # Output
 
 - Population figure + year/source note on the page + article URL

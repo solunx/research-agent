@@ -318,11 +318,20 @@ def package_candidate_units(
             used_block_idxs.add(found_bi)
 
     def _rank(u: dict[str, Any]) -> tuple:
+        # Rank order (2026-08-31): item_link → block_index → structural → length.
+        # block_index BEFORE structural density (unlike candidates.py, where glyphs
+        # still precede position): at unit packaging the failure mode is distant
+        # digit-dense blocks (recommendation carousels, review grids) crowding out
+        # the page subject's early low-density identity/board block after
+        # collect-then-cap exposes the full page. Page position is domain-free;
+        # earlier block wins when competing with density alone.
         structural = int(u.get("currency_glyph_count") or 0) + int(
             u.get("digit_run_count") or 0
         )
+        bi = u.get("block_index")
         return (
             0 if u.get("item_link") else 1,
+            int(bi) if bi is not None else 999,
             -structural,
             -len(u.get("texts") or []),
         )
@@ -354,6 +363,8 @@ def units_to_observations(
         if not texts:
             continue
         joined = " | ".join(t[:160] for t in texts)[:500]
+        link = u.get("item_link") or {}
+        bi = u.get("block_index")
         obs.append(
             {
                 "observation_id": f"unit-{oid}",
@@ -361,6 +372,8 @@ def units_to_observations(
                 "text": joined,
                 "channel": "candidate_claim",
                 "scope": "unit",
+                "block_index": bi,
+                "item_link": link if (link.get("href") or link.get("text")) else None,
                 "provenance": {
                     "origin": "candidate_unit_package",
                     "source_url": page_url,
@@ -369,11 +382,12 @@ def units_to_observations(
                     "unit_source": u.get("source"),
                     "currency_glyph_count": u.get("currency_glyph_count"),
                     "digit_run_count": u.get("digit_run_count"),
+                    "block_index": bi,
+                    "item_link_href": str(link.get("href") or "")[:400] or None,
                 },
             }
         )
         oid += 1
-        link = u.get("item_link") or {}
         href = str(link.get("href") or "").strip()
         if href:
             obs.append(
@@ -383,12 +397,16 @@ def units_to_observations(
                     "text": href[:300],
                     "channel": "navigation",
                     "scope": "unit",
+                    "block_index": bi,
+                    "item_link": link,
                     "provenance": {
                         "origin": "candidate_unit_link",
                         "source_url": href,
                         "surface": surface,
                         "unit_id": uid,
                         "link_text": str(link.get("text") or "")[:120],
+                        "block_index": bi,
+                        "item_link_href": href[:400],
                     },
                 }
             )

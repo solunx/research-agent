@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from pipeline_offline import (  # noqa: E402
+    PACKAGES_DECISIONS,
     go_no_go,
     load_packages_fixture,
     run_pipeline_one,
@@ -113,6 +114,7 @@ def main() -> int:
         pr = run_pipeline_one(
             row,
             chat_fn=chat_fn,
+            decisions=PACKAGES_DECISIONS,  # explicit lab fixture (ISOLATE #16)
             require_candidate_admit=not args.skip_candidate_gate,
         )
         results.append(pr)

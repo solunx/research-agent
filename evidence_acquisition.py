@@ -34,15 +34,28 @@ ACTION_CLASSES = (
 # Substrings that must never be clicked / navigated toward (generic, multi-lingual).
 # "Prijzen & boeken" / "Prices & book" tabs are informational and must NOT match —
 # require action verbs / checkout intent, not the bare word "boeken/book".
+# Safety only (FRAMEWORK_BOUNDARY OK-fw-exc BROADEN): NL/EN + DE/FR/ES/IT.
 _IRREVERSIBLE = re.compile(
     r"("
+    # NL / EN
     r"boek\s*nu|book\s*now|reis\s*boeken|start\s*boeking|start\s*booking|"
     r"complete\s*booking|confirm\s*(payment|booking|order|purchase)|"
     r"bevestig\s*(betaling|boeking|bestelling)|"
     r"betalen|pay\s*now|checkout|place\s*order|bestelling\s*plaatsen|"
     r"koop\s*nu|buy\s*now|add\s*to\s*cart|in\s*winkelwagen|"
     r"proceed\s*to\s*(checkout|payment)|ga\s*naar\s*betalen|"
-    r"delete\s*account|verwijder\s*account|unsubscribe|afmelden"
+    r"delete\s*account|verwijder\s*account|unsubscribe|afmelden|"
+    # DE
+    r"jetzt\s*buchen|zahlungspflichtig\s*bestellen|zur\s*kasse|"
+    r"bestellung\s*abschicken|jetzt\s*bezahlen|\bkaufen\b|"
+    # FR
+    r"r[eé]server\s*maintenant|payer\s*maintenant|passer\s*commande|"
+    r"valider\s*le\s*paiement|acheter\s*maintenant|"
+    # ES
+    r"reservar\s*ahora|pagar\s*ahora|finalizar\s*compra|realizar\s*pedido|"
+    r"comprar\s*ahora|"
+    # IT
+    r"prenota\s*ora|acquista\s*ora|procedi\s*al\s*pagamento|completa\s*ordine"
     r")",
     re.I,
 )

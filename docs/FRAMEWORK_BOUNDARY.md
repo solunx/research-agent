@@ -3,7 +3,7 @@
 **Purpose:** prevent regression into domain hardcoding (travel, GPU, marketplace, …).  
 If a future change puts `board_type`, `visible_price`, `offer_state`, or similar **fixed enums** into the runtime, it violates this boundary.
 
-Last updated: 2026-08-29 (ground rules from BOUNDARY_AUDIT_FINAL MOVE/ISOLATE/BROADEN).
+Last updated: 2026-09-15 (Open #22/#23 revised after task-02 stability 9/9 SUCCESS).
 
 ---
 
@@ -173,6 +173,61 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Fix direction (code, not LLM memory):** `_merge_outcomes` keeps the strongest confirming outcome per `decision_id`. Weak labels (`UNKNOWN`, `NOT_STATED`) never overwrite a confirming value. A later *different confirming* label overwrites (newest concrete observation wins on conflict).  
 - **Provisional:** “contradiction wins” and the weak-label set are tested on the 01/02 patterns only — not locked across diverse contracts. Revisit if contracts introduce graded confidence or multi-valued decisions.  
 - (Numbered #19 to avoid collision with ground-rules **#11 claim order**.)
+- **Origin of `NOT_STATED` (2026-09-07 herkomst-check):** the current `_WEAK` set contains the literal string `"NOT_STATED"`, which comes from **LLM contract synthesis** (`board_type` outcomes on `contract_01_web_hotel_package_concrete`), **not** from framework code. `pipeline_offline.aggregate_outcome` only returns code-default `UNKNOWN`; `interpretation.py` only defines `OUTCOME_UNKNOWN`. `NOT_STATED` is therefore a **task-specific workaround**, not a locked framework primitive.  
+- **Do not promote** `OUTCOME_NOT_STATED` as a second framework sentinel (that would hardcode contract vocabulary into the runtime).  
+- **If a future task synthesizes a different absence label** (`NOT_VISIBLE`, `UNSTATED`, …), generalize: preferred direction is **option B** — *weak = any label that is not in the sufficiency-satisfying set for that `decision_id`* (contract-driven, no fixed strings). That requires `_merge_outcomes` to receive the `frozen_contract` (or the per-decision satisfying outcome set). **Do not implement until a second task actually needs it.**
+- **Same problem class — within-step aggregation (2026-09-08 / run `20260908T081349Z` task 06):** `aggregate_outcome()` used pure confidence order across candidate rows. A high-confidence absence label (`NOT_STATED`) on an irrelevant candidate could outrank a medium-confidence contract-satisfying label (`FIGURE_FOUND`) on another candidate that actually contained the evidence. Population text was present in `step_001_candidates.json` (c2) but final `population_figure` stayed `NOT_STATED`.  
+- **Fix (code, domain-free):** `aggregate_outcome(..., preferred_outcomes=decision.required_for_eligibility)`. When any row’s outcome is in the sufficiency-satisfying set for that decision, only those rows compete; confidence order applies *within* that pool. If no row is satisfying, fall back to all non-UNKNOWN rows (so pure absence still aggregates to the absence label). No hardcoded `"NOT_STATED"` string. Call site: `run_interpretation` passes `required_for_eligibility` already annotated from the frozen contract by `_decisions_from_frozen_contract`.  
+- **Relation to option B:** this is the *within-step* half of the same rule `_merge_outcomes` needs *across steps*. Both prefer “in sufficiency-satisfying set” over “not in set”, without naming absence vocabulary in framework code.
+- **Perf — skip already-satisfied decisions (2026-09-13):** once `best_outcomes[decision_id]` holds a label in that decision’s `required_for_eligibility`, later acquisition steps **do not** re-run interpret for that decision (`_decisions_pending_interpretation`). Outcomes remain visible via `best_outcomes` / step merge. **Design trade-off (accepted):** a later page that would *contradict* an earlier satisfying label is not re-checked — same family as “absence must not erase confirm”, inverted for cost. Revisit if multi-source contradiction detection becomes a requirement.
+
+### #20 — interpret cost scales with n_decisions (measured pattern, not a bug)
+
+- **Observation (2026-09-08 generality mini-batch):** wall time is dominated by **interpretation LLM calls**, not by number of sites visited. Rough pattern:
+  - ~2 decisions (travel 01/02) → ~8–16 calls/step
+  - ~5 decisions (wiki 06) → ~16–22 calls/step
+  - ~7–8 decisions (arxiv 05, coolblue 03) → ~38–50 calls/step → 5–8 min/step on local models
+- **Mechanism (pre-Fase B):** each step ran interpret over (candidates/units × decision_ids).
+- **Fase B (2026-09-14):** multi-decision batch implemented (`interpret_observation_multi` / `SYSTEM_PROMPT_MULTI`). `aggregate_outcome` unchanged.
+- **Offline oracle parity:** deterministic mock LLM — outcomes identical single vs multi; call count ≈ ÷ n_decisions.
+- **Live (2026-09-14):** task **06** OK (26→15 calls, contract satisfied); task **02 REGRESSIE** — `board_type=UNKNOWN` all steps (was `ALL_INCLUSIVE` / `CONTRACT_SATISFIED` under single). Default **reverted to `batch_decisions=False`**. Batch remains available via explicit parameter only. Root cause under investigation (candidate selection vs model attention on multi-question prompts) — separate track.
+- **Token trade-off:** larger prompt per call; fewer calls → usually lower total tokens when parity holds.
+- **Observability:** `llm_calls_total`, `n_decisions`, `llm_calls_per_decision`; traces may set `batch_decisions`.
+
+### #22 — entity-binding in aggregate_outcome (provisional; code in place)
+
+- **Evidence (offline):** `fase_d_binding_20260915T073132Z.json` (task 02 Monica detail):
+  - 1a (title+Fly&Go+reviews+**Abora**) → `board_type=ALL_INCLUSIVE` only from Abora carousel claim
+  - 1b (without Abora) → `UNKNOWN`
+  - 1c (Abora only) → `ALL_INCLUSIVE`
+  - Pre-#22 live PASS could be fail-open on cross-entity board text.
+- **Fix (code, domain-free):** track structural `subject_candidate_ref` from the claim/candidate that confirmed `subject_instance` (`candidate_id`, `block_index`, `item_link_href`, `scope`). For other decisions, `aggregate_outcome(..., require_subject_binding=True)` only accepts rows bound by same `candidate_id`, nearby `block_index` (cluster K provisional), or identical `item_link` href; otherwise **UNKNOWN** (fail-closed). Title/page_title anchors use `earliest_block_index`.
+- **Post-#22 baseline (happy path):** when subject-bound hero board text is in top candidates, task 02 stops correctly with `board_type=ALL_INCLUSIVE` — not via carousel.
+  - Example: `20260915T074757Z` and stability batch 20260915T1610–1627Z (see #23).
+- **If `board_type=UNKNOWN` after #22:** may be honest fail-closed (no subject-bound board evidence) — verify with raw `result_*.json` + **same-run** saved candidates before calling it a packaging regression.
+- **Not locked:** exact cluster K; path-segment heuristics beyond exact href equality.
+
+### #23 — hero/title board coverage on detail pages (DOWNGRADED — 2026-09-15)
+
+- **Status:** **not a confirmed gap after the #22 fix.** Do not treat “02 UNKNOWN = coverage failure” as established fact.
+- **How the earlier “coverage gap” claim arose (corrected):**
+  1. **Pre-#22 runs** where `board_type=ALL_INCLUSIVE` looked like success but could be **cross-entity false PASS** (carousel). Those mixed “missing hero in top-K” with “wrong evidence accepted.”
+  2. **Read error on run `20260915T074757Z`:** treated as UNKNOWN during Fase E; saved result was actually `CONTRACT_SATISFIED`, `board_type=ALL_INCLUSIVE`, Aparthotel in **saved** `step_000_candidates` (c0).
+  3. Some earlier artifact comparisons mixed **different runs** (page_text vs units from different captures).
+- **Stability after #22 + bi-first rank (2026-09-15):** **9/9** campaign reports for task 02 → `CONTRACT_SATISFIED`, `ok=true`. Sample greps (161312Z, 162204Z, 162745Z): outcomes `subject_instance=CONFIRMED`, `detail_link=VALID_DETAIL_PAGE`, `board_type=ALL_INCLUSIVE`; Aparthotel in saved candidates **True**; `acquisition_steps=0`. Duration ~41–99s; `llm_calls_total` 5–8 (~1.7–2.7 per decision).
+- **What remains possible (not measured as a bug):** occasional layout/carousel captures where hero is absent from top-K and binding correctly leaves UNKNOWN. Residual risk only.
+- **Re-open rule:** only reopen as an active defect with a **new** live 02 trace where:
+  - `stop_reason` / `outcomes` are grepped from the **raw** `result_*.json` of **that** run, and
+  - **saved** `step_000_candidate_units.json` / `step_000_candidates.json` of **the same run** lack subject hero board text.
+- **Not in scope:** no gate change, no rank change — not justified by post-#22 stability data.
+- **Process:** any future “regression” claim starts with a two-line raw result grep before a diagnosis round.
+
+### #21 — search-field preference (hypothesis only — do not implement yet)
+
+
+- **Symptom:** non-travel open-domain tasks (arxiv 05, coolblue 03) navigated via category/menu links and under-used or failed on visible search controls (`Zoeken` timeout on coolblue).
+- **Hypothesis:** “prefer using an observed search field when the task names a specific entity and a search control is in affordances” is a **domain-free** planner bias — but unmeasured beyond n=2 failures.
+- **Rule:** document only. Collect more data (tasks 04, 08) before any acquisition-policy change. No site-specific search selectors.
 
 ---
 

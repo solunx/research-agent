@@ -111,8 +111,40 @@ Rules:
    {"outcome": "<one of allowed outcomes>", "confidence": "high"|"medium"|"low", "reason": "<short>", "source_text": "<echo input>"}
 3. outcome MUST be one of the allowed outcomes list (including UNKNOWN).
 4. Prefer UNKNOWN over guessing when the text is ambiguous or only related, not equivalent.
-5. Use the definitions: e.g. occupancy labels (single room) are NOT the same as meal-plan ROOM_ONLY.
+5. Use ONLY the definitions supplied with this decision; do not equate labels that the
+   definitions treat as distinct categories.
 6. Do not use outside knowledge to invent facts not supported by the snippet.
+"""
+
+# Multi-decision batch (Fase B): one observation → outcomes for ALL decisions
+# in a single LLM call. Same fail-closed rules; response is a map by decision id.
+SYSTEM_PROMPT_MULTI = """You are a semantic interpretation coprocessor for a research agent.
+
+You receive:
+- several decisions from a frozen research contract (each: id, question, allowed outcomes, definitions)
+- one raw observation string (website text snippet)
+
+Your job: for EACH decision independently, decide whether the observation is evidence
+for EXACTLY ONE of that decision's allowed outcomes.
+
+Rules:
+1. Output EXACTLY one JSON object. No markdown fences, no commentary outside JSON.
+2. Schema:
+   {"outcomes": {
+      "<decision_id>": {"outcome": "<one of that decision's allowed outcomes>",
+                        "confidence": "high"|"medium"|"low",
+                        "reason": "<short>"},
+      ...
+   }}
+3. Include an entry for EVERY decision id supplied. Do not omit keys.
+4. For each decision, outcome MUST be one of that decision's allowed outcomes list
+   (including UNKNOWN if listed or when evidence is insufficient).
+5. Prefer UNKNOWN over guessing when the text is ambiguous or only related, not equivalent.
+6. Use ONLY the definitions supplied with each decision; do not equate labels that the
+   definitions treat as distinct categories.
+7. Do not use outside knowledge to invent facts not supported by the snippet.
+8. Evaluate each decision independently — evidence for one decision does not force
+   an outcome on another.
 """
 
 
@@ -147,6 +179,39 @@ def build_user_prompt(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+def build_user_prompt_multi(
+    decisions: list[dict[str, Any]],
+    source_text: str,
+    page_context: dict[str, Any] | None = None,
+) -> str:
+    """
+    Build user payload for one observation × many decisions (Fase B).
+
+    Same observation / page_context shape as build_user_prompt; decisions is a
+    list of full decision objects (id, question, outcomes, definitions, notes).
+    """
+    observation: dict[str, Any] = {"source_text": source_text}
+    if page_context:
+        for key in ("page_url", "surface", "same_entity_path"):
+            if key in page_context and page_context[key] is not None:
+                observation[key] = page_context[key]
+    payload = {
+        "decisions": [
+            {
+                "id": d.get("id"),
+                "question": d.get("question"),
+                "outcomes": d.get("outcomes"),
+                "definitions": d.get("definitions") or {},
+                "notes": d.get("notes") or [],
+            }
+            for d in decisions
+            if isinstance(d, dict) and d.get("id")
+        ],
+        "observation": observation,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
 def _extract_json(text: str) -> dict[str, Any]:
     text = (text or "").strip()
     if text.startswith("```"):
@@ -173,7 +238,18 @@ def interpret_observation(
     page_context: optional structural dict (page_url, surface, same_entity_path)
     forwarded into the user prompt so page-identity decisions can ground on URL.
     """
-    decision = contract_decision or BOARD_TYPE_CONTRACT["decision"]
+    # ISOLATE #17 / FRAMEWORK_BOUNDARY: no silent BOARD_TYPE_CONTRACT fallback
+    # on the production path. Lab scripts must pass contract_decision explicitly
+    # (or allow_lab_default=True).
+    if contract_decision is None:
+        return InterpretationResult(
+            source_text=source_text,
+            outcome=OUTCOME_UNKNOWN,
+            confidence="low",
+            reason="no contract_decision; fail-closed UNKNOWN (lab default disabled)",
+            source="heuristic_stub",
+        )
+    decision = contract_decision
     outcomes = [str(o) for o in (decision.get("outcomes") or [])]
     if OUTCOME_UNKNOWN not in outcomes:
         outcomes = list(outcomes) + [OUTCOME_UNKNOWN]
@@ -228,6 +304,118 @@ def interpret_observation(
             source="error",
             raw_response="",
         )
+
+
+def interpret_observation_multi(
+    source_text: str,
+    *,
+    decisions: list[dict[str, Any]],
+    chat_fn: ChatFn | None = None,
+    page_context: dict[str, Any] | None = None,
+) -> dict[str, InterpretationResult]:
+    """
+    Map one raw text → outcomes for ALL decisions in a single LLM call (Fase B).
+
+    Returns {decision_id: InterpretationResult}. Missing / invalid entries
+    fail-closed to UNKNOWN. Without chat_fn: all UNKNOWN (dry-run safe).
+
+    Single-decision interpret_observation() remains for lab callers; production
+    run_interpretation uses this path by default.
+    """
+    results: dict[str, InterpretationResult] = {}
+    clean_decisions = [d for d in decisions if isinstance(d, dict) and d.get("id")]
+    if not clean_decisions:
+        return results
+
+    allowed_by_id: dict[str, list[str]] = {}
+    for d in clean_decisions:
+        did = str(d["id"])
+        outs = [str(o) for o in (d.get("outcomes") or [])]
+        if OUTCOME_UNKNOWN not in outs:
+            outs = list(outs) + [OUTCOME_UNKNOWN]
+        allowed_by_id[did] = outs
+        results[did] = InterpretationResult(
+            source_text=source_text,
+            outcome=OUTCOME_UNKNOWN,
+            confidence="low",
+            reason="pending",
+            source="heuristic_stub",
+        )
+
+    if chat_fn is None:
+        for did in results:
+            results[did] = InterpretationResult(
+                source_text=source_text,
+                outcome=OUTCOME_UNKNOWN,
+                confidence="low",
+                reason="no chat_fn; fail-closed UNKNOWN",
+                source="heuristic_stub",
+            )
+        return results
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT_MULTI},
+        {
+            "role": "user",
+            "content": build_user_prompt_multi(
+                clean_decisions, source_text, page_context=page_context
+            ),
+        },
+    ]
+    try:
+        msg = chat_fn(messages)
+        content = (msg.get("content") if isinstance(msg, dict) else str(msg)) or ""
+        data = _extract_json(content)
+        # Accept {"outcomes": {...}} or a bare map of decision_id → {...}
+        raw_map = data.get("outcomes") if isinstance(data.get("outcomes"), dict) else data
+        if not isinstance(raw_map, dict):
+            raise ValueError("multi response missing outcomes map")
+        for did, allowed in allowed_by_id.items():
+            entry = raw_map.get(did)
+            if not isinstance(entry, dict):
+                results[did] = InterpretationResult(
+                    source_text=source_text,
+                    outcome=OUTCOME_UNKNOWN,
+                    confidence="low",
+                    reason=f"missing key {did!r} in multi response",
+                    source="llm",
+                    raw_response=content[:500],
+                )
+                continue
+            outcome = str(entry.get("outcome") or OUTCOME_UNKNOWN).strip()
+            if outcome not in allowed:
+                results[did] = InterpretationResult(
+                    source_text=source_text,
+                    outcome=OUTCOME_UNKNOWN,
+                    confidence="low",
+                    reason=f"model returned non-enum outcome {outcome!r} for {did}",
+                    source="llm",
+                    raw_response=content[:500],
+                )
+                continue
+            conf = str(entry.get("confidence") or "low").lower()
+            if conf not in VALID_CONFIDENCE:
+                conf = "low"
+            results[did] = InterpretationResult(
+                source_text=source_text,
+                outcome=outcome,
+                confidence=conf,
+                reason=str(entry.get("reason") or "")[:300],
+                source="llm",
+                raw_response=content[:500],
+            )
+        return results
+    except Exception as e:
+        for did in allowed_by_id:
+            results[did] = InterpretationResult(
+                source_text=source_text,
+                outcome=OUTCOME_UNKNOWN,
+                confidence="low",
+                reason=f"multi interpretation error: {type(e).__name__}: {e}",
+                source="error",
+                raw_response="",
+            )
+        return results
 
 
 # ---------------------------------------------------------------------------

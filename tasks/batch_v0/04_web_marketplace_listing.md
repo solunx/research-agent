@@ -9,6 +9,10 @@ Find **one second-hand listing** for a **RTX 3080** or **RTX 3090** on a public 
 
 Do not contact the seller or complete a purchase.
 
+# Suggested start
+
+https://www.2dehands.be/
+
 # Output
 
 - Title, price, URL, location, short evidence notes

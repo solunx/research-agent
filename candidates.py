@@ -366,6 +366,7 @@ def candidates_to_observations(
                 "currency_glyph_count": c.currency_glyph_count,
                 "digit_run_count": c.digit_run_count,
                 "source": c.packager_source or "candidate",
+                "block_index": c.block_index,
             }
         )
     return units_to_observations(

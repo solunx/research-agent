@@ -154,7 +154,12 @@ def trace_one(
         a_status = str(orec["site_status"])
 
     stage_d = stage_d_observation(row)
-    pr = run_pipeline_one(row, chat_fn=chat_fn, task_text=PACKAGES_TASK_TEXT)
+    pr = run_pipeline_one(
+        row,
+        chat_fn=chat_fn,
+        task_text=PACKAGES_TASK_TEXT,
+        decisions=PACKAGES_DECISIONS,  # explicit lab fixture (ISOLATE #16)
+    )
     pr_d = pr.to_dict()
     outcomes = {}
     if pr.interpretation_stage:

@@ -244,6 +244,56 @@ def _merge_outcomes(
     return best
 
 
+def _decision_is_satisfied(
+    decision: dict[str, Any],
+    best_outcomes: dict[str, dict[str, Any]],
+) -> bool:
+    """
+    True when best_outcomes already holds a contract-satisfying label for
+    this decision (required_for_eligibility from frozen-contract sufficiency).
+
+    Domain-free: preferred set is data on the decision object, not hardcoded
+    outcome strings. If required_for_eligibility is empty, never treat as
+    satisfied here (must keep interpreting until gaps/sufficiency say stop).
+    """
+    did = str(decision.get("id") or "")
+    if not did:
+        return False
+    preferred = {
+        str(x)
+        for x in (decision.get("required_for_eligibility") or [])
+        if x and str(x) not in ("UNKNOWN", "NOT_STATED", "")
+    }
+    if not preferred:
+        return False
+    cur = best_outcomes.get(did) or {}
+    outcome = str(cur.get("outcome") or "")
+    return outcome in preferred
+
+
+def _decisions_pending_interpretation(
+    decisions: list[dict[str, Any]],
+    best_outcomes: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """
+    Split decisions into those still needing interpret vs already satisfied.
+
+    Perf (Fase A): skip re-interpreting decision_ids that already have a
+    sufficiency-satisfying outcome in best_outcomes. Trade-off: a later page
+    that would *contradict* that label is not re-checked (documented Open #19).
+    """
+    pending: list[dict[str, Any]] = []
+    skipped: list[str] = []
+    for d in decisions:
+        did = str(d.get("id") or "")
+        if _decision_is_satisfied(d, best_outcomes):
+            if did:
+                skipped.append(did)
+            continue
+        pending.append(d)
+    return pending, skipped
+
+
 def run_acquisition_loop(
     *,
     entity: str,
@@ -261,6 +311,8 @@ def run_acquisition_loop(
     force_click_texts: list[str] | None = None,
     ledger: RunLedger | None = None,
     trace: TraceSession | None = None,
+    # ISOLATE #16: PACKAGES_DECISIONS only when explicitly opted in
+    allow_lab_fixture: bool = False,
 ) -> dict[str, Any]:
     """
     backend must be playwright for multi-step (session preserved).
@@ -271,12 +323,22 @@ def run_acquisition_loop(
     When frozen_contract is set (production path):
       decisions come from the contract; STOP is decided by sufficiency_stop (code),
       not by match_status or shortlist length.
-    When frozen_contract is None: lab fixture PACKAGES_DECISIONS (experiment only).
+    When frozen_contract is None: require explicit decisions=... or
+      allow_lab_fixture=True (PACKAGES_DECISIONS). Silent fallback removed (ISOLATE #16).
     """
     if frozen_contract is not None:
         decisions = _decisions_from_frozen_contract(frozen_contract)
+    elif decisions is not None:
+        pass  # caller-supplied decisions (explicit)
+    elif allow_lab_fixture:
+        decisions = PACKAGES_DECISIONS
     else:
-        decisions = decisions or PACKAGES_DECISIONS
+        raise RuntimeError(
+            "run_acquisition_loop: frozen_contract is None and no decisions supplied. "
+            "Pass frozen_contract=... (production) or decisions=... / "
+            "allow_lab_fixture=True (lab only). "
+            "Silent PACKAGES_DECISIONS fallback is disabled (FRAMEWORK_BOUNDARY ISOLATE)."
+        )
     ledger = ledger or RunLedger(
         task_text=task_text,
         run_kind="live_offer_state_slice",
@@ -503,17 +565,45 @@ def run_acquisition_loop(
 
         import time as _time
 
-        t_interp0 = _time.monotonic()
-        pipe = _pipeline_on_obs(
-            entity=entity,
-            obs=obs,
-            chat_fn=chat_fn,
-            task_text=task_text,
-            decisions=decisions,
-            # Contract path: interpret whenever claims exist (CU is ranking only)
-            interpret_even_if_not_admitted=True,
+        # Fase A: do not re-interpret decisions already confirmed to a
+        # contract-satisfying outcome in best_outcomes (Open #19 perf).
+        pending_decisions, skipped_satisfied = _decisions_pending_interpretation(
+            decisions, best_outcomes
         )
+        t_interp0 = _time.monotonic()
+        if pending_decisions:
+            pipe = _pipeline_on_obs(
+                entity=entity,
+                obs=obs,
+                chat_fn=chat_fn,
+                task_text=task_text,
+                decisions=pending_decisions,
+                # Contract path: interpret whenever claims exist (CU is ranking only)
+                interpret_even_if_not_admitted=True,
+            )
+        else:
+            # All decisions already satisfied — no interpret LLM calls this step.
+            pipe = {
+                "candidate_unit": {"decision": "SKIPPED_ALL_SATISFIED", "llm_calls": 0},
+                "outcomes": {},
+                "eligibility": {"eligible": True, "details": []},
+                "eligible": True,
+                "interpretation": {"llm_calls": 0, "outcomes": {}, "decision_traces": {}},
+                "interpreted": False,
+                "claim_n": sum(1 for o in obs if o.get("channel") == "candidate_claim"),
+                "skipped_interpretation_reason": "all_decisions_already_satisfied",
+            }
         interp_duration = round(_time.monotonic() - t_interp0, 3)
+        # Re-attach already-satisfied outcomes so this step's view is complete
+        # (correctness: final merge still uses best_outcomes; this is for logs).
+        step_outcomes = dict(pipe.get("outcomes") or {})
+        for did in skipped_satisfied:
+            held = best_outcomes.get(did) or {}
+            if held.get("outcome") is not None:
+                step_outcomes[did] = str(held["outcome"])
+        pipe = dict(pipe)
+        pipe["outcomes"] = step_outcomes
+        pipe["skipped_satisfied_decisions"] = list(skipped_satisfied)
         last_pipe = pipe
         best_outcomes = _merge_outcomes(
             best_outcomes, pipe.get("outcomes") or {}, step
@@ -600,7 +690,8 @@ def run_acquisition_loop(
             f"llm_calls={llm_calls_step} interp_s={interp_duration} "
             f"surface={surface} prov_blocked={prov_blocked} "
             f"blocked_n={len(blocked_action_keys)} "
-            f"cands={len(selected)} units={len(units)} item_links={len(preferred_links)}",
+            f"cands={len(selected)} units={len(units)} item_links={len(preferred_links)} "
+            f"skip_satisfied={skipped_satisfied or []}",
             flush=True,
         )
 
@@ -941,10 +1032,31 @@ def run_acquisition_loop(
         "sufficiency": final_suf,
     }
 
+    # Cost scaling metric (2026-09-08): interpret cost grows ~linear with
+    # number of contract decisions × candidates/units per step. Surface this
+    # without changing behaviour — early warning for complex contracts.
+    total_llm = sum(int(s.get("interp_llm_calls") or 0) for s in steps_log)
+    total_interp_s = sum(float(s.get("interp_duration_s") or 0) for s in steps_log)
+    n_decisions = 0
+    if frozen_contract is not None:
+        n_decisions = len(
+            [
+                d
+                for d in (frozen_contract.get("decisions") or [])
+                if isinstance(d, dict) and d.get("id")
+            ]
+        )
+    llm_calls_per_decision: float | None = None
+    if n_decisions > 0 and total_llm > 0:
+        llm_calls_per_decision = round(total_llm / n_decisions, 2)
+
+    ledger.metrics["llm_calls_total"] = total_llm
+    ledger.metrics["n_decisions"] = n_decisions
+    ledger.metrics["llm_calls_per_decision"] = llm_calls_per_decision
+    ledger.metrics["interpret_duration_s"] = round(total_interp_s, 3)
+
     trace_info: dict[str, Any] | None = None
     if trace:
-        total_llm = sum(int(s.get("interp_llm_calls") or 0) for s in steps_log)
-        total_interp_s = sum(float(s.get("interp_duration_s") or 0) for s in steps_log)
         phase_durations = {
             "interpret_llm_s": round(total_interp_s, 3),
             "wall_total_s": round(trace.duration_s(), 3),
@@ -952,8 +1064,13 @@ def run_acquisition_loop(
         trace.log_timing_summary(
             phase_durations,
             llm_calls_total=total_llm,
+            n_decisions=n_decisions,
+            llm_calls_per_decision=llm_calls_per_decision,
             acquisition_steps=acquisition_steps,
-            note="interpret_llm_s is the dominant cost on local models; browser is typically <15s/step",
+            note=(
+                "interpret_llm_s dominates on local models; cost scales with "
+                "n_decisions × candidates/units per step (see LEARNING_LOG 2026-09-08)"
+            ),
         )
         trace_info = trace.finalize(
             {
@@ -967,6 +1084,8 @@ def run_acquisition_loop(
                 "acquisition_steps": acquisition_steps,
                 "final_url": final_url,
                 "llm_calls_total": total_llm,
+                "n_decisions": n_decisions,
+                "llm_calls_per_decision": llm_calls_per_decision,
                 "interpret_duration_s": round(total_interp_s, 3),
                 "has_frozen_contract": frozen_contract is not None,
             }
@@ -996,6 +1115,10 @@ def run_acquisition_loop(
         "final_url": final_url,
         "candidate_unit": last_pipe.get("candidate_unit"),
         "has_frozen_contract": frozen_contract is not None,
+        "llm_calls_total": total_llm,
+        "n_decisions": n_decisions,
+        "llm_calls_per_decision": llm_calls_per_decision,
+        "interpret_duration_s": round(total_interp_s, 3),
         "ledger": ledger.to_dict(),
         "trace_dir": str(trace.root) if trace else None,
         "trace": trace_info,
@@ -1065,6 +1188,8 @@ def run_acquisition_batch(
             frozen_contract=fc,
             ledger=ledger,
             trace=trace,
+            # Lab campaign may omit frozen_contract; explicit opt-in (ISOLATE #16)
+            allow_lab_fixture=(fc is None),
         )
         r["has_frozen_contract"] = fc is not None
         results.append(r)

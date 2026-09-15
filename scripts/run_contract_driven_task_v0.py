@@ -237,12 +237,19 @@ def run_one(
         "acquisition_steps": loop_result.get("acquisition_steps"),
         "final_url": loop_result.get("final_url"),
         "fault_localization": loop_result.get("fault_localization"),
+        # Cost scaling (observability only — no behaviour change)
+        "llm_calls_total": loop_result.get("llm_calls_total"),
+        "n_decisions": loop_result.get("n_decisions")
+        or len(contract_meta.get("decision_ids") or []),
+        "llm_calls_per_decision": loop_result.get("llm_calls_per_decision"),
+        "interpret_duration_s": loop_result.get("interpret_duration_s"),
         "steps_contract_flags": [
             {
                 "step": s.get("step"),
                 "contract_satisfied": s.get("contract_satisfied"),
                 "gaps_n": len(s.get("gaps") or []),
                 "outcomes": s.get("outcomes"),
+                "interp_llm_calls": s.get("interp_llm_calls"),
             }
             for s in (loop_result.get("steps") or [])
         ],
@@ -267,6 +274,9 @@ def run_one(
         f"  steps={loop_result.get('acquisition_steps')}\n"
         f"  outcomes={loop_result.get('outcomes')}\n"
         f"  duration_s={duration}\n"
+        f"  llm_calls_total={summary.get('llm_calls_total')} "
+        f"n_decisions={summary.get('n_decisions')} "
+        f"llm_calls_per_decision={summary.get('llm_calls_per_decision')}\n"
         f"  wrote {job_dir / out_name}",
         flush=True,
     )
@@ -374,6 +384,10 @@ def main() -> int:
                     "ok": summary.get("ok"),
                     "duration_s": summary.get("duration_s"),
                     "contract_path": summary.get("contract_path"),
+                    "llm_calls_total": summary.get("llm_calls_total"),
+                    "n_decisions": summary.get("n_decisions"),
+                    "llm_calls_per_decision": summary.get("llm_calls_per_decision"),
+                    "interpret_duration_s": summary.get("interpret_duration_s"),
                 }
             )
             if not summary.get("ok"):
@@ -395,7 +409,10 @@ def main() -> int:
     for r in campaign["results"]:
         print(
             f"  {r.get('task_id')}: satisfied={r.get('contract_satisfied')} "
-            f"stop={r.get('stop_reason')} ok={r.get('ok')}"
+            f"stop={r.get('stop_reason')} ok={r.get('ok')} "
+            f"llm={r.get('llm_calls_total')} "
+            f"n_dec={r.get('n_decisions')} "
+            f"calls/dec={r.get('llm_calls_per_decision')}"
         )
     return rc
 
