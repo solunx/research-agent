@@ -225,9 +225,18 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Mechanism (pre-Fase B):** each step ran interpret over (candidates/units × decision_ids).
 - **Fase B (2026-09-14):** multi-decision batch implemented (`interpret_observation_multi` / `SYSTEM_PROMPT_MULTI`). `aggregate_outcome` unchanged.
 - **Offline oracle parity:** deterministic mock LLM — outcomes identical single vs multi; call count ≈ ÷ n_decisions.
-- **Live (2026-09-14):** task **06** OK (26→15 calls, contract satisfied); task **02 REGRESSIE** — `board_type=UNKNOWN` all steps (was `ALL_INCLUSIVE` / `CONTRACT_SATISFIED` under single). Default **reverted to `batch_decisions=False`**. Batch remains available via explicit parameter only. Root cause under investigation (candidate selection vs model attention on multi-question prompts) — separate track.
+- **Live (2026-09-14):** task **06** OK (26→15 calls, contract satisfied); task **02 REGRESSIE** — `board_type=UNKNOWN` all steps (was `ALL_INCLUSIVE` / `CONTRACT_SATISFIED` under single). Default **reverted to `batch_decisions=False`**. Batch remains available via explicit parameter only. Root cause was later reclassified (see retest 2026-09-16 + Open #22).
+- **Retest post-#22 (2026-09-16, `--batch-decisions`, default still False):**
+  - **02 ×5:** all `stop_reason=CONTRACT_SATISFIED`, `contract_satisfied=true`, `board_type=ALL_INCLUSIVE`; `llm_calls_total=3` each (single baseline same day: **6**). Runs: `20260916T062828Z`, `…T063117Z`, `…T063301Z`, `…T063406Z`, `…T063503Z`.
+  - **06 ×3:** all `CONTRACT_SATISFIED`, `population_figure=FIGURE_FOUND`; `llm_calls_total=15` each. Runs: `20260916T063703Z`, `…T064138Z`, `…T064738Z`.
+  - **01 ×1:** `MAX_ACQUISITION_STEPS`, `contract_satisfied=false` (gaps `price_scope=NO_PRICE`, `party_size=NOT_SPECIFIED` — same class as single-decision 01, not a batch correctness regression); `llm_calls_total=34` vs prior single ~**137** (`20260914T124822Z`). Run: `20260916T065415Z`.
+- **Definitive verdict (2026-09-16, Fase B closed):** hypothesis supported — 2026-09-14 task-02 batch failure aligned with pre-#22 fail-open/coverage confusion, not inherent multi-decision model failure on this stack.
+  - **Default remains `batch_decisions=False`** (explicit `--batch-decisions` required).
+  - **Opt-in recommended when `n_decisions >= 4`** for lower interpret cost (log tip only in `run_contract_driven_task_v0.py` — never auto-enabled).
+  - Confirmed live: **02** (3 decisions, control) batch 5/5 correct at 3 calls vs single 6; **06** (5 decisions) batch 3/3 correct at 15 calls; **01** (10 decisions) batch still unsatisfied on price/party gaps (not a batch regression) at **34** calls vs single ~**137**.
+  - Not a global default: more non-travel + longer-horizon parity still desirable before any policy stronger than a tip.
 - **Token trade-off:** larger prompt per call; fewer calls → usually lower total tokens when parity holds.
-- **Observability:** `llm_calls_total`, `n_decisions`, `llm_calls_per_decision`; traces may set `batch_decisions`.
+- **Observability:** `llm_calls_total`, `n_decisions`, `llm_calls_per_decision`; traces may set `batch_decisions`; CLI logs `batch_decisions=True|False` and, when `n_decisions >= 4` and batch is off, a non-binding Tip line pointing at this open item.
 
 ### #22 — entity-binding in aggregate_outcome (provisional; code in place)
 
@@ -239,6 +248,7 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Fix (code, domain-free):** track structural `subject_candidate_ref` from the claim/candidate that confirmed `subject_instance` (`candidate_id`, `block_index`, `item_link_href`, `scope`). For other decisions, `aggregate_outcome(..., require_subject_binding=True)` only accepts rows bound by same `candidate_id`, nearby `block_index` (cluster K provisional), or identical `item_link` href; otherwise **UNKNOWN** (fail-closed). Title/page_title anchors use `earliest_block_index`.
 - **Post-#22 baseline (happy path):** when subject-bound hero board text is in top candidates, task 02 stops correctly with `board_type=ALL_INCLUSIVE` — not via carousel.
   - Example: `20260915T074757Z` and stability batch 20260915T1610–1627Z (see #23).
+- **Interaction with Fase B (2026-09-16):** after #22, live `--batch-decisions` on task 02 was **5/5** `CONTRACT_SATISFIED` / `board_type=ALL_INCLUSIVE` (see Open #20 retest). Supports treating the earlier batch “02 UNKNOWN” episode as pre-binding / diagnosis noise, not permanent multi-decision incompatibility.
 - **If `board_type=UNKNOWN` after #22:** may be honest fail-closed (no subject-bound board evidence) — verify with raw `result_*.json` + **same-run** saved candidates before calling it a packaging regression.
 - **Not locked:** exact cluster K; path-segment heuristics beyond exact href equality.
 

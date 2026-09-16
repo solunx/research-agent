@@ -155,6 +155,7 @@ def run_one(
     use_llm: bool,
     start_url_override: str | None,
     max_steps: int,
+    batch_decisions: bool = False,
 ) -> dict[str, Any]:
     task_id = task_path.stem
     task_text = load_task_text(task_path)
@@ -190,9 +191,19 @@ def run_one(
         f"  frozen={contract_meta['contract_frozen']}\n"
         f"  decisions={contract_meta['decision_ids']}\n"
         f"  required={contract_meta['sufficiency_required']}\n"
-        f"  start_url={start_url}",
+        f"  start_url={start_url}\n"
+        f"  batch_decisions={bool(batch_decisions)}",
         flush=True,
     )
+    # Open #20: recommend (never auto-enable) batch when many decisions
+    n_dec = len(contract_meta["decision_ids"] or [])
+    if n_dec >= 4 and not batch_decisions:
+        print(
+            f"  Tip: dit contract heeft {n_dec} decisions — overweeg "
+            f"--batch-decisions voor lagere kosten "
+            f"(zie FRAMEWORK_BOUNDARY Open #20)",
+            flush=True,
+        )
 
     if not start_url:
         result = {
@@ -235,6 +246,7 @@ def run_one(
         force_click_texts=None,
         ledger=ledger,
         trace=trace,
+        batch_decisions=bool(batch_decisions),
     )
     duration = round(time.monotonic() - t0, 2)
 
@@ -326,6 +338,15 @@ def main() -> int:
     ap.add_argument("--outdir", type=Path, default=ROOT / "evals" / "contract_driven")
     ap.add_argument("--llm", action="store_true")
     ap.add_argument("--max-steps", type=int, default=3)
+    ap.add_argument(
+        "--batch-decisions",
+        action="store_true",
+        default=False,
+        help=(
+            "Fase B opt-in: one LLM call per claim for all pending decisions "
+            "(default off — single-decision path). Does not change production default."
+        ),
+    )
     args = ap.parse_args()
 
     outdir = args.outdir
@@ -429,6 +450,7 @@ def main() -> int:
                 use_llm=bool(args.llm),
                 start_url_override=args.start_url or None,
                 max_steps=args.max_steps,
+                batch_decisions=bool(args.batch_decisions),
             )
             campaign["results"].append(
                 {
