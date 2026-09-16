@@ -61,6 +61,13 @@ def run_job(
     job_outdir.mkdir(parents=True, exist_ok=True)
     log_path = job_outdir / f"job_{task_path.stem}.log"
     if legacy_agent:
+        # P0.3 — cannot miss during execution (not only in --help)
+        print(
+            f"[LEGACY PATH] Using deprecated agent.py for {task_path.name} "
+            "(not contract-driven; results are not comparable to CD baselines). "
+            "Canonical path: scripts/run_contract_driven_task_v0.py",
+            flush=True,
+        )
         cmd = [
             sys.executable,
             str(ROOT / "agent.py"),

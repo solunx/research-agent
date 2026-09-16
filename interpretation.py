@@ -238,15 +238,19 @@ def interpret_observation(
     page_context: optional structural dict (page_url, surface, same_entity_path)
     forwarded into the user prompt so page-identity decisions can ground on URL.
     """
-    # ISOLATE #17 / FRAMEWORK_BOUNDARY: no silent BOARD_TYPE_CONTRACT fallback
-    # on the production path. Lab scripts must pass contract_decision explicitly
-    # (or allow_lab_default=True).
+    # ISOLATE #17 / FRAMEWORK_BOUNDARY P0.2: no silent BOARD_TYPE_CONTRACT
+    # fallback. Production must pass contract_decision from the frozen contract.
+    # Lab scripts (e.g. run_interpretation_v0.py) pass an explicit decision dict
+    # — never rely on BOARD_TYPE_CONTRACT as an implicit default here.
     if contract_decision is None:
         return InterpretationResult(
             source_text=source_text,
             outcome=OUTCOME_UNKNOWN,
             confidence="low",
-            reason="no contract_decision; fail-closed UNKNOWN (lab default disabled)",
+            reason=(
+                "no contract_decision; fail-closed UNKNOWN "
+                "(BOARD_TYPE_CONTRACT silent fallback disabled — P0.2)"
+            ),
             source="heuristic_stub",
         )
     decision = contract_decision
