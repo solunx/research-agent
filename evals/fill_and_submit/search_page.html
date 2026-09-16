@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Test Search Page</title>
+</head>
+<body>
+  <h1>Literature Search</h1>
+  <form action="#" method="get" id="search-form" onsubmit="
+    event.preventDefault();
+    var q = document.getElementById('query').value;
+    document.getElementById('results').textContent = 'RESULTS_FOR:' + q;
+    return false;
+  ">
+    <label for="query">Search</label>
+    <input id="query" name="query" type="search" placeholder="Search papers..." aria-label="Search papers"/>
+    <button type="submit">Search</button>
+  </form>
+  <div id="results">No results yet</div>
+</body>
+</html>

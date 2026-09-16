@@ -22,6 +22,18 @@ See `FRAMEWORK_BOUNDARY.md` § Architecture freeze (P0).
 
 ---
 
+## 2026-09-16 — Fase B retest post-#22 (`--batch-decisions`)
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| 2026-09-14 task-02 batch UNKNOWN was entity-binding, not multi-decision model failure | **02 ×5** batch: all `CONTRACT_SATISFIED`, `board_type=ALL_INCLUSIVE`, `llm_calls_total=3` (single same-day: 6). **06 ×3** batch: all satisfied, `FIGURE_FOUND`, calls=15. **01 ×1** batch: still unsatisfied (`NO_PRICE` / `NOT_SPECIFIED`) but calls **34** vs ~137 single | Hypothese **supported**. Batch remains **opt-in** (`--batch-decisions`); not global default. Documented under Open #20 + #22 |
+| Batch cuts cost on heavy contracts | 01: 34 vs ~137 LLM calls at max_steps=4 | Keep measuring; acquisition gaps (price/party) still dominate 01 success, not interpret mode |
+
+Raw runs: `20260916T062828Z`…`T063503Z` (02), `T063703Z`…`T064738Z` (06), `T065415Z` (01).
+
+---
+
+
 ## 2026-08-28 — Contract-driven 01+02 (execution layer)
 
 | Hypothesis | Result | Decision |
@@ -1539,3 +1551,47 @@ Spot-check outcomes (161312Z, 162204Z, 162745Z + loop 162617/162703/162745):
 
 ### Process rule locked
 Any future regression claim: grep `stop_reason` / `outcomes` from raw `result_*.json` **before** a diagnosis round.
+
+## 2026-09-16 — Fase G: search strategy (input_field + FILL_AND_SUBMIT)
+
+### Diagnosis (pre-implement)
+Tasks **03** (Coolblue) and **05** (arXiv) failed post-#22 with `MAX_ACQUISITION_STEPS` while search controls were visible. Root cause was **not** entity-binding:
+
+| Path | Status pre-G |
+|------|----------------|
+| Affordance collection (`browser_list_affordances`) | Text-like `<input>` / `<textarea>` **never** queried — only submit/button inputs + labels for checkbox/radio |
+| Candidates / page_text | `body` inner_text; placeholders not systematically extracted |
+| Action enum | No TYPE/FILL — only OPEN_URL, CLICK_TEXT, … |
+| LLM behaviour | Chose "Zoeken"/Search via CLICK_TEXT; could not type a query |
+
+Conclusion: **capability gap** (inputs invisible + no fill action), not a binding regression.
+
+### Implementation (structural, no lexicon)
+1. **`input_field` affordance** (`browser.py`): DOM query for text-like inputs/textarea; metadata `tag`, `type`, `name`, `id`, `placeholder`, `aria_label`. Bucket after buttons, before links.
+2. **`FILL_AND_SUBMIT`** (`evidence_acquisition.py`): closed action class. **`query_text` is free LLM text** in the action proposal schema — code never auto-copies from contract gaps. Locator built only from observed structural metadata (id/name/placeholder).
+3. **Anti-loop:** `action_fingerprint` includes `(target_id|name, query_text)` so the same query on the same field is blocked after one no-progress attempt; a **refined** query remains allowed.
+4. Offline tests: `evals/fill_and_submit/test_fill_offline_v0.py` (+ local HTML fixture) — decide, fingerprint, filter metadata, Playwright fill — all green in Docker.
+
+### Live proof (task 05, frozen contract `20260916T165744Z`)
+Run `20260916T170647Z`:
+
+| Step | Action | Evidence |
+|------|--------|----------|
+| 0 | CLICK_TEXT `Search` | Homepage → search UI |
+| 1 | **FILL_AND_SUBMIT** | `query_text="large language model agents tool use 2024"`, `target_id=arxiv-search-input` |
+| 2 | Observe | `final_url=…/search/?query=large+language+model+agents+tool+use+2024…`, **232 results**, surface=`list_results` |
+
+Letterlijke query uit trace; anti-repeat key blocked after one use. **Fase G search gap is closed on arXiv.**
+
+### What did *not* close (next bottleneck — not Fase G scope)
+After results loaded, LLM proposed `OPEN_URL` → `https://arxiv.org/abs/2601.14696` (from unit text). Code correctly rejected: **`href_not_in_affordances`**. Affordances on the list page include short labels (`arXiv:2608.06909`, `pdf`, author names) but not the full abs hrefs the planner invented. Interpretation on list surface still left `title/claim/url=NOT_VISIBLE`. Stop: `MAX_ACQUISITION_STEPS`, `contract_satisfied=false`.
+
+That is a **list→detail navigation / affordance coverage** issue (and list interpret binding), separate from typing a query.
+
+### Task 03 note
+Coolblue click-robustness (`text=Zoeken` timeout) remains a **separate** problem: it sits *before* the search field is reliably reachable. FILL_AND_SUBMIT does not fix fragile CLICK_TEXT locators.
+
+### Explicit non-actions this slice
+- No planner hard-bias “always prefer search” (Open #21 preference hypothesis not required once capability exists — LLM chose FILL unaided on 05)
+- No Coolblue-specific selectors
+- No list-results OPEN_URL relaxation without a structural affordance fix

@@ -26,6 +26,7 @@ ACTION_CLASSES = (
     "OPEN_URL",  # navigate to an observed href
     "CLICK_TEXT",  # click control whose visible text was observed
     "CLICK_SELECTOR",  # rare: only if affordance also supplied a safe structural hint
+    "FILL_AND_SUBMIT",  # fill observed input_field with LLM-chosen query text + Enter
     "SCROLL",  # reveal lazy content
     "WAIT",  # let dynamic UI settle
     "OPEN_FILE",  # future: path observed in FS observer (not implemented in browser)
@@ -184,23 +185,35 @@ def filter_safe_affordances(
         if not is_pref and tl and pref_texts:
             # soft substring match on preferred labels
             is_pref = any(tl in p or p in tl for p in pref_texts if len(p) >= 4)
-        safe.append(
-            {
-                "kind": a.get("kind"),
-                "text": text[:120],
-                "href": href[:300],
-                "role": a.get("role") or "",
-                "scope": scope,
-                "preferred_item": is_pref,
-            }
-        )
+        item = {
+            "kind": a.get("kind"),
+            "text": text[:120],
+            "href": href[:300],
+            "role": a.get("role") or "",
+            "scope": scope,
+            "preferred_item": is_pref,
+        }
+        # Pass through structural metadata for input_field (locator building)
+        if str(a.get("kind") or "") == "input_field":
+            for k in ("tag", "type", "name", "id", "placeholder", "aria_label"):
+                if a.get(k):
+                    item[k] = str(a.get(k))[:120]
+        safe.append(item)
 
     def _rank(item: dict[str, Any]) -> tuple[int, int, int]:
         kind = str(item.get("kind") or "")
         scope = str(item.get("scope") or "unknown")
         # lower = better
         pref_rank = 0 if item.get("preferred_item") else 1
-        kind_rank = 0 if kind == "tab" else (1 if kind == "button" else 2)
+        # tabs > buttons > input_fields > rest
+        if kind == "tab":
+            kind_rank = 0
+        elif kind == "button":
+            kind_rank = 1
+        elif kind == "input_field":
+            kind_rank = 2
+        else:
+            kind_rank = 3
         scope_rank = 0 if scope == "local" else (1 if scope == "unknown" else 2)
         return (pref_rank, scope_rank, kind_rank)
 
@@ -232,7 +245,12 @@ def _parse_json_object(raw: str) -> dict[str, Any] | None:
 def action_fingerprint(
     decision: dict[str, Any], *, page_url: str = ""
 ) -> str:
-    """Stable key for anti-repeat: action + target (+ host path, not full query)."""
+    """Stable key for anti-repeat: action + target (+ query_text for FILL) (+ path).
+
+    For FILL_AND_SUBMIT the fingerprint includes query_text so the same
+    (affordance-target, query) pair is blocked after one no-progress attempt,
+    while a different query on the same field remains allowed.
+    """
     action = str(decision.get("action_class") or "").strip().upper()
     target = (
         str(decision.get("target_text") or "").strip().lower()
@@ -240,6 +258,17 @@ def action_fingerprint(
         or str(decision.get("target_path") or "").strip().lower()
         or ""
     )
+    # Structural id/name from input_field affordance (more stable than display text)
+    if action == "FILL_AND_SUBMIT":
+        extra = (
+            str(decision.get("target_id") or "").strip().lower()
+            or str(decision.get("target_name") or "").strip().lower()
+            or ""
+        )
+        if extra:
+            target = f"{target}|{extra}" if target else extra
+        q = str(decision.get("query_text") or "").strip().lower()[:120]
+        target = f"{target}|q={q}" if target else f"q={q}"
     path = ""
     try:
         from urllib.parse import urlparse
@@ -303,11 +332,15 @@ def acquisition_decide(
       action_class: one of ACTION_CLASSES
       target_text: optional visible label from affordances
       target_href: optional href from affordances
+      query_text: FREE string for FILL_AND_SUBMIT only — LLM formulates it;
+                 code never auto-copies from gaps/contract
       for_decision_ids: which gaps this might resolve
       reason: short string
 
     blocked_action_keys: fingerprints of actions that produced no state change
     (or already failed). Code rejects repeats generically — no site rules.
+    For FILL_AND_SUBMIT the fingerprint includes (target, query_text) so the
+    same query on the same field is blocked once, but a refined query is allowed.
 
     preferred_item_links / candidate_unit_preview: optional structural hints from
     candidate-unit packaging (co-occurring text clusters + their item links).
@@ -361,6 +394,11 @@ def acquisition_decide(
         "search/filter controls. Exploring a concrete unit yields bound evidence.\n"
         "Prefer kind=tab or kind=button that stay on the current entity over distant links "
         "when no preferred item link is available.\n"
+        "When gaps suggest missing search results and an affordance with kind=input_field "
+        "is listed, you may choose FILL_AND_SUBMIT: set target_text to the input_field's "
+        "text/placeholder (must match a listed affordance), and set query_text to a short "
+        "search string that YOU formulate from the task/gaps (free text — code does not "
+        "fill this for you). Code will type query_text into that field and press Enter.\n"
         "Do NOT repeat an action listed under no_progress_actions — those already "
         "produced no useful page-state change.\n"
         "If no listed affordance is likely to help, choose STOP.\n"
@@ -368,7 +406,9 @@ def acquisition_decide(
     )
     pref_note = (
         "prefer preferred_item=true local links that open a concrete candidate unit; "
-        "else prefer local tabs/buttons that deepen the current surface"
+        "else prefer local tabs/buttons that deepen the current surface; "
+        "when search is needed and kind=input_field is present, prefer FILL_AND_SUBMIT "
+        "with a query_text you formulate from task/gaps"
     )
     user = {
         "task_excerpt": (task_text or "")[:600],
@@ -385,9 +425,10 @@ def acquisition_decide(
         "max_steps": max_steps,
         "allowed_action_class": list(ACTION_CLASSES),
         "output_schema": {
-            "action_class": "STOP|OPEN_URL|CLICK_TEXT|CLICK_SELECTOR|SCROLL|WAIT|OPEN_FILE",
-            "target_text": "string|null — must match an affordance text if click",
+            "action_class": "STOP|OPEN_URL|CLICK_TEXT|CLICK_SELECTOR|FILL_AND_SUBMIT|SCROLL|WAIT|OPEN_FILE",
+            "target_text": "string|null — must match an affordance text if click/fill",
             "target_href": "string|null — must match an affordance href if open_url",
+            "query_text": "string|null — FREE text for FILL_AND_SUBMIT only; LLM formulates the search query from task/gaps (code does not auto-fill this)",
             "for_decision_ids": ["decision ids this action aims to resolve"],
             "reason": "short",
         },
@@ -496,6 +537,72 @@ def acquisition_decide(
             }
         return candidate
 
+    # FILL_AND_SUBMIT: target must match an input_field affordance; query_text is
+    # free text formulated by the LLM (never auto-copied from gaps by code).
+    query_text = None
+    target_id = None
+    target_name = None
+    target_type = None
+    if action == "FILL_AND_SUBMIT":
+        input_affs = [a for a in safe if str(a.get("kind") or "") == "input_field"]
+        if not input_affs:
+            return {
+                "action_class": "STOP",
+                "reason": "fill_no_input_field_affordance",
+                "source": "code_reject",
+                "for_decision_ids": [g.get("decision_id") for g in gaps],
+                "llm_raw": obj,
+            }
+        # Match target_text against input_field text / placeholder / aria_label / name / id
+        matched_aff = None
+        if target_text:
+            tt = target_text.strip().lower()
+            for a in input_affs:
+                candidates = [
+                    str(a.get("text") or ""),
+                    str(a.get("placeholder") or ""),
+                    str(a.get("aria_label") or ""),
+                    str(a.get("name") or ""),
+                    str(a.get("id") or ""),
+                ]
+                for c in candidates:
+                    if not c:
+                        continue
+                    cl = c.strip().lower()
+                    if tt == cl or tt in cl or cl in tt:
+                        matched_aff = a
+                        break
+                if matched_aff:
+                    break
+        if matched_aff is None and len(input_affs) == 1:
+            # Single visible input_field: accept even if target_text is approximate
+            matched_aff = input_affs[0]
+        if matched_aff is None:
+            return {
+                "action_class": "STOP",
+                "reason": "fill_target_not_in_input_fields",
+                "source": "code_reject",
+                "for_decision_ids": [g.get("decision_id") for g in gaps],
+                "llm_raw": obj,
+            }
+        # Canonicalise target_text to the affordance display text
+        target_text = str(matched_aff.get("text") or target_text or "")[:120] or None
+        target_id = str(matched_aff.get("id") or "")[:80] or None
+        target_name = str(matched_aff.get("name") or "")[:80] or None
+        target_type = str(matched_aff.get("type") or matched_aff.get("tag") or "")[:30] or None
+        # query_text: free field from LLM — code does NOT invent or copy from gaps
+        query_text = obj.get("query_text")
+        if query_text is not None:
+            query_text = str(query_text).strip()[:200] or None
+        if not query_text:
+            return {
+                "action_class": "STOP",
+                "reason": "fill_missing_query_text",
+                "source": "code_reject",
+                "for_decision_ids": [g.get("decision_id") for g in gaps],
+                "llm_raw": obj,
+            }
+
     for_ids = obj.get("for_decision_ids") or [g.get("decision_id") for g in gaps]
     if not isinstance(for_ids, list):
         for_ids = [g.get("decision_id") for g in gaps]
@@ -509,6 +616,14 @@ def acquisition_decide(
         "source": "llm",
         "affordances_offered": len(safe),
     }
+    if action == "FILL_AND_SUBMIT":
+        candidate["query_text"] = query_text
+        if target_id:
+            candidate["target_id"] = target_id
+        if target_name:
+            candidate["target_name"] = target_name
+        if target_type:
+            candidate["target_type"] = target_type
     # Generic anti-repeat: never re-issue an action that already yielded no progress
     if action not in ("STOP", "WAIT"):
         fp = action_fingerprint(candidate, page_url=page_url)
@@ -527,6 +642,42 @@ def acquisition_decide(
     return candidate
 
 
+def _fill_locator_from_decision(decision: dict[str, Any]) -> str | None:
+    """
+    Build a safe Playwright locator for FILL_AND_SUBMIT from structural
+    affordance metadata only (id / name / placeholder / type). No free CSS
+    from the LLM.
+    """
+    tid = str(decision.get("target_id") or "").strip()
+    tname = str(decision.get("target_name") or "").strip()
+    ttype = str(decision.get("target_type") or "").strip().lower()
+    ttext = str(decision.get("target_text") or "").strip()
+
+    if tid:
+        # Prefer exact id
+        return f"#{tid}" if re.match(r"^[A-Za-z_][\w\-:.]*$", tid) else f'[id="{tid}"]'
+    if tname:
+        esc = tname.replace("\\", "\\\\").replace('"', '\\"')
+        if ttype == "textarea":
+            return f'textarea[name="{esc}"]'
+        if ttype and ttype not in ("", "text"):
+            return f'input[type="{ttype}"][name="{esc}"]'
+        return f'input[name="{esc}"], textarea[name="{esc}"]'
+    if ttext and ttext not in ("(unnamed input)",):
+        esc = ttext.replace("\\", "\\\\").replace('"', '\\"')
+        # placeholder or aria-label match
+        return (
+            f'input[placeholder="{esc}"], textarea[placeholder="{esc}"], '
+            f'input[aria-label="{esc}"], textarea[aria-label="{esc}"]'
+        )
+    # Last resort: first visible text-like input
+    if ttype == "textarea":
+        return "textarea"
+    if ttype and ttype not in ("", "text"):
+        return f'input[type="{ttype}"]'
+    return 'input[type="search"], input[type="text"], input:not([type]), textarea'
+
+
 def execute_acquisition_action(decision: dict[str, Any], *, max_chars: int = 20000) -> dict[str, Any]:
     """
     Execute an acquisition decision via browser tools.
@@ -537,6 +688,7 @@ def execute_acquisition_action(decision: dict[str, Any], *, max_chars: int = 200
         browser_extract_text,
         browser_open,
         browser_scroll,
+        browser_type,
         browser_wait,
     )
 
@@ -605,5 +757,27 @@ def execute_acquisition_action(decision: dict[str, Any], *, max_chars: int = 200
         if not sel.startswith("text=") and not sel.startswith("button:") and not sel.startswith("a:"):
             return {"ok": False, "error": "selector_not_allowed"}
         return browser_click(sel, max_chars=max_chars)
+    if action == "FILL_AND_SUBMIT":
+        query = str(decision.get("query_text") or "").strip()
+        if not query:
+            return {"ok": False, "error": "missing_query_text", "action_class": "FILL_AND_SUBMIT"}
+        selector = _fill_locator_from_decision(decision)
+        if not selector:
+            return {"ok": False, "error": "fill_no_locator", "action_class": "FILL_AND_SUBMIT"}
+        snap = browser_type(selector, query, press_enter=True, max_chars=max_chars)
+        snap["action_class"] = "FILL_AND_SUBMIT"
+        snap["filled_selector"] = selector[:200]
+        snap["query_text"] = query[:200]
+        if not snap.get("ok"):
+            # Soft fallback: try a broader text-like input if specific locator failed
+            fallback = 'input[type="search"], input[type="text"], input:not([type]), textarea'
+            if selector != fallback:
+                snap2 = browser_type(fallback, query, press_enter=True, max_chars=max_chars)
+                snap2["action_class"] = "FILL_AND_SUBMIT"
+                snap2["filled_selector"] = fallback
+                snap2["query_text"] = query[:200]
+                snap2["fallback_from"] = selector[:200]
+                return snap2
+        return snap
 
     return {"ok": False, "error": f"unknown_action:{action}"}

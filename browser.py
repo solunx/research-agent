@@ -427,17 +427,20 @@ def browser_wait(seconds: float = 2.0) -> dict[str, Any]:
 
 def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
     """
-    Structural affordances only (visible tabs/buttons/links/controls).
+    Structural affordances only (visible tabs/buttons/links/controls/input fields).
 
     Priority order (generic, no domain hardcoding):
       1. role=tab / tablist children / aria-selected controls
-      2. buttons and role=button in main/content
-      3. same-path / fragment / empty-href links (local navigation)
-      4. other in-page links
-      5. global / external nav links (last)
+      2. panel_option (ARIA options, select options, labeled choices)
+      3. buttons and role=button (incl. input[type=submit|button])
+      4. input_field (text-like <input>/<textarea> — structural metadata only)
+      5. same-path / fragment / empty-href links (local navigation)
+      6. other in-page links
+      7. global / external nav links (last)
 
     Each item may carry:
       kind, text, href, role, scope ∈ {local, global, unknown}
+      For kind=input_field also: tag, type, name, id, placeholder, aria_label
     """
     try:
         page = _ensure_browser()
@@ -454,8 +457,10 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
 
           const seen = new Set();
           // panel_option: visible choices inside open menus/panels/listboxes (generic)
+          // input_field: text-like <input>/<textarea> (structural only; no lexicon)
           const buckets = {
-            tab: [], panel_option: [], button: [], local_link: [], other_link: [], global_link: []
+            tab: [], panel_option: [], button: [], input_field: [],
+            local_link: [], other_link: [], global_link: []
           };
 
           const visible = (el) => {
@@ -489,30 +494,45 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             }
           };
 
-          const push = (kind, text, href, role, preferredScope) => {
+          const push = (kind, text, href, role, preferredScope, extra) => {
             text = cleanText(text);
-            // Allow slightly longer option labels; reject paragraphs
-            if (!text || text.length < 2 || text.length > 100) return;
-            // Skip multi-line blobs (likely containers, not single options)
-            if ((text.match(/\\n/g) || []).length > 1) return;
-            const key = (kind + '|' + text.toLowerCase()).slice(0, 160);
+            // input_field may have empty visible text (placeholder-only); allow short/empty
+            const isInput = kind === 'input_field';
+            if (!isInput) {
+              // Allow slightly longer option labels; reject paragraphs
+              if (!text || text.length < 2 || text.length > 100) return;
+              // Skip multi-line blobs (likely containers, not single options)
+              if ((text.match(/\\n/g) || []).length > 1) return;
+            } else {
+              if (text && text.length > 120) text = text.slice(0, 120);
+            }
+            const key = (kind + '|' + (text || '').toLowerCase() + '|' + (extra && extra.name ? extra.name : '') + '|' + (extra && extra.id ? extra.id : '')).slice(0, 200);
             if (seen.has(key)) return;
-            // Also de-dupe across kinds on same text (prefer earlier buckets)
-            const textKey = 'T|' + text.toLowerCase();
-            if (seen.has(textKey) && kind !== 'tab') return;
+            // Also de-dupe across kinds on same text (prefer earlier buckets); inputs exempt
+            const textKey = 'T|' + (text || '').toLowerCase();
+            if (!isInput && text && seen.has(textKey) && kind !== 'tab') return;
             seen.add(key);
-            seen.add(textKey);
+            if (text) seen.add(textKey);
             const scope = preferredScope || classifyHref(href);
             const item = {
               kind: kind,
-              text: text.slice(0, 100),
+              text: (text || '').slice(0, 100) || (isInput ? '(unnamed input)' : ''),
               href: (href || '').slice(0, 300),
               role: role || '',
               scope: scope,
             };
+            if (extra && typeof extra === 'object') {
+              if (extra.tag) item.tag = String(extra.tag).slice(0, 20);
+              if (extra.type) item.type = String(extra.type).slice(0, 30);
+              if (extra.name) item.name = String(extra.name).slice(0, 80);
+              if (extra.id) item.id = String(extra.id).slice(0, 80);
+              if (extra.placeholder) item.placeholder = String(extra.placeholder).slice(0, 120);
+              if (extra.aria_label) item.aria_label = String(extra.aria_label).slice(0, 120);
+            }
             if (kind === 'tab') buckets.tab.push(item);
             else if (kind === 'panel_option') buckets.panel_option.push(item);
             else if (kind === 'button') buckets.button.push(item);
+            else if (kind === 'input_field') buckets.input_field.push(item);
             else if (scope === 'local') buckets.local_link.push(item);
             else if (scope === 'global') buckets.global_link.push(item);
             else buckets.other_link.push(item);
@@ -651,6 +671,35 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             push('button', t, '', el.getAttribute('role') || el.tagName.toLowerCase(), 'local');
           });
 
+          // --- 2b. Text-like input fields (structural only — no domain lexicon) ---
+          // Collect <input> (text/search/email/…) and <textarea>. Metadata: tag, type,
+          // name, id, placeholder, aria-label. Text for display is placeholder/aria/name.
+          document.querySelectorAll(
+            'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="image"]):not([type="reset"]):not([type="color"]):not([type="range"]), textarea'
+          ).forEach(el => {
+            if (!visible(el)) return;
+            const tag = (el.tagName || '').toLowerCase();
+            let typ = (el.getAttribute('type') || '').toLowerCase();
+            if (tag === 'textarea') typ = 'textarea';
+            // Allow empty type (defaults to text) and common text-like types
+            const allowed = ['', 'text', 'search', 'email', 'url', 'tel', 'number', 'password', 'textarea'];
+            if (tag !== 'textarea' && !allowed.includes(typ)) return;
+            const placeholder = el.getAttribute('placeholder') || '';
+            const aria = el.getAttribute('aria-label') || '';
+            const title = el.getAttribute('title') || '';
+            const name = el.getAttribute('name') || '';
+            const id = el.getAttribute('id') || '';
+            const t = placeholder || aria || title || name || id || '';
+            push('input_field', t, '', typ || tag, 'local', {
+              tag: tag,
+              type: typ || (tag === 'textarea' ? 'textarea' : 'text'),
+              name: name,
+              id: id,
+              placeholder: placeholder,
+              aria_label: aria
+            });
+          });
+
           // --- 3. Links (all), classified by scope ---
           document.querySelectorAll('a[href]').forEach(a => {
             if (!visible(a)) return;
@@ -658,7 +707,7 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             push('link', t, a.href || '', a.getAttribute('role') || 'link', null);
           });
 
-          // Merge in priority order: tabs → panel options → buttons → links
+          // Merge in priority order: tabs → panel options → buttons → input_fields → links
           const out = [];
           const take = (arr) => {
             for (const it of arr) {
@@ -669,6 +718,7 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
           take(buckets.tab);
           take(buckets.panel_option);
           take(buckets.button);
+          take(buckets.input_field);
           take(buckets.local_link);
           take(buckets.other_link);
           take(buckets.global_link);

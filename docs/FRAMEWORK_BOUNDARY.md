@@ -267,12 +267,22 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Not in scope:** no gate change, no rank change — not justified by post-#22 stability data.
 - **Process:** any future “regression” claim starts with a two-line raw result grep before a diagnosis round.
 
-### #21 — search-field preference (hypothesis only — do not implement yet)
+### #21 — search-field preference (superseded in part by Fase G capability)
 
+- **Original symptom:** non-travel tasks (arxiv 05, coolblue 03) under-used visible search controls; CLICK_TEXT on “Zoeken” timed out on Coolblue.
+- **Original hypothesis:** planner bias “prefer observed search field when task names a specific entity”.
+- **2026-09-16 Fase G (implemented):** root cause was a **capability gap**, not missing preference:
+  - Affordance layer never exported text-like `<input>`/`<textarea>` → new kind `input_field` (structural metadata only, no lexicon).
+  - Action enum had no fill → new class `FILL_AND_SUBMIT`; **`query_text` is free LLM text** (code does not copy from gaps).
+  - Anti-loop fingerprint includes `(target, query_text)`.
+- **Live proof (task 05, 20260916T170647Z):** LLM chose FILL unaided; `query_text="large language model agents tool use 2024"` → 232 arXiv hits. Preference bias **not required** once inputs are visible and fill is executable.
+- **Still open under #21 / follow-ons:** Coolblue CLICK_TEXT robustness (pre-field reachability); list_results → abs href not in affordances (see Open #24). No site-specific search selectors.
 
-- **Symptom:** non-travel open-domain tasks (arxiv 05, coolblue 03) navigated via category/menu links and under-used or failed on visible search controls (`Zoeken` timeout on coolblue).
-- **Hypothesis:** “prefer using an observed search field when the task names a specific entity and a search control is in affordances” is a **domain-free** planner bias — but unmeasured beyond n=2 failures.
-- **Rule:** document only. Collect more data (tasks 04, 08) before any acquisition-policy change. No site-specific search selectors.
+### #24 — list_results item hrefs not in affordances (post-FILL bottleneck)
+
+- **Symptom (task 05 after successful FILL):** LLM proposes `OPEN_URL` to `https://arxiv.org/abs/…` derived from candidate_unit text; code rejects `href_not_in_affordances`. List affordances show short labels (`arXiv:NNNN`, `pdf`, authors) but not full abs links. Interpret on list surface leaves `title/claim/url=NOT_VISIBLE`.
+- **Hypothesis:** structural gap — paper card links (`a[href*="/abs/"]` or generic itemish deep links) under-collected or filtered before planner sees them; preferred_item_links from units not strong enough to drive OPEN_URL.
+- **Rule:** diagnose with step affordances + unit_preview from the same run before any code change. No invented URLs; no domain path hardcoding. Candidate structural fixes: broaden link affordance collection on list surfaces; or strengthen preferred_item → OPEN_URL path when gaps are extraction-shaped.
 
 ---
 
@@ -286,7 +296,7 @@ These are domain-agnostic and may live in code permanently:
 | Contract meta-schema | Shape: subject, decisions/claims, outcomes include UNKNOWN, sufficiency block |
 | Contract synthesis loop | CD0 → CD1/CD2 refine → freeze (passes, not travel rules) |
 | Observe / extract affordances | Browser, FS, text — mechanical |
-| Action enum + execute | OPEN_URL, CLICK_TEXT, SCROLL, WAIT, STOP, … |
+| Action enum + execute | OPEN_URL, CLICK_TEXT, CLICK_SELECTOR, FILL_AND_SUBMIT, SCROLL, WAIT, STOP, OPEN_FILE — closed enum; targets from observed affordances only; FILL query_text is free LLM text |
 | Irreversible block | book/pay/checkout/submit (multi-lingual patterns, not site names) |
 | Affordance target enforcement | LLM may only choose observed controls |
 | Provenance tags | surface (`live_detail` / `live_offer_state` / `list_results` / `site_marketing`), same_entity_path, acquisition_step — structural, not domain enums. Marketing surfaces hard-blocked; list_results admissible even when path ≠ start_url |
