@@ -7,6 +7,21 @@ Format per entry: **date → hypothesis → result → decision**.
 
 ---
 
+## 2026-09-16 — Architecture freeze P0 (isolation)
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| Non-frozen / missing contract should hard-fail | Neg tests: missing dir → exit 2 `CONTRACT_DIR_MISSING`; empty dir → exit 2 `CONTRACT_MISSING`; `frozen=false` → exit 1 `CONTRACT_NOT_FROZEN` (no acquisition) | **P0.1 locked** in `run_contract_driven_task_v0.py` |
+| Lab fixtures must not silent-fallback on CD path | `run_acquisition_loop` / `run_pipeline_one` already raise without decisions; interpret returns UNKNOWN without `BOARD_TYPE_CONTRACT` | **P0.2 confirmed** (ISOLATE #16/#17) |
+| Legacy path must be obvious at runtime | `--legacy-agent` prints `[LEGACY PATH]` | **P0.3** |
+| CD modules import agent/storage/member_role? | grep on CD graph: **empty** | **P0.4 isolatie OK** |
+
+Process rule locked: quote raw `result_*.json` (`stop_reason` / `outcomes` / `contract_satisfied`) for any success/regression claim (074757Z misread).
+
+See `FRAMEWORK_BOUNDARY.md` § Architecture freeze (P0).
+
+---
+
 ## 2026-08-28 — Contract-driven 01+02 (execution layer)
 
 | Hypothesis | Result | Decision |

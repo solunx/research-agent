@@ -3,7 +3,7 @@
 **Purpose:** prevent regression into domain hardcoding (travel, GPU, marketplace, …).  
 If a future change puts `board_type`, `visible_price`, `offer_state`, or similar **fixed enums** into the runtime, it violates this boundary.
 
-Last updated: 2026-09-15 (Open #22/#23 revised after task-02 stability 9/9 SUCCESS).
+Last updated: 2026-09-16 (Architecture freeze P0 — hard-fail isolation).
 
 ---
 
@@ -24,11 +24,46 @@ deleted in this step.
 (`task.md` → frozen contract → `run_acquisition_loop` → code sufficiency STOP).
 
 Batch default: `scripts/run_task_batch_campaign_v0.py` must use that path
-unless `--legacy-agent` is set explicitly.
+unless `--legacy-agent` is set explicitly. Execution with `--legacy-agent`
+must log a visible `[LEGACY PATH]` line (P0.3).
 
 Do not treat `storage.py` / `candidate_admissibility.py` / `member_role.py`
 lexicon gates as the live contract-driven boundary. Those modules belong
 to the legacy harvest stack. See `docs/BOUNDARY_AUDIT_FINAL.md`.
+
+---
+
+## Architecture freeze (P0) — 2026-09-16
+
+Locked **before** any further efficiency work (multi-decision batch default,
+browser tiers, memory, planner). Goal: production cannot silently degrade
+into lab fixtures or a non-frozen contract.
+
+| Rule | Behaviour |
+|------|-----------|
+| Canonical path | `run_contract_driven_task_v0.py` only for production claims |
+| Missing `--contract-dir` / non-dir | **Hard fail**, non-zero exit (`CONTRACT_DIR_MISSING` / `CONTRACT_DIR_REQUIRED`) |
+| No contract for task stem | **Hard fail**, non-zero exit (`CONTRACT_MISSING`) |
+| `frozen != true` | **Hard fail**, non-zero exit (`CONTRACT_NOT_FROZEN`) — no WARNING-and-continue |
+| `frozen_contract is None` without explicit `decisions=` / `allow_lab_fixture` | **RuntimeError** in `run_acquisition_loop` / `run_pipeline_one` (ISOLATE #16) |
+| `contract_decision is None` in interpret | Fail-closed **UNKNOWN**; no silent `BOARD_TYPE_CONTRACT` (ISOLATE #17 / P0.2) |
+| Multi-decision batch interpret | **Opt-in only** (`batch_decisions=True`); default remains single-decision |
+| Legacy | `--legacy-agent` only; prints `[LEGACY PATH]`; not comparable to CD baselines |
+| No new layers pre-freeze | No new browser/memory/planner stacks until this P0 checklist is green |
+
+CD-only import graph (P0.4): production modules on the contract-driven path
+must not import `agent` / `storage` / `member_role` as runtime dependencies.
+
+### Process rule — raw result quotes (LOCKED)
+
+**Every success or regression claim about a run must quote literally**
+`stop_reason`, `outcomes`, and `contract_satisfied` from the run’s raw
+`result_*.json` (terminal `grep` / `python -c` on that file).
+
+Do **not** rely on a paraphrase or summary from an earlier chat message.
+Motivation: run `20260915T074757Z` was mis-read as UNKNOWN in conversation
+while the raw result was `CONTRACT_SATISFIED` / `board_type=ALL_INCLUSIVE`,
+which caused a full false “coverage gap” diagnosis (Open #23 downgrade).
 
 ---
 
