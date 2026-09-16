@@ -84,6 +84,19 @@ def load_frozen_contract(path: Path) -> dict[str, Any]:
     return raw
 
 
+def require_frozen_contract(contract: dict[str, Any], *, contract_path: Path) -> None:
+    """
+    P0 isolation: production path must not continue on a non-frozen contract.
+    Raises RuntimeError (caller maps to non-zero exit) — no WARNING-and-continue.
+    """
+    if not contract.get("frozen"):
+        raise RuntimeError(
+            f"CONTRACT_NOT_FROZEN: {contract_path} has frozen!=true. "
+            "Contract-driven production requires a frozen contract from synthesis. "
+            "Refusing to run acquisition (FRAMEWORK_BOUNDARY Architecture freeze P0)."
+        )
+
+
 def find_contract_for_task(contract_dir: Path, task_id: str) -> Path | None:
     """Match contract_*{task_id}*.json (prefer newest by name)."""
     if not contract_dir.is_dir():
@@ -92,6 +105,17 @@ def find_contract_for_task(contract_dir: Path, task_id: str) -> Path | None:
     if not hits:
         hits = sorted(contract_dir.glob(f"*{task_id}*.json"))
     return hits[-1] if hits else None
+
+
+def require_contract_dir(contract_dir: Path) -> Path:
+    """P0: missing or non-directory --contract-dir is a hard error."""
+    if not contract_dir.is_dir():
+        raise RuntimeError(
+            f"CONTRACT_DIR_MISSING: {contract_dir} is not an existing directory. "
+            "Pass a synthesis output dir that contains contract_*.json "
+            "(FRAMEWORK_BOUNDARY Architecture freeze P0)."
+        )
+    return contract_dir
 
 
 def make_chat_fn():
@@ -183,12 +207,8 @@ def run_one(
         )
         return result
 
-    if not contract.get("frozen"):
-        print(
-            "[contract_driven] WARNING: contract.frozen is not true — "
-            "sufficiency gate will refuse STOP",
-            file=sys.stderr,
-        )
+    # P0.1 — hard fail (no WARNING-and-continue) when contract is not frozen
+    require_frozen_contract(contract, contract_path=contract_path)
 
     chat_fn = make_chat_fn() if use_llm else None
     ledger = RunLedger(
@@ -315,48 +335,82 @@ def main() -> int:
 
     jobs: list[tuple[Path, Path]] = []
 
-    if args.task:
-        task_path = Path(args.task)
-        if not task_path.is_absolute():
-            task_path = ROOT / task_path
-        if args.contract:
-            cpath = Path(args.contract)
-            if not cpath.is_absolute():
-                cpath = ROOT / cpath
-        elif args.contract_dir:
-            cdir = args.contract_dir if args.contract_dir.is_absolute() else ROOT / args.contract_dir
-            cpath = find_contract_for_task(cdir, task_path.stem)
-            if cpath is None:
-                print(f"No contract for {task_path.stem} in {cdir}", file=sys.stderr)
-                return 2
-        else:
-            print("Need --contract or --contract-dir", file=sys.stderr)
-            return 2
-        jobs.append((task_path, cpath))
-    elif args.tasks:
-        tasks_dir = args.tasks_dir if args.tasks_dir.is_absolute() else ROOT / args.tasks_dir
-        cdir = args.contract_dir
-        if cdir is None:
-            print("--tasks requires --contract-dir", file=sys.stderr)
-            return 2
-        if not cdir.is_absolute():
-            cdir = ROOT / cdir
-        for stem in [s.strip() for s in args.tasks.split(",") if s.strip()]:
-            task_path = tasks_dir / f"{stem}.md"
-            if not task_path.is_file():
-                # allow stem without numeric prefix match
-                matches = list(tasks_dir.glob(f"*{stem}*.md"))
-                if not matches:
-                    print(f"Missing task {task_path}", file=sys.stderr)
+    try:
+        if args.task:
+            task_path = Path(args.task)
+            if not task_path.is_absolute():
+                task_path = ROOT / task_path
+            if args.contract:
+                cpath = Path(args.contract)
+                if not cpath.is_absolute():
+                    cpath = ROOT / cpath
+                if not cpath.is_file():
+                    print(
+                        f"CONTRACT_MISSING: file not found: {cpath}",
+                        file=sys.stderr,
+                    )
                     return 2
-                task_path = matches[0]
-            cpath = find_contract_for_task(cdir, task_path.stem)
-            if cpath is None:
-                print(f"No contract for {task_path.stem} in {cdir}", file=sys.stderr)
+            elif args.contract_dir:
+                cdir = args.contract_dir if args.contract_dir.is_absolute() else ROOT / args.contract_dir
+                try:
+                    require_contract_dir(cdir)
+                except RuntimeError as e:
+                    print(str(e), file=sys.stderr)
+                    return 2
+                cpath = find_contract_for_task(cdir, task_path.stem)
+                if cpath is None:
+                    print(
+                        f"CONTRACT_MISSING: no contract for task {task_path.stem!r} in {cdir}",
+                        file=sys.stderr,
+                    )
+                    return 2
+            else:
+                print(
+                    "CONTRACT_DIR_REQUIRED: need --contract or --contract-dir "
+                    "(FRAMEWORK_BOUNDARY Architecture freeze P0)",
+                    file=sys.stderr,
+                )
                 return 2
             jobs.append((task_path, cpath))
-    else:
-        print("Provide --task or --tasks", file=sys.stderr)
+        elif args.tasks:
+            tasks_dir = args.tasks_dir if args.tasks_dir.is_absolute() else ROOT / args.tasks_dir
+            cdir = args.contract_dir
+            if cdir is None:
+                print(
+                    "CONTRACT_DIR_REQUIRED: --tasks requires --contract-dir "
+                    "(FRAMEWORK_BOUNDARY Architecture freeze P0)",
+                    file=sys.stderr,
+                )
+                return 2
+            if not cdir.is_absolute():
+                cdir = ROOT / cdir
+            try:
+                require_contract_dir(cdir)
+            except RuntimeError as e:
+                print(str(e), file=sys.stderr)
+                return 2
+            for stem in [s.strip() for s in args.tasks.split(",") if s.strip()]:
+                task_path = tasks_dir / f"{stem}.md"
+                if not task_path.is_file():
+                    # allow stem without numeric prefix match
+                    matches = list(tasks_dir.glob(f"*{stem}*.md"))
+                    if not matches:
+                        print(f"Missing task {task_path}", file=sys.stderr)
+                        return 2
+                    task_path = matches[0]
+                cpath = find_contract_for_task(cdir, task_path.stem)
+                if cpath is None:
+                    print(
+                        f"CONTRACT_MISSING: no contract for task {task_path.stem!r} in {cdir}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                jobs.append((task_path, cpath))
+        else:
+            print("Provide --task or --tasks", file=sys.stderr)
+            return 2
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
         return 2
 
     campaign = {
