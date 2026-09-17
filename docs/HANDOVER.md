@@ -115,4 +115,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#25** live retest taak 05 (refine-search na `NOT_RELEVANT`) — alleen na expliciete user-OK + `docker compose build`. Daarna: **#24b** HTML-observer op lijstpagina's; taak 03 Coolblue click/`input_field`; generaliteit 04/08.
+Open **#26** live retest taak 05 (candidate-scope reset na reject/unbind) — alleen na expliciete user-OK + `docker compose build`. **Niet #24b eerst:** als merge een stale `NOT_RELEVANT` vasthoudt, kan betere lijst-extractie alsnog `contract_satisfied=false` geven. Daarna: **#24b** HTML-observer; taak 03 Coolblue; generaliteit 04/08.

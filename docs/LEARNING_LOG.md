@@ -1719,3 +1719,19 @@ recommended next step, not a text patch).
 ### Niet gedaan
 Live taak 05 retest — alleen na expliciete toestemming + `docker compose build research-agent` (code zit in het image).
 
+## 2026-09-17 — Open #26 candidate-scope reset (vóór #24b)
+
+### Citaat oud (`20260917T083112Z` result + loop)
+`stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` `subject_instance=NOT_RELEVANT`.
+Stap 3 `/abs/2609.19059` NOT_RELEVANT → `OPEN_URL Search` (reden: rejected) → FILL nieuwe queries. #25 OK. Merge hield NOT_RELEVANT vast (`_WEAK` = UNKNOWN/NOT_STATED only).
+
+### Regel
+Bind via `preferred_item_links` + path-leave vanaf `list_results` of switch naar ander item-path. Unbind bij FILL of verlaten van bound path (niet abs→html zelfde last-segment). Reset `best_outcomes` met `step >= bound_step`. Geen decision_id-hardcode.
+
+### Offline
+`evals/candidate_scope_reset/test_candidate_scope_offline_v0.py` — unbind 083112Z, FILL unbind, 02 tab, 02 Fly&Go, 01 list→detail keep ALL_INCLUSIVE, switch A→B, html deepening.
+
+### Niet gedaan
+Live 05 — alleen na user-OK + `docker compose build`.
+
+

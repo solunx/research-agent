@@ -215,6 +215,7 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Fix (code, domain-free):** `aggregate_outcome(..., preferred_outcomes=decision.required_for_eligibility)`. When any row’s outcome is in the sufficiency-satisfying set for that decision, only those rows compete; confidence order applies *within* that pool. If no row is satisfying, fall back to all non-UNKNOWN rows (so pure absence still aggregates to the absence label). No hardcoded `"NOT_STATED"` string. Call site: `run_interpretation` passes `required_for_eligibility` already annotated from the frozen contract by `_decisions_from_frozen_contract`.  
 - **Relation to option B:** this is the *within-step* half of the same rule `_merge_outcomes` needs *across steps*. Both prefer “in sufficiency-satisfying set” over “not in set”, without naming absence vocabulary in framework code.
 - **Perf — skip already-satisfied decisions (2026-09-13):** once `best_outcomes[decision_id]` holds a label in that decision’s `required_for_eligibility`, later acquisition steps **do not** re-run interpret for that decision (`_decisions_pending_interpretation`). Outcomes remain visible via `best_outcomes` / step merge. **Design trade-off (accepted):** a later page that would *contradict* an earlier satisfying label is not re-checked — same family as “absence must not erase confirm”, inverted for cost. Revisit if multi-source contradiction detection becomes a requirement.
+- **Complement — Open #26:** merge persistence is correct *within one bound candidate*. A concrete reject (`NOT_RELEVANT`) must not survive a later preferred-item bind/unbind; that is scope reset, not a change to `_WEAK`.
 
 ### #20 — interpret cost scales with n_decisions (measured pattern, not a bug)
 
@@ -302,6 +303,19 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Fix (2026-09-17):** if *current-page* outcome (not merged `best_outcomes`) is `NOT_RELEVANT` or `REJECTED` for a still-FAIL gap, **and** this run already saw `surface=list_results`, the planner prompt inverts: do not deepen this record; you MAY `FILL_AND_SUBMIT` with a **new** LLM-formulated `query_text` (code never writes the query). No input_field → use a listed affordance to reach search; no invented URLs. Absence labels (`NOT_VISIBLE` / `UNKNOWN`) do **not** trigger this.
 - **Anti-loop:** existing `action_fingerprint` includes `query_text`; identical FILL on the same field stays `no_progress_repeat_blocked`.
 - **Offline:** `evals/refine_search_after_reject/test_refine_search_offline_v0.py` green. Live taak 05: only after explicit user OK + `docker compose build`.
+- **Live `20260917T083112Z` (user):** #25 held — after abs `NOT_RELEVANT`, `OPEN_URL Search` then new FILL queries. Contract still false because merge kept `NOT_RELEVANT` (Open #26).
+
+### #26 — candidate-scoped outcome reset on item switch / unbind (code in place; live retest pending)
+
+- **Symptom (`20260917T083112Z`):** #25 correctly left the rejected paper; `best_outcomes.subject_instance` stayed `NOT_RELEVANT` because `_merge_outcomes` treats any non-`UNKNOWN`/`NOT_STATED` label as persistent. Later list `UNKNOWN` does not overwrite. Mixing risk: title from paper A + `RELEVANT` from paper B.
+- **No existing cross-step entity key.** `#22 subject_candidate_ref` is intra-page only. `same_entity_path` is vs `start_url` (breaks 02 Fly & Go / arxiv root).
+- **Fix:** `apply_candidate_scope_after_action` after a successful navigation.
+  - **Bind** only if `target_href` ∈ that step’s `preferred_item_links` and path left the current page, from `list_results` (first bind) or onto a different bound path (switch). First list→detail with *satisfying* labels does **not** reset (#19 / taak 01).
+  - **Unbind** on `FILL_AND_SUBMIT`, or leaving the bound path without a preferred-item bind (e.g. OPEN Search). Same-record deepening (`/abs/id` → `/html/id…` via last-segment prefix) does not unbind.
+  - **Reset:** drop `best_outcomes` with `step >= candidate_bound_step`; keep pre-bind (e.g. `source_site`). No `subject_instance` special-case — any required decision with a concrete non-satisfying outcome is “instance FAIL”.
+- **01/02 offline:** tab same-path no-op; Fly & Go from `live_detail` without list-bind no-op; list `ALL_INCLUSIVE` → detail bind without wipe.
+- **Offline:** `evals/candidate_scope_reset/test_candidate_scope_offline_v0.py`. Live 05 only after user OK + `docker compose build`.
+- **Order:** #26 before #24b — better list extraction can still fail the contract if merge keeps a stale reject.
 
 ---
 

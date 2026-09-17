@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Callable
+from urllib.parse import urljoin, urlparse
 
 from candidates import (
     candidates_preview,
@@ -248,6 +249,183 @@ def _merge_outcomes(
     return best
 
 
+_WEAK_OUTCOMES = frozenset({"UNKNOWN", "NOT_STATED", ""})
+
+
+def _url_path(url: str) -> str:
+    try:
+        return urlparse(url or "").path.rstrip("/")
+    except Exception:
+        return ""
+
+
+def _normalize_href(href: str, page_url: str = "") -> str:
+    h = str(href or "").strip()
+    if not h:
+        return ""
+    try:
+        return urljoin(page_url or "", h)
+    except Exception:
+        return h
+
+
+def _href_in_preferred(
+    href: str,
+    preferred_item_links: list[dict[str, str]] | None,
+    page_url: str,
+) -> bool:
+    """True when href matches a preferred_item_link (path or full URL)."""
+    nh = _normalize_href(href, page_url)
+    np = _url_path(nh)
+    if not np and not nh:
+        return False
+    for p in preferred_item_links or []:
+        ph = _normalize_href(str(p.get("href") or ""), page_url)
+        if not ph:
+            continue
+        if nh == ph or _url_path(ph) == np:
+            return True
+    return False
+
+
+def _path_last_segment(path: str) -> str:
+    parts = [x for x in (path or "").split("/") if x]
+    return parts[-1] if parts else ""
+
+
+def _paths_same_record(path_a: str, path_b: str) -> bool:
+    """
+    Same bound record, different view (abs vs html vs pdf of the same id).
+    Structural: last path segments equal, or one is a prefix of the other.
+    Distinct ids (2609.19059 vs 2601.14696) do not match.
+    """
+    if path_a == path_b:
+        return True
+    sa, sb = _path_last_segment(path_a), _path_last_segment(path_b)
+    if not sa or not sb:
+        return False
+    return sa == sb or sa.startswith(sb) or sb.startswith(sa)
+
+
+def _reset_post_bind_outcomes(
+    best: dict[str, dict[str, Any]],
+    bound_step: int | None,
+) -> dict[str, dict[str, Any]]:
+    """Drop outcomes written at/after the current candidate bind; keep pre-bind."""
+    if bound_step is None:
+        return dict(best or {})
+    out: dict[str, dict[str, Any]] = {}
+    for k, v in (best or {}).items():
+        try:
+            si = int((v or {}).get("step"))
+        except (TypeError, ValueError):
+            si = -1
+        if si < bound_step:
+            out[k] = v
+    return out
+
+
+def _has_nonsatisfying_concrete(
+    best: dict[str, dict[str, Any]],
+    decisions: list[dict[str, Any]] | None,
+) -> bool:
+    """
+    True when any required decision has a concrete outcome outside its
+    sufficiency-satisfying set (contract data, no decision_id names).
+    """
+    for d in decisions or []:
+        preferred = {
+            str(x)
+            for x in (d.get("required_for_eligibility") or [])
+            if x and str(x) not in _WEAK_OUTCOMES
+        }
+        if not preferred:
+            continue
+        did = str(d.get("id") or "")
+        obs = str((best.get(did) or {}).get("outcome") or "")
+        if obs and obs not in _WEAK_OUTCOMES and obs not in preferred:
+            return True
+    return False
+
+
+def apply_candidate_scope_after_action(
+    *,
+    best_outcomes: dict[str, dict[str, Any]],
+    active_candidate_path: str | None,
+    candidate_bound_step: int | None,
+    action_class: str,
+    target_href: str | None,
+    page_url_before: str,
+    new_url: str,
+    ok: bool,
+    surface_before: str,
+    preferred_item_links: list[dict[str, str]] | None,
+    decisions: list[dict[str, Any]] | None,
+    next_step: int,
+) -> tuple[dict[str, dict[str, Any]], str | None, int | None, str]:
+    """
+    Open #26: after a successful navigation, bind / switch / unbind the
+    active candidate path and reset post-bind best_outcomes when the
+    underlying record changed.
+
+    Bind only via preferred_item_links (not every itemish link — Search
+    would otherwise look like a new candidate). Same-record deepening
+    (html/pdf of the same last path segment) does not unbind.
+
+    Returns (best_outcomes, active_candidate_path, candidate_bound_step, event)
+    event ∈ {"", "bind", "switch", "unbind"}.
+    """
+    best = dict(best_outcomes or {})
+    if not ok:
+        return best, active_candidate_path, candidate_bound_step, ""
+    action = str(action_class or "").strip().upper()
+    if action in ("STOP", "WAIT", "SCROLL", "OPEN_FILE"):
+        return best, active_candidate_path, candidate_bound_step, ""
+
+    if action == "FILL_AND_SUBMIT":
+        if active_candidate_path is not None:
+            best = _reset_post_bind_outcomes(best, candidate_bound_step)
+            return best, None, None, "unbind"
+        return best, active_candidate_path, candidate_bound_step, ""
+
+    href = str(target_href or new_url or "").strip()
+    path_before = _url_path(page_url_before)
+    path_after = _url_path(new_url)
+    dest_path = _url_path(_normalize_href(href, page_url_before)) or path_after
+    is_pref = _href_in_preferred(href, preferred_item_links, page_url_before)
+    left_page = bool(dest_path and dest_path != path_before)
+
+    if is_pref and left_page:
+        if active_candidate_path and _paths_same_record(dest_path, active_candidate_path):
+            return best, active_candidate_path, candidate_bound_step, ""
+        from_list = str(surface_before or "") == "list_results" and active_candidate_path is None
+        different = bool(
+            active_candidate_path
+            and dest_path != active_candidate_path
+            and not _paths_same_record(dest_path, active_candidate_path)
+        )
+        if from_list or different:
+            switching = different
+            fail = bool(active_candidate_path) and _has_nonsatisfying_concrete(
+                best, decisions
+            )
+            event = "bind"
+            if switching or fail:
+                best = _reset_post_bind_outcomes(best, candidate_bound_step)
+                event = "switch"
+            return best, dest_path, next_step, event
+
+    if active_candidate_path is not None:
+        still_on = path_after == active_candidate_path or _paths_same_record(
+            path_after, active_candidate_path
+        )
+        if not still_on:
+            best = _reset_post_bind_outcomes(best, candidate_bound_step)
+            return best, None, None, "unbind"
+
+    return best, active_candidate_path, candidate_bound_step, ""
+
+
 def _decision_is_satisfied(
     decision: dict[str, Any],
     best_outcomes: dict[str, dict[str, Any]],
@@ -420,6 +598,9 @@ def run_acquisition_loop(
     # Generic anti-loop: fingerprints of actions that produced no state change
     blocked_action_keys: list[str] = []
     surfaces_seen: list[str] = []
+    # Open #26: bound item path (list→detail); None until first preferred-item bind
+    active_candidate_path: str | None = None
+    candidate_bound_step: int | None = None
     prev_state_sig: str | None = None
 
     for step in range(0, max_acquisition_steps + 1):
@@ -978,9 +1159,38 @@ def run_acquisition_loop(
             # but allow the loop to pick a different action next iteration.
             continue
 
+        page_url_before = final_url
         text = new_text
         final_url = new_url
         title = str(snap.get("title") or title)
+        best_outcomes, active_candidate_path, candidate_bound_step, scope_event = (
+            apply_candidate_scope_after_action(
+                best_outcomes=best_outcomes,
+                active_candidate_path=active_candidate_path,
+                candidate_bound_step=candidate_bound_step,
+                action_class=str(decision.get("action_class") or ""),
+                target_href=str(decision.get("target_href") or "") or None,
+                page_url_before=str(page_url_before),
+                new_url=new_url,
+                ok=ok,
+                surface_before=str(surface or ""),
+                preferred_item_links=preferred_links,
+                decisions=decisions,
+                next_step=step + 1,
+            )
+        )
+        if scope_event:
+            step_rec["candidate_scope"] = {
+                "event": scope_event,
+                "active_candidate_path": active_candidate_path,
+                "candidate_bound_step": candidate_bound_step,
+            }
+            print(
+                f"[acquisition] candidate_scope event={scope_event} "
+                f"path={active_candidate_path} bound_step={candidate_bound_step} "
+                f"best_n={len(best_outcomes)}",
+                flush=True,
+            )
 
     eligible = bool(last_pipe.get("eligible"))
     # Prefer persisted best outcomes; fall back to last step if merge is empty
