@@ -1696,3 +1696,26 @@ recommended next step, not a text patch).
   vakantie" CTAs repeated per card)
 - No wiring of `structural_observer` HTML arm into the live path yet (next step,
   not this slice)
+
+## 2026-09-17 — Refine search after subject rejection (Open #25; follow-up of `20260917T072448Z`)
+
+### Citaat oud (raw `loop_05_web_literature_abstract_20260917T072448Z.json`)
+- step 3 `url=https://arxiv.org/abs/2609.19059` `subject_instance=NOT_RELEVANT` → `CLICK_TEXT Related Papers`
+- step 4 same abs URL → `OPEN_URL HTML (experimental)`
+- step 5 `/html/2609.19059v1` → `CLICK_TEXT Back to Abstract`
+- Final `result_*.json`: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` outcomes `subject_instance=NOT_RELEVANT` `claim_extracted=NOT_VISIBLE` (plus extracted title/url/recency/access).
+
+### Diagnose (code, no new live run)
+`acquisition_decide` already passed `gaps` with `observed`/`result=FAIL`. The LLM *could* see NOT_RELEVANT. The system prompt still said prefer local tabs / preferred_item / stay on current entity, and mentioned FILL only “when gaps suggest missing search results.” So the planner stayed on the rejected paper.
+
+### Fix
+- `object_rejected_on_current_page` / `should_hint_refine_search`: current-page outcome in `{NOT_RELEVANT, REJECTED}` **and** a FAIL gap **and** `list_results` already in `surfaces_seen`. Not merged `best_outcomes` (homepage NOT_RELEVANT must not keep firing). Absence (`NOT_VISIBLE`) does not trigger.
+- Planner prompt then: do not deepen this record; MAY `FILL_AND_SUBMIT` with a **new** LLM `query_text`. Code does not generate the query. Same fingerprint anti-loop as Fase G.
+- Loop passes `current_page_outcomes=pipe["outcomes"]` and unique `surfaces_seen`.
+
+### Offline
+`python3 evals/refine_search_after_reject/test_refine_search_offline_v0.py` — all passed: hint on, refined FILL accepted, identical query still `no_progress_repeat_blocked`, no-hint when only `NOT_VISIBLE`. Existing FILL tests still pass.
+
+### Niet gedaan
+Live taak 05 retest — alleen na expliciete toestemming + `docker compose build research-agent` (code zit in het image).
+

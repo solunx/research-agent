@@ -295,6 +295,14 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **This is a representation problem, not a matching-algorithm problem** — same class `structural_observer.py`'s HTML arm (`extract_candidates_via_html` / `html_b2`, see `CANDIDATE_LAYER.md` §12) was built for, never wired into the live path. **Recommended next step:** measure the HTML arm on a live-captured list-results page (arXiv search or similar) offline, before any further text-heuristic attempt on `candidate_units.py`.
 - Also flagged, not yet measured: `browser_list_affordances` text-based de-dupe may under-collect repeated CTA labels on other list pages too (e.g. task 01 "Bekijk vakantie" repeated per card) — needs its own isolated offline measurement, out of scope for this fix.
 
+### #25 — refine search after current-page object rejection (code in place; live retest pending user OK)
+
+- **Symptom (task 05, run `20260917T072448Z`, raw loop):** after `OPEN_URL` to `/abs/2609.19059`, current-page `subject_instance=NOT_RELEVANT`. Next actions were `CLICK_TEXT Related Papers` → `OPEN_URL HTML` → `CLICK_TEXT Back to Abstract` — all on the same rejected paper. Never a new `FILL_AND_SUBMIT`. Final: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` gaps `subject_instance=NOT_RELEVANT` `claim_extracted=NOT_VISIBLE`.
+- **Cause:** gaps already carried `observed=NOT_RELEVANT` / `result=FAIL` into `acquisition_decide`, but the planner system prompt preferred staying on the current entity (tabs / preferred_item). FILL was described only as “when gaps suggest missing search results.”
+- **Fix (2026-09-17):** if *current-page* outcome (not merged `best_outcomes`) is `NOT_RELEVANT` or `REJECTED` for a still-FAIL gap, **and** this run already saw `surface=list_results`, the planner prompt inverts: do not deepen this record; you MAY `FILL_AND_SUBMIT` with a **new** LLM-formulated `query_text` (code never writes the query). No input_field → use a listed affordance to reach search; no invented URLs. Absence labels (`NOT_VISIBLE` / `UNKNOWN`) do **not** trigger this.
+- **Anti-loop:** existing `action_fingerprint` includes `query_text`; identical FILL on the same field stays `no_progress_repeat_blocked`.
+- **Offline:** `evals/refine_search_after_reject/test_refine_search_offline_v0.py` green. Live taak 05: only after explicit user OK + `docker compose build`.
+
 ---
 
 ## Hardcoded (framework) — allowed

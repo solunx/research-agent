@@ -129,6 +129,7 @@ def _pipeline_on_obs(
     task_text: str,
     decisions: list[dict[str, Any]],
     interpret_even_if_not_admitted: bool = True,
+    batch_decisions: bool = False,
 ) -> dict[str, Any]:
     """
     CANDIDATE_UNIT ranks whether the fragment is a primary unit.
@@ -153,7 +154,10 @@ def _pipeline_on_obs(
     skipped_reason: str | None = None
     if should_interpret:
         interp = run_interpretation(
-            observations=obs, decisions=decisions, chat_fn=chat_fn
+            observations=obs,
+            decisions=decisions,
+            chat_fn=chat_fn,
+            batch_decisions=batch_decisions,
         )
         outcomes = interp.get("outcomes") or {}
         elig = interp.get("eligibility") or eligibility_from_outcomes(outcomes, decisions)
@@ -313,6 +317,8 @@ def run_acquisition_loop(
     trace: TraceSession | None = None,
     # ISOLATE #16: PACKAGES_DECISIONS only when explicitly opted in
     allow_lab_fixture: bool = False,
+    # Fase B opt-in: multi-decision interpret per claim (default False — P0 freeze)
+    batch_decisions: bool = False,
 ) -> dict[str, Any]:
     """
     backend must be playwright for multi-step (session preserved).
@@ -413,6 +419,7 @@ def run_acquisition_loop(
     acquisition_steps = 0
     # Generic anti-loop: fingerprints of actions that produced no state change
     blocked_action_keys: list[str] = []
+    surfaces_seen: list[str] = []
     prev_state_sig: str | None = None
 
     for step in range(0, max_acquisition_steps + 1):
@@ -448,6 +455,8 @@ def run_acquisition_loop(
             text=text,
             step=step,
         )
+        if surface and surface not in surfaces_seen:
+            surfaces_seen.append(str(surface))
 
         # Candidate layer (2026-08-28): structural extract → quality select →
         # observations bound by candidate_id. Interpretation sees top-K candidates
@@ -580,6 +589,7 @@ def run_acquisition_loop(
                 decisions=pending_decisions,
                 # Contract path: interpret whenever claims exist (CU is ranking only)
                 interpret_even_if_not_admitted=True,
+                batch_decisions=batch_decisions,
             )
         else:
             # All decisions already satisfied — no interpret LLM calls this step.
@@ -752,6 +762,8 @@ def run_acquisition_loop(
                 blocked_action_keys=blocked_action_keys,
                 preferred_item_links=preferred_links,
                 candidate_unit_preview=unit_preview,
+                current_page_outcomes=pipe.get("outcomes") or {},
+                surfaces_seen=surfaces_seen,
             )
 
         ledger.log_decision(

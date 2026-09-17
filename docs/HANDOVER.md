@@ -1,6 +1,8 @@
+zie eerst AGENT_RULES.md
+
 # Handover — Local Research Agent
 
-**Doel van dit document:** je (nieuwe LLM/agent in Cursor) snel en correct op de hoogte brengen van een project dat al ~65 iteraties en een uitgebreide boundary-audit achter de rug heeft. Lees dit document EERST, volledig, vóór je enige code aanraakt. Het bevat niet alleen wat het systeem doet, maar ook welke fouten al gemaakt en opgelost zijn — herhaal ze niet.
+**Doel van dit document:** naslag voor architectuur, gefixte bugs en testdiscipline. **Elke sessie:** lees `docs/AGENT_RULES.md` + `docs/SESSION_STATE.md` (kort). Lees dit bestand, `LEARNING_LOG.md` en `BOUNDARY_AUDIT_FINAL.md` **niet** volledig opnieuw — alleen wanneer de taak verificatie tegen de audit, een historische bug, of een Open-item-wijziging vereist.
 
 ---
 
@@ -38,13 +40,15 @@ Concreet verboden in code: woordenlijsten voor domeinconcepten (geen `"hotel"`, 
 
 Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele audit afgedwongen (`docs/BOUNDARY_AUDIT_FINAL.md`). Elke keer dat deze regel werd overtreden, ontstond een verborgen bug die weken later pas werd gevonden. **Bij twijfel: vraag je af "zou dit antwoord veranderen zonder taal- of domeinkennis, puur op basis van positie/structuur?" Zo nee: hoort bij de LLM.**
 
-## 4. Leesvolgorde vóór je iets bouwt
+## 4. Leesvolgorde
 
-1. `docs/FRAMEWORK_BOUNDARY.md` — de regel uit §3, plus de **Open items**-sectie onderaan (nog niet opgeloste, bewust vastgelegde punten — lees ze, negeer ze niet)
-2. `docs/BOUNDARY_AUDIT_FINAL.md` — welke overtredingen gevonden en gefixt zijn, en waarom
-3. `docs/CANDIDATE_LAYER.md` — het candidate/unit-schema (LOCKED sectie is bindend)
-4. `docs/LEARNING_LOG.md` — chronologisch logboek van elk experiment; **lees minstens de laatste 2-3 weken aan entries** vóór je verandert
-5. Dit document, opnieuw, als naslagwerk
+**Elke sessie (kort):** `docs/AGENT_RULES.md` → `docs/SESSION_STATE.md`.
+
+**Alleen bij bouwen / boundary-wijziging / audit-verificatie:**
+1. `docs/FRAMEWORK_BOUNDARY.md` — regel uit §3 + Open items (het relevante item, niet alles)
+2. `docs/CANDIDATE_LAYER.md` LOCKED-schema — als je candidates/units aanraakt
+3. Dit document §5 (gefixte bugs) — als je een “nieuw” defect denkt te vinden
+4. `docs/LEARNING_LOG.md` / `docs/BOUNDARY_AUDIT_FINAL.md` — alleen als SESSION_STATE of de taak daar expliciet naar wijst; nooit als default-inlees
 
 ## 5. Complete lijst van gevonden en gefixte bugs (NIET opnieuw diagnosticeren)
 
@@ -111,4 +115,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Fase H: los het `list_results` → detailpagina-navigatiegat op (zie exacte prompt hierboven in de overdracht-conversatie, of vraag de gebruiker ernaar). Daarna: taak 03 (Coolblue) click-robustheid, en de bredere generaliteitsvraag (taken 04/08).
+Open **#25** live retest taak 05 (refine-search na `NOT_RELEVANT`) — alleen na expliciete user-OK + `docker compose build`. Daarna: **#24b** HTML-observer op lijstpagina's; taak 03 Coolblue click/`input_field`; generaliteit 04/08.

@@ -279,6 +279,54 @@ def action_fingerprint(
     return f"{action}|{target}|{path}"
 
 
+# Object-rejection labels (not mere absence). Absence stays UNKNOWN / NOT_STATED /
+# NOT_VISIBLE and must not trigger "leave this object and re-search".
+# These strings appear as *contract* outcomes (subject_instance on task 05/06);
+# code only notices a FAIL that is a concrete rejection, not a domain taxonomy.
+_PAGE_OBJECT_REJECTED = frozenset({"NOT_RELEVANT", "REJECTED"})
+
+
+def object_rejected_on_current_page(
+    current_page_outcomes: dict[str, str] | None,
+    gaps: list[dict[str, Any]] | None,
+) -> dict[str, str] | None:
+    """
+    Return {decision_id, observed} when a required-gap decision's *current-page*
+    outcome is an object-rejection label. Else None.
+
+    Uses current-page outcomes, not merged best_outcomes: a homepage
+    NOT_RELEVANT must not keep firing after a later page confirms the subject.
+    """
+    fail_ids = {
+        str(g.get("decision_id") or "")
+        for g in (gaps or [])
+        if g.get("result") == "FAIL" and g.get("decision_id")
+    }
+    for did, observed in (current_page_outcomes or {}).items():
+        obs = str(observed or "")
+        if obs in _PAGE_OBJECT_REJECTED and str(did) in fail_ids:
+            return {"decision_id": str(did), "observed": obs}
+    return None
+
+
+def should_hint_refine_search(
+    *,
+    current_page_outcomes: dict[str, str] | None,
+    gaps: list[dict[str, Any]] | None,
+    surfaces_seen: list[str] | None,
+) -> dict[str, Any] | None:
+    """
+    True-shaped hint when this page rejected the object AND this run already
+    visited a list_results surface (search/results). No query text is invented.
+    """
+    rejected = object_rejected_on_current_page(current_page_outcomes, gaps)
+    if not rejected:
+        return None
+    if "list_results" not in {str(s or "") for s in (surfaces_seen or [])}:
+        return None
+    return rejected
+
+
 def state_signature(
     *,
     url: str,
@@ -324,6 +372,8 @@ def acquisition_decide(
     blocked_action_keys: list[str] | None = None,
     preferred_item_links: list[dict[str, str]] | None = None,
     candidate_unit_preview: list[str] | None = None,
+    current_page_outcomes: dict[str, str] | None = None,
+    surfaces_seen: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Propose next action. Fail-closed to STOP when no LLM or invalid output.
@@ -344,7 +394,14 @@ def acquisition_decide(
 
     preferred_item_links / candidate_unit_preview: optional structural hints from
     candidate-unit packaging (co-occurring text clusters + their item links).
-    When gaps remain, prefer opening a concrete unit link over re-running search.
+    When gaps remain, prefer opening a concrete unit link over re-running search
+    — unless the *current page* rejected the object (see refine_search hint).
+
+    current_page_outcomes / surfaces_seen: optional. When a required decision
+    on *this* page is NOT_RELEVANT/REJECTED and this run already saw
+    list_results, the planner is told it may FILL_AND_SUBMIT again with a
+    *new* query_text (LLM-formulated; code never writes the query). Same
+    query_text on the same field stays blocked via blocked_action_keys.
     """
     safe = filter_safe_affordances(
         affordances, preferred_item_links=preferred_item_links
@@ -379,13 +436,15 @@ def acquisition_decide(
             "affordances_seen": len(safe),
         }
 
-    system = (
-        "You are an evidence-acquisition planner for a research agent.\n"
-        "The code already measured which contract outcomes are still UNKNOWN or FAIL.\n"
-        "You must choose the next browser/file action that is most likely to surface "
-        "missing evidence — using ONLY the listed affordances (visible controls/links).\n"
-        "Do NOT invent selectors or URLs that are not listed.\n"
-        "Do NOT choose irreversible actions (book, pay, checkout, buy).\n"
+    rejected = should_hint_refine_search(
+        current_page_outcomes=current_page_outcomes,
+        gaps=gaps,
+        surfaces_seen=surfaces_seen,
+    )
+    has_input = any(str(a.get("kind") or "") == "input_field" for a in safe)
+    refine_search = rejected is not None
+
+    stay_on_entity = (
         "Prefer affordances with scope=local (same entity / same page surface) over "
         "scope=global (site-wide marketing, FAQ, login, destinations). "
         "Global pages rarely prove facts about the specific candidate under study.\n"
@@ -394,22 +453,56 @@ def acquisition_decide(
         "search/filter controls. Exploring a concrete unit yields bound evidence.\n"
         "Prefer kind=tab or kind=button that stay on the current entity over distant links "
         "when no preferred item link is available.\n"
+    )
+    leave_rejected_object = (
+        "The current page's object-identity decision is a concrete rejection "
+        "(NOT_RELEVANT or REJECTED) — this is not mere absence of a field. "
+        "Do NOT keep clicking related/local controls on this same rejected object "
+        "(related items, alternate views of the same record, back-to-abstract on "
+        "the same URL). Those will not turn a rejected instance into a matching one.\n"
+        "This run already visited a list_results surface. You MAY search again: "
+        "if kind=input_field is listed, choose FILL_AND_SUBMIT with a NEW query_text "
+        "that YOU formulate (free text; code does not write the query). The new "
+        "query_text must differ from any FILL already listed under no_progress_actions "
+        "(identical query on the same field is blocked). "
+        "If no input_field is listed, first use a listed affordance that reaches a "
+        "search/list surface (do not invent URLs), then fill on a later step.\n"
+    )
+    fill_rule = (
         "When gaps suggest missing search results and an affordance with kind=input_field "
         "is listed, you may choose FILL_AND_SUBMIT: set target_text to the input_field's "
         "text/placeholder (must match a listed affordance), and set query_text to a short "
         "search string that YOU formulate from the task/gaps (free text — code does not "
         "fill this for you). Code will type query_text into that field and press Enter.\n"
-        "Do NOT repeat an action listed under no_progress_actions — those already "
+    )
+    system = (
+        "You are an evidence-acquisition planner for a research agent.\n"
+        "The code already measured which contract outcomes are still UNKNOWN or FAIL.\n"
+        "You must choose the next browser/file action that is most likely to surface "
+        "missing evidence — using ONLY the listed affordances (visible controls/links).\n"
+        "Do NOT invent selectors or URLs that are not listed.\n"
+        "Do NOT choose irreversible actions (book, pay, checkout, buy).\n"
+        + (leave_rejected_object if refine_search else stay_on_entity)
+        + fill_rule
+        + "Do NOT repeat an action listed under no_progress_actions — those already "
         "produced no useful page-state change.\n"
         "If no listed affordance is likely to help, choose STOP.\n"
         "Respond with exactly one JSON object, no markdown."
     )
-    pref_note = (
-        "prefer preferred_item=true local links that open a concrete candidate unit; "
-        "else prefer local tabs/buttons that deepen the current surface; "
-        "when search is needed and kind=input_field is present, prefer FILL_AND_SUBMIT "
-        "with a query_text you formulate from task/gaps"
-    )
+    if refine_search:
+        pref_note = (
+            "current page rejected the object; do not deepen this same record; "
+            "if kind=input_field is present, FILL_AND_SUBMIT with a new query_text "
+            "you formulate (must not match a blocked identical query); "
+            "else use a listed affordance to reach a search surface — no invented URLs"
+        )
+    else:
+        pref_note = (
+            "prefer preferred_item=true local links that open a concrete candidate unit; "
+            "else prefer local tabs/buttons that deepen the current surface; "
+            "when search is needed and kind=input_field is present, prefer FILL_AND_SUBMIT "
+            "with a query_text you formulate from task/gaps"
+        )
     user = {
         "task_excerpt": (task_text or "")[:600],
         "page_url": page_url[:400],
@@ -421,6 +514,11 @@ def acquisition_decide(
         "affordances": safe[:28],
         "no_progress_actions": list(blocked)[:20],
         "preference": pref_note,
+        "current_page_outcomes": current_page_outcomes or {},
+        "surfaces_seen": list(surfaces_seen or [])[:20],
+        "page_object_rejected": rejected,
+        "refine_search_after_reject": refine_search,
+        "input_field_listed": has_input,
         "step_index": step_index,
         "max_steps": max_steps,
         "allowed_action_class": list(ACTION_CLASSES),
