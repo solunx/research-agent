@@ -317,6 +317,8 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Offline:** `evals/candidate_scope_reset/test_candidate_scope_offline_v0.py`. Live 05 only after user OK + `docker compose build`.
 - **Live `20260917T093236Z` (rebuild, `batch_decisions=False`):** `contract_satisfied=false` `gaps_n=1` only `claim_extracted=NOT_VISIBLE`; `subject_instance=RELEVANT` (083112Z: `NOT_RELEVANT` on the same abs — LLM label variance). One `candidate_scope event=bind` on `/abs/2609.19059v1` at step 6; **no unbind/switch**. First list→abs OPEN succeeded (href in affordances) but did **not** bind: `preferred_item_links` were chrome (`Submit`/`Advanced Search`) — #24b. Homepage `NOT_RELEVANT` overwritten by later concrete `RELEVANT` (#19), not by scope reset. **#26 not live-proven — do not close.** Remaining gap was Open #27 (abstract line dropped), not merge.
 
+- **Live `20260917T102344Z`:** still **no** `candidate_scope` bind/unbind/switch. Do not force another 05-run hoping for abs-reject. Offline tests remain the #26 proof. Keep OPEN until an unbind/switch event is observed or the item is explicitly deferred. PDF-download and #24b are later slices.
+
 ### #27 — long innerText paragraphs dropped from units (code in place; live retest pending)
 
 - **Symptom (`20260917T093236Z` step 003):** abstract present in `step_003_page_text.txt` as one **1524-char** line; `claim_extracted=NOT_VISIBLE`. `_skip_line_structural` skipped `len>240` and split the blank-line block, so the paragraph never entered a unit. Title survived in the 8-line prefix chunk.
@@ -324,7 +326,7 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Fix (structural):** wrap long lines into 240-char windows as their own block; keep high-char chunks without requiring digit-density or `item_link`; after action-first rank, **append** at most one long-text unit/candidate (do not drop nav top-K).
 - **01/02:** fixtures also contain huge lines (already dropped pre-fix). Offline: top-3 item_link hrefs unchanged.
 - **Offline:** `evals/long_line_units/test_long_line_units_offline_v0.py`. Live 05 only after user OK + `docker compose build`.
-- **Not this slice:** Open #10 abs `price_hits=4` → `list_results`; #24b list chrome candidates; #26 unbind live path.
+- **Live `20260917T102344Z` (rebuild, `batch_decisions=False`):** wrap+splice **did** produce abs `c3` = full AdaTIR abstract (`identity_hints=[]`, `primary_action=null`, `block_index=1`). **Interpret never saw it:** `live_offer_state_slice` calls `candidates_to_observations(selected, max_candidates=3)` so c3 is dropped. `step_005_claims.json` `claim_preview` is title+c0+c1+c2 only (`candidate_claim_n=4`). Same cap on HTML step 6. Offline test hid this (`max_candidates=8`). Not LLM; not empty `identity_hints`; not #22 (subject skipped this step → no subject_ref). **#27 not contract-closed.** Follow-up is observation-cap vs splice, not more wrapping. #26 stays OPEN (no scope event). PDF `Download is starting` + #24b wrong `pdf` href = later slices.
 
 ---
 

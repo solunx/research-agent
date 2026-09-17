@@ -1783,4 +1783,44 @@ Stap-log `outcomes=` is `pipe` (huidige pagina), niet `best_outcomes`.
 - #24b HTML-observer; #26 unbind-pad nog ongetest live.
 - View PDF mobile-locator.
 
+## 2026-09-17 — Live #27 retest `20260917T102344Z` + claim_extracted diagnose (geen fix)
+
+### Config / raw result
+Rebuild, `batch_decisions=False`. `result_…102344Z.json`: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` alleen `claim_extracted=NOT_VISIBLE`. PASS: RELEVANT / OPEN_ACCESS / IN_RANGE / title+url EXTRACTED. `final_url=/html/2601.14696v1` `llm_calls_total=197`. Stap 0 `cands=4 units=7` (splice in image).
+
+### #26
+Geen `candidate_scope` in deze run. **Blijft OPEN.** Geen geforceerde herhaalronde (beide recente 05-runs waren RELEVANT, niet het reject→leave-pad). Offline `test_candidate_scope_offline_v0.py` blijft het bewijs.
+
+### PDF / #24b (niet deze slice)
+`OPEN_URL` target=`pdf` href=`https://arxiv.org/pdf/2608.06909` → `Page.goto: Download is starting` soft_fail. Unit toonde AdaTIR `2601.14696`; href was een andere paper. Later OPEN abs + HTML experimental.
+
+### c3 citaat (`trace/artifacts/step_005_candidates.json`)
+- **Wel:** `candidate_id=c3`, `evidence` = 6 wrap-vensters van het AdaTIR-abstract (begint `Tool-Integrated Reasoning (TIR) has significantly enhanced…`), `block_index=1`, `packager_source=blank_block`, `digit_run_count=5`, `n_lines=6`. Preview: `id+ | (no identity hint)`.
+- **Niet:** `identity_hints=[]`, `primary_action=null`. (Title zit in **c0** `block_index=0`.)
+
+### (1) identity_hints — niet de oorzaak
+`_identity_hints_from_texts` slaat regels `len>80` over → wrapped 240-char vensters geven nooit hints. **Toeval t.o.v. deze failure.**
+- `interpret_observation` krijgt alleen `source_text`; geen identity_hints-gate.
+- `_claim_priority`: FIFO `list_index`, optioneel kortere snippets eerst; geen identity.
+- `aggregate_outcome` / `_is_subject_bound`: `candidate_id` / `block_index` / `item_link_href` only. Lege hints sluiten c3 niet uit.
+
+### (2) #22 + wrap-split — niet de failure die gebeurde
+Contractvraag (`contract_05_…json`): “Can a one-sentence main claim or conclusion be extracted from the abstract or intro?” — **geen** extra entity-binding-eis in de vraagtekst. Binding is framework (#22), intra-page.
+c0 `block_index=0` vs c3 `block_index=1` → `|Δ|=1 ≤ cluster K=8`; zelfde `item_link` ontbreekt (c3 heeft geen action). **Als beide geïnterpreteerd waren en subject_ref=c0, zou c3 wél bound zijn.**
+Stap 5: `skip_satisfied` bevat `subject_instance` → `pending_decisions` zonder subject → `_finalize_outcomes_with_binding` zet `subject_ref=None` → `require_subject_binding=False` voor claim. Wrap “identity meelopen” is dus **niet** wat deze run brak.
+
+### Root cause (categorie: structureel/packaging, niet LLM)
+`#27` splice zet c3 in `selected` (artifact). Live call:
+
+`live_offer_state_slice.py`: `obs = candidates_to_observations(selected, max_candidates=3)`
+
+c3 is de 4e candidate → **geen observation**. `step_005_claims.json` `claim_preview` = title + c0 chrome + c1 cite + c2 View PDF. Geen abstractparagraaf. `candidate_claim_n=4`. Zelfde cap op HTML stap 6 (`claim_preview` eindigt op `"to | 97.6"`, niet c3).
+Offline test `test_long_line_units_offline_v0.py` gebruikte `max_candidates=8` en verborg dit.
+
+**Niet categorie 3:** het model heeft c3 niet gelabeld; het heeft c3 niet gekregen.
+**Niet categorie 1.** Categorie 2-familie (packaging), concrete mechaniek = observation-cap vs splice — niet identity-context in wrap-chunks.
+
+### Niet gedaan
+Geen codefix. PDF/#24b onaangeroerd. #26 geen extra live-run.
+
 
