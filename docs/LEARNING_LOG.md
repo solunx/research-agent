@@ -1841,6 +1841,14 @@ Optie (b) (hardcode hetzelfde 3) zou c3 **nog steeds** droppen; Open #6 zit al o
 - 01/02/06: first-3 `candidate_claim` teksten identiek vóór/na; extra 4e observation = spliced long-text (zelfde klasse als 05 c3, geen herschikking van de oorspronkelijke 3).
 
 ### Open
-**#26 blijft OPEN** (ongerelateerd; geen unbind/switch in 093236Z/102344Z). PDF/#24b later. Live 05 hertest na deze commit.
+**#26 blijft OPEN** (ongerelateerd; geen unbind/switch in 093236Z/102344Z). PDF/#24b later.
+
+## 2026-09-17 — Live #27 cap-sync retest `20260917T111714Z`
+
+Rebuild na `1f0557e`, `batch_decisions=False`. Raw `result_05_web_literature_abstract_20260917T111714Z.json`: `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true` `claim_extracted=EXTRACTED`. Overige required: RELEVANT / OPEN_ACCESS / IN_RANGE / title+url EXTRACTED. `final_url=/abs/2609.18128` `llm_calls_total=156`.
+
+Stap 6 `step_006_claims.json`: `candidate_claim_n=5` (was 4 in 102344Z). `claim_preview` eindigt op c3-abstract: `Large language model (LLM) agents augmented by tools can automate… We present ContrAgent…`. Candidates: c0 chrome, c1 cite, c2 browse, c3 `(no identity hint)` = wrap. Interpret zag c3.
+
+PDF `Download is starting` opnieuw (`/pdf/2609.19059`) — #24b, niet deze slice. Geen `candidate_scope` event — **#26 blijft OPEN**.
 
 
