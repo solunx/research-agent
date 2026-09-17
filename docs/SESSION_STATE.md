@@ -2,7 +2,7 @@
 
 **Canoniek pad:** `scripts/run_contract_driven_task_v0.py` → frozen contract → candidates → interpret → code STOP. Regel: code = structuur, LLM = betekenis. Live Docker/GPU: zie `docs/AGENT_RULES.md`.
 **Stabiel:** taak 02 9/9 `CONTRACT_SATISFIED`; Fase G FILL_AND_SUBMIT; entity-binding (#22); #24a woordgrens (`0084f11`); batch_decisions opt-in.
-**Laatste commit:** `d9e8000` — Open #27 wrap. Live 05 `20260917T102344Z`: splice zette abstract in **c3**; interpret zag hem niet (`candidates_to_observations(..., max_candidates=3)`). `claim_extracted=NOT_VISIBLE`. **#26 OPEN** (geen scope-event; geen extra 05-run). Docker: altijd `docker compose build` vóór run.
+**Laatste commit:** `5b9960a` — docs: #27 live `102344Z` — interpret zag spliced c3 niet (`max_candidates=3`). `claim_extracted=NOT_VISIBLE`. **#26 OPEN** (geen scope-event; geen extra 05-run). Docker: altijd `docker compose build` vóór run.
 
 **Open (top 3):**
 1. **#27 follow-up** — observation-cap 3 vs spliced 4e candidate (gediagnosticeerd, geen fix nog). Niet LLM, niet identity_hints, niet #22.
