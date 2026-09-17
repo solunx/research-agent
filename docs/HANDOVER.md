@@ -79,7 +79,7 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 **Net gevonden, nog open (zie Fase H-prompt hierboven/in laatste conversatie):**
 - Na een succesvolle zoekopdracht kan de agent nog niet doorklikken naar een individueel resultaat — de link staat wel in de candidate-data maar niet in de affordance-lijst die `OPEN_URL` mag gebruiken
-- **2026-09-17 live `111714Z`:** na cap-sync `stop_reason=CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`; c3-abstract in `claim_preview`. #26 geen scope-event — **blijft OPEN**. PDF-download/#24b nog open.
+- **2026-09-17 live `111714Z`:** na cap-sync `stop_reason=CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`; c3-abstract in `claim_preview`. #26 geen scope-event — **blijft OPEN**. #24b nog actief. PDF-goto-exception = Open #28 (code).
 
 **Bewust nog niet opgelost, met reden (zie FRAMEWORK_BOUNDARY.md Open items):**
 - Open #4: welke minimale structurele stat-set een LLM nodig heeft om "chrome" te herkennen — nog niet gevalideerd, kleine n
@@ -117,4 +117,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26 blijft OPEN:** geen unbind/switch in `093236Z`/`102344Z`/`111714Z`; niet forceren. Daarna: PDF-download + **#24b**; niet batch-default. #27 observation-cap-mismatch is gesloten (`1f0557e` + live `111714Z`).
+Open **#26 blijft OPEN.** **#24b** nog actief (niet html_b2). **#28** PDF-download-catch in code; live 05 alleen na user-OK + `docker compose build`. Niet batch-default.

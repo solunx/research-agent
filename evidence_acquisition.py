@@ -828,6 +828,12 @@ def execute_acquisition_action(decision: dict[str, Any], *, max_chars: int = 200
         snap = browser_open(resolved, wait_seconds=3.0, max_chars=max_chars)
         snap["requested_href"] = str(href)[:400]
         snap["resolved_url"] = resolved[:400]
+        if snap.get("download"):
+            # Download is a handled outcome: keep the current document.
+            snap["ok"] = len(str(snap.get("text") or "")) > 40
+            snap["error"] = None
+            snap["action_class"] = "OPEN_URL"
+            return snap
         snap["ok"] = not bool(snap.get("error")) and len(str(snap.get("text") or "")) > 40
         return snap
     if action == "CLICK_TEXT":

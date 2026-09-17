@@ -1851,4 +1851,43 @@ Stap 6 `step_006_claims.json`: `candidate_claim_n=5` (was 4 in 102344Z). `claim_
 
 PDF `Download is starting` opnieuw (`/pdf/2609.19059`) — #24b, niet deze slice. Geen `candidate_scope` event — **#26 blijft OPEN**.
 
+## 2026-09-17 — #24b status-check (offline, bestaande 05-artifacts)
+
+### Vraag
+Komt “lijst = één blank-line-blok” nog voor na #25/#27, of miste `111714Z` het toevallig?
+
+### Citaat — nog actief
+`111714Z` `step_002_page_text.txt` (search, `surface=list_results`): geen blanco regel tussen kaarten:
+
+```
+arXiv:2609.19059  [pdf, ps, other]
+…
+Comments: Accepted by ACM MM 2026
+arXiv:2609.18736  [pdf, ps, other]
+```
+
+`_blank_line_blocks`: **5** blokken, max **92** regels, **19** paper-ids op de pagina, **1** in top-candidates. `step_002_affordances.json`: precies **één** `"text": "pdf"` → `https://arxiv.org/pdf/2609.19059`. `step_002_candidates.json` c3 evidence = ClinAgent `arXiv:2609.13860`, `primary_action` = diezelfde first-card pdf `2609.19059`.
+
+Zelfde patroon op search-stappen van `083112Z` / `093236Z` / `102344Z` (max-blok 92–111; pdf-mismatch). `111714Z` `CONTRACT_SATISFIED` via `OPEN_URL` `arXiv:2609.18128` (uniek label wél in affordances) + #27 op de abs-pagina — **omzeiling, geen fix**.
+
+### html_b2 niet gewired deze slice
+Publieke search-HTML (geen LLM): **50×** `li.arxiv-result`, titel in `<p class="list-title">`, **1** heading-tag op de hele pagina. `html_b2` = heading+price NCA → geen per-paper split. Kandidaat-arm = leaf `html` (`li`). Live pad slaat geen HTML op. 01/02-negatieven blijven verplicht zodra een HTML-arm wél live gaat.
+
+### PDF (scope, geen code)
+`Page.goto: Download is starting` op `/pdf/…` is generiek Playwright (navigatie triggert download). Loop **soft_failt al** en blijft op de lijst. Verkeerde pdf-href is #24b-dedupe, niet de download-exception. Abs/HTML-experimental volstaan voor taak 05. Kleine fix: download-event vangen i.p.v. goto-exception. PDF-tekst als bewijs = grotere capability, niet nodig voor huidig contract.
+
+## 2026-09-17 — Open #28 PDF/download catch (code + offline)
+
+### Citaat oud (`111714Z` loop)
+`execute_error`: `Page.goto: Download is starting` navigating to `https://arxiv.org/pdf/2609.19059` → `soft_fail`, lijstpagina behouden.
+
+### Fix
+`browser._run_keeping_download`: Playwright `download`-event + message `Download is starting`. Geen URL-/`.pdf`-lexicon. Download `cancel()` (geen parse). Snapshot van de **huidige** pagina, `download=True`, `error=None`. `OPEN_URL`/`CLICK` blijven `ok` als paginatekst >40. Loop: `download_kept_page`, action_key geblokkeerd, volgende affordance. Timeout blijft een echte error.
+
+### Offline
+`evals/download_navigation/test_download_navigation_offline_v0.py` groen (live error-string; timeout-negatief; execute-download is `ok`). Playwright HTTP-fixture SKIP op deze host (geen playwright).
+
+### Niet
+Geen PDF-tekst als bewijs. #24b (één `"pdf"`-affordance / verkeerde href) ongemoeid. Geen live 05 zonder user-OK.
+
 

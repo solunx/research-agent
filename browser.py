@@ -27,6 +27,10 @@ DEFAULT_UA = (
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
+# Playwright raises this when navigation (goto/click) starts a file download
+# instead of loading a document (live 05: OPEN_URL /pdf/… → "Download is starting").
+_DOWNLOAD_NAV_RE = re.compile(r"download is starting", re.I)
+
 # Generic consent buttons (NL/FR/EN – common CMP patterns)
 COOKIE_SELECTORS = [
     "#onetrust-accept-btn-handler",
@@ -210,6 +214,89 @@ def _snapshot(
     return out
 
 
+def _is_download_navigation_error(exc: BaseException | str | None) -> bool:
+    """True when Playwright aborted a navigation because a download started.
+
+    Structural: matches the engine message, not URL path or file type.
+    Live citation (`111714Z`): `Page.goto: Download is starting`.
+    """
+    return bool(_DOWNLOAD_NAV_RE.search(str(exc or "")))
+
+
+def _download_kept_page_snapshot(
+    page,
+    *,
+    requested_url: str = "",
+    download_meta: dict[str, str] | None = None,
+    max_chars: int = 15000,
+) -> dict[str, Any]:
+    """Stay on the current document after a download-navigation.
+
+    Does not parse the downloaded bytes (that is a later capability).
+    """
+    meta = download_meta or {}
+    try:
+        snap = _snapshot(page, max_chars=max_chars)
+    except Exception:
+        snap = {
+            "url": "",
+            "title": "",
+            "text": "",
+            "error": None,
+        }
+        try:
+            snap["url"] = str(page.url or "")
+        except Exception:
+            pass
+    snap["error"] = None
+    snap["download"] = True
+    snap["download_filename"] = str(meta.get("filename") or "")[:200]
+    snap["download_url"] = str(meta.get("url") or requested_url or "")[:400]
+    snap["cookies_dismissed"] = int(snap.get("cookies_dismissed") or 0)
+    return snap
+
+
+def _run_keeping_download(page, fn, *, requested_url: str = "", max_chars: int = 15000):
+    """Run a Playwright navigation/click. If it starts a download, return a
+    stay-on-page snapshot; otherwise return None so the caller continues."""
+    held: dict[str, str] = {}
+    alive = True
+
+    def _on_download(download) -> None:
+        nonlocal alive
+        if not alive:
+            return
+        held["filename"] = str(getattr(download, "suggested_filename", "") or "")
+        held["url"] = str(getattr(download, "url", "") or requested_url)
+        try:
+            download.cancel()
+        except Exception:
+            pass
+
+    page.on("download", _on_download)
+    try:
+        fn()
+    except Exception as e:
+        if held or _is_download_navigation_error(e):
+            return _download_kept_page_snapshot(
+                page,
+                requested_url=requested_url or held.get("url") or "",
+                download_meta=held,
+                max_chars=max_chars,
+            )
+        raise
+    finally:
+        alive = False
+    if held:
+        return _download_kept_page_snapshot(
+            page,
+            requested_url=requested_url or held.get("url") or "",
+            download_meta=held,
+            max_chars=max_chars,
+        )
+    return None
+
+
 def _resolve_navigation_url(url: str, *, base_url: str | None = None) -> str:
     """
     Resolve relative hrefs against the current page (or explicit base).
@@ -251,7 +338,14 @@ def browser_open(
     try:
         page = _ensure_browser(headless=headless, user_agent=user_agent)
         resolved = _resolve_navigation_url(url)
-        page.goto(resolved, wait_until="domcontentloaded", timeout=60000)
+        kept = _run_keeping_download(
+            page,
+            lambda: page.goto(resolved, wait_until="domcontentloaded", timeout=60000),
+            requested_url=resolved,
+            max_chars=max_chars,
+        )
+        if kept is not None:
+            return kept
         time.sleep(max(0.4, float(wait_seconds)))
         n = _dismiss_cookies(page)
         time.sleep(0.5)
@@ -332,7 +426,15 @@ def browser_click(selector: str, max_chars: int = 10000) -> dict[str, Any]:
         page = _ensure_browser()
         _dismiss_cookies(page, rounds=2)
         try:
-            page.locator(selector).first.click(timeout=15000)
+            kept = _run_keeping_download(
+                page,
+                lambda: page.locator(selector).first.click(timeout=15000),
+                requested_url=str(page.url or ""),
+                max_chars=max_chars,
+            )
+            if kept is not None:
+                kept["ok"] = len(str(kept.get("text") or "")) > 40
+                return kept
         except Exception as click_err:
             err_s = str(click_err)
             # Pointer intercepted by consent iframe / overlay → hide and retry once

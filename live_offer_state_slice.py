@@ -1058,6 +1058,20 @@ def run_acquisition_loop(
         action_key = action_fingerprint(decision, page_url=final_url)
         snap = execute_acquisition_action(decision, max_chars=22000)
         acquisition_steps += 1
+        if snap.get("download"):
+            step_rec["download"] = {
+                "filename": str(snap.get("download_filename") or "")[:200],
+                "url": str(
+                    snap.get("download_url") or snap.get("requested_href") or ""
+                )[:400],
+                "kept_page": True,
+            }
+            print(
+                f"[acquisition] download_kept_page "
+                f"file={step_rec['download']['filename'] or '(unnamed)'} "
+                f"— staying on current page, will try other affordances",
+                flush=True,
+            )
         ok = bool(snap.get("ok")) and not snap.get("noop")
         new_text = str(snap.get("text") or "")
         new_url = str(snap.get("url") or final_url)
