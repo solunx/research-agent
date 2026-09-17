@@ -281,8 +281,19 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 ### #24 — list_results item hrefs not in affordances (post-FILL bottleneck)
 
 - **Symptom (task 05 after successful FILL):** LLM proposes `OPEN_URL` to `https://arxiv.org/abs/…` derived from candidate_unit text; code rejects `href_not_in_affordances`. List affordances show short labels (`arXiv:NNNN`, `pdf`, authors) but not full abs links. Interpret on list surface leaves `title/claim/url=NOT_VISIBLE`.
-- **Hypothesis:** structural gap — paper card links (`a[href*="/abs/"]` or generic itemish deep links) under-collected or filtered before planner sees them; preferred_item_links from units not strong enough to drive OPEN_URL.
-- **Rule:** diagnose with step affordances + unit_preview from the same run before any code change. No invented URLs; no domain path hardcoding. Candidate structural fixes: broaden link affordance collection on list surfaces; or strengthen preferred_item → OPEN_URL path when gaps are extraction-shaped.
+- **Diagnosed 2026-09-17 (offline, real artifacts of run `20260916T170647Z`, no new live run) — split into two distinct sub-findings:**
+
+**#24a — word-boundary item_link mis-binding (CLOSED, fixed 2026-09-17)**
+- `candidate_units._link_for_block` (+ the link-anchor→block pass) matched labels via raw substring containment. `"submit" in "submitted 24 march, 2026…"` → the unit containing the AdaTIR paper was bound to the unrelated global `Submit` (`/user/create`) link.
+- Fix: `_label_matches_text` requires a non-alphanumeric boundary on both sides — structural token check, no lexicon. Applied at **both** duplicated match sites (lesson from bug #2: fix everywhere the same logic is duplicated).
+- Regression-tested against the accepted-good `evals/candidate_offline/fixtures_from_traces/manifest.json` (01/02/synthetic) — item_link bindings unchanged. New fixture: `evals/candidate_units_link_binding/`.
+- **This alone does not close #24** — see #24b.
+
+**#24b — chunking/representation gap on blank-line-less list pages (OPEN)**
+- Root cause: this page renders its entire 50-result list as **one** blank-line block (no blank line between `<li>` cards in flattened `page_text`). Fixed 8-line chunking then straddles paper boundaries. Combined with `browser_list_affordances`'s de-dupe-by-visible-text (only the *first* occurrence of a repeated label like `"pdf"` is captured), later chunks whose own link was never captured fall back to matching a **different paper's** `"pdf"` link — wrong-entity binding, not absence of binding.
+- **Attempted and reverted (2026-09-17):** href path-tail disambiguation (prefer a candidate whose href identifier segment also appears in the block text; else `None`). Regressed the known-good `02_monica_detail` fixture (dropped real `"Prijzen & boeken"` / `"Bekijk deze Fly & Go vakantie"` bindings in favor of a duplicated-but-harmless `"Costa Calma"` breadcrumb link). Reverted in full — do not reintroduce without a design that distinguishes "exact duplicate href" from "generic label, different hrefs."
+- **This is a representation problem, not a matching-algorithm problem** — same class `structural_observer.py`'s HTML arm (`extract_candidates_via_html` / `html_b2`, see `CANDIDATE_LAYER.md` §12) was built for, never wired into the live path. **Recommended next step:** measure the HTML arm on a live-captured list-results page (arXiv search or similar) offline, before any further text-heuristic attempt on `candidate_units.py`.
+- Also flagged, not yet measured: `browser_list_affordances` text-based de-dupe may under-collect repeated CTA labels on other list pages too (e.g. task 01 "Bekijk vakantie" repeated per card) — needs its own isolated offline measurement, out of scope for this fix.
 
 ---
 

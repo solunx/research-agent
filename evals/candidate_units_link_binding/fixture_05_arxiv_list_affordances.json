@@ -1,0 +1,427 @@
+[
+  {
+    "kind": "tab",
+    "text": "Search",
+    "href": "/search",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "All fields",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Title",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Author(s)",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Abstract",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Comments",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Journal reference",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "ACM classification",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "MSC classification",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Report number",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "arXiv identifier",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "DOI",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "ORCID",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "License (URI)",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "arXiv author ID",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Help pages",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Full text",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "25",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "50",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "100",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "200",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Announcement date (newest first)",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Announcement date (oldest first)",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Submission date (newest first)",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Submission date (oldest first)",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Relevance",
+    "href": "",
+    "role": "option",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Show abstracts",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Hide abstracts",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "results per page",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Sort results by",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "Go",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "input_field",
+    "text": "Search term...",
+    "href": "",
+    "role": "text",
+    "scope": "local",
+    "tag": "input",
+    "type": "text",
+    "name": "query",
+    "id": "query",
+    "placeholder": "Search term..."
+  },
+  {
+    "kind": "link",
+    "text": "Submit",
+    "href": "https://arxiv.org/user/create",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Advanced Search",
+    "href": "https://arxiv.org/search/advanced?terms-0-term=large+language+model+agents+tool+use+2024&terms-0-field=all&size=50&order=-announced_date_first",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Next",
+    "href": "https://arxiv.org/search/?query=large+language+model+agents+tool+use+2024&searchtype=all&source=header&start=50",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "arXiv:2608.06909",
+    "href": "https://arxiv.org/abs/2608.06909",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "pdf",
+    "href": "https://arxiv.org/pdf/2608.06909",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "ps",
+    "href": "https://arxiv.org/ps/2608.06909",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "other",
+    "href": "https://arxiv.org/format/2608.06909",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Jing Chen",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Chen%2C+J",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Yang Sun",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Sun%2C+Y",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Li Zhang",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Zhang%2C+L",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Lin Xu",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Xu%2C+L",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Jie Shi",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Shi%2C+J",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "arXiv:2606.05711",
+    "href": "https://arxiv.org/abs/2606.05711",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Yingzhuo Liu",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Liu%2C+Y",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "arXiv:2605.28359",
+    "href": "https://arxiv.org/abs/2605.28359",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Taojie Zhu",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Zhu%2C+T",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Wentao Zhao",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Zhao%2C+W",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Rui Sun",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Sun%2C+R",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Beidi Luan",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Luan%2C+B",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Jiacheng Lu",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Lu%2C+J",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Sinuo Wang",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Wang%2C+S",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Jing Li",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Li%2C+J",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Daxin Jiang",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Jiang%2C+D",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Yonghong He",
+    "href": "https://arxiv.org/search/?searchtype=author&query=He%2C+Y",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Zuo Bai",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Bai%2C+Z",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "arXiv:2603.23802",
+    "href": "https://arxiv.org/abs/2603.23802",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Merlin Stein",
+    "href": "https://arxiv.org/search/?searchtype=author&query=Stein%2C+M",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Learn more",
+    "href": "https://info.arxiv.org/about",
+    "role": "link",
+    "scope": "global"
+  }
+]

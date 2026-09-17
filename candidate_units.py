@@ -29,6 +29,33 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip()).lower()
 
 
+def _label_matches_text(a_norm: str, b_norm: str) -> bool:
+    """
+    Structural containment check with a token-boundary guard (bugfix
+    2026-09-17, Open #24 diagnosis, run `20260916T170647Z` task 05).
+
+    Plain substring containment (`a in b`) produced false positives when a
+    short link label is a prefix of an unrelated word elsewhere in the
+    block/line — e.g. link text "Submit" spuriously matched "Submitted 24
+    March, 2026" (present in nearly every arXiv result card), silently
+    binding an unrelated global-nav link ("Submit" -> /user/create) to a
+    candidate unit that had nothing to do with it.
+
+    Fix is purely mechanical (character-class boundary, not language or
+    domain content): require a non-alphanumeric boundary (or string edge)
+    on both sides of the shorter string inside the longer one. No word
+    lists, no language-specific tokenization.
+    """
+    if not a_norm or not b_norm:
+        return False
+    if len(a_norm) <= len(b_norm):
+        short, long_ = a_norm, b_norm
+    else:
+        short, long_ = b_norm, a_norm
+    pattern = r"(?<![0-9a-z])" + re.escape(short) + r"(?![0-9a-z])"
+    return re.search(pattern, long_) is not None
+
+
 def _skip_line_structural(line: str) -> bool:
     """Empty / tiny / extreme length only — no lexicon chrome filter (#3, #8)."""
     t = (line or "").strip()
@@ -206,7 +233,7 @@ def package_candidate_units(
             lab = _norm(str(a.get("text") or ""))
             if not lab:
                 continue
-            if any(lab in _norm(t) or _norm(t) in lab for t in block):
+            if any(_label_matches_text(lab, _norm(t)) for t in block):
                 return {
                     "text": str(a.get("text") or "")[:120],
                     "href": str(a.get("href") or "")[:400],
@@ -284,7 +311,7 @@ def package_candidate_units(
         for bi, block in enumerate(blocks):
             if bi in used_block_idxs:
                 continue
-            if any(_norm(label) in _norm(t) or _norm(t) in _norm(label) for t in block):
+            if any(_label_matches_text(_norm(label), _norm(t)) for t in block):
                 found_block = block
                 found_bi = bi
                 break

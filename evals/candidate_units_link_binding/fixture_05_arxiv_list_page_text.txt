@@ -1,0 +1,168 @@
+Skip to main content
+arXiv is now an independent nonprofit!
+Learn more
+×
+Search
+Submit
+Donate
+Log in
+Showing 1–50 of 232 results for all: large language model agents tool use 2024
+Search v0.5.6 released 2020-02-24
+Search term or terms
+All fields
+Title
+Author(s)
+Abstract
+Comments
+Journal reference
+ACM classification
+MSC classification
+Report number
+arXiv identifier
+DOI
+ORCID
+License (URI)
+arXiv author ID
+Help pages
+Full text
+Search
+Show abstracts  Hide abstracts
+Advanced Search
+25
+50
+100
+200
+results per page.
+Sort results by
+Announcement date (newest first)
+Announcement date (oldest first)
+Submission date (newest first)
+Submission date (oldest first)
+Relevance
+Go
+Next
+1
+2
+3
+4
+5
+arXiv:2608.06909  [pdf, ps, other]
+cs.AI
+Long-Horizon Agent Trajectory Attribution: A Unified Benchmark and Fine-Grained Annotation Framework
+Authors: Jing Chen, Yang Sun, Li Zhang, Lin Xu, Jie Shi
+Abstract: Large… ▽ More
+Submitted 7 August, 2026; originally announced August 2026.
+Comments: 17 pages, 4 figures, 7 tables
+arXiv:2606.05711  [pdf, ps, other]
+cs.CL
+Beyond tokens: a unified framework for latent communication in LLM-based multi-agent systems
+Authors: Yingzhuo Liu
+Abstract: Multi-agent systems built on… ▽ More
+Submitted 15 July, 2026; v1 submitted 4 June, 2026; originally announced June 2026.
+arXiv:2605.28359  [pdf, ps, other]
+cs.AI q-fin.TR
+From Knowing to Doing: A Memory-Controlled Benchmark for LLM Trading Agents on Stock Markets
+Authors: Taojie Zhu, Wentao Zhao, Rui Sun, Beidi Luan, Jiacheng Lu, Sinuo Wang, Jing Li, Daxin Jiang, Yonghong He, Zuo Bai
+Abstract: Evaluating whether large… ▽ More
+Submitted 27 May, 2026; originally announced May 2026.
+arXiv:2603.23802  [pdf, ps, other]
+cs.CY
+How are AI agents used? Evidence from 177,000 MCP tools
+Authors: Merlin Stein
+Abstract: Today's AI agents are built on… ▽ More
+Submitted 24 March, 2026; originally announced March 2026.
+MSC Class: 68T42; 91B55; 68M11 ACM Class: I.2.11; H.4.0; K.4.1; J.4
+arXiv:2601.14696  [pdf, ps, other]
+cs.CL
+AdaTIR: Adaptive Tool-Integrated Reasoning via Difficulty-Aware Policy Optimization
+Authors: Zhaiyu Fang, Ruipeng Sun
+Abstract: Tool-Integrated Reasoning (TIR) has significantly enhanced the capabilities of… ▽ More
+Submitted 21 January, 2026; originally announced January 2026.
+Comments: under review
+arXiv:2601.11595  [pdf, ps, other]
+cs.DC cs.LG cs.SE
+Enhancing Model Context Protocol (MCP) with Context-Aware Server Collaboration
+Authors: Meenakshi Amulya Jayanti, X. Y. Han
+Abstract: The Model Context Protocol (MCP) (MCP Community, 2025) has emerged as a widely… ▽ More
+Submitted 22 January, 2026; v1 submitted 6 January, 2026; originally announced January 2026.
+arXiv:2512.24615  [pdf, ps, other]
+cs.AI
+Youtu-Agent: Scaling Agent Productivity with Automated Generation and Hybrid Policy Optimization
+Authors: Yuchen Shi, Yuzheng Cai, Siqi Cai, Zihan Xu, Lichao Chen, Yulei Qin, Zhijian Zhou, Xiang Fei, Chaofan Qiu, Xiaoyu Tan, Gang Li, Zongyi Li, Haojia Lin, Guocan Cai, Yong Mao, Yunsheng Wu, Ke Li, Xing Sun
+Abstract: Existing Large… ▽ More
+Submitted 30 December, 2025; originally announced December 2025.
+arXiv:2512.23982  [pdf, ps, other]
+cs.SE cs.AI
+Coding With AI: From a Reflection on Industrial Practices to Future Computer Science and Software Engineering Education
+Authors: Hung-Fu Chang, MohammadShokrolah Shirazi, Lizhou Cao, Supannika Koolmanojwong Mobasser
+Abstract: Recent advances in large… ▽ More
+Submitted 29 December, 2025; originally announced December 2025.
+Comments: 21 pages, 5 figures
+ACM Class: D.2; K.6.3; K.3.2
+arXiv:2512.05982  [pdf, ps, other]
+physics.soc-ph cs.AI cs.MA
+FlockVote: LLM-Empowered Agent-Based Modeling for Simulating U.S. Presidential Elections
+Authors: Lingfeng Zhou, Yi Xu, Zhenyu Wang, Dequan Wang
+Abstract: Modeling complex human behavior, such as voter decisions in national elections, is a long-standing challenge for computational social science. Traditional… ▽ More
+Submitted 27 November, 2025; originally announced December 2025.
+Comments: Published as a conference paper at ICAIS 2025
+arXiv:2507.00014  [pdf, ps, other]
+cs.LG cs.AI cs.SE
+SWE-Bench-CL: Continual Learning for Coding Agents
+Authors: Thomas Joshi, Shayan Chowdhury, Fatih Uysal
+Abstract: Large… ▽ More
+Submitted 13 June, 2025; originally announced July 2025.
+arXiv:2506.17311  [pdf, ps, other]
+cs.CY
+Can Large Language Models Be Trusted Paper Reviewers? A Feasibility Study
+Authors: Chuanlei Li, Xu Hu, Minghui Xu, Kun Li, Yue Zhang, Xiuzhen Cheng
+Abstract: Academic paper review typically requires substantial time, expertise, and human resources. Large… ▽ More
+Submitted 18 June, 2025; originally announced June 2025.
+arXiv:2504.05288  [pdf, ps, other]
+cs.CV cs.CL
+Seeking and Updating with Live Visual Knowledge
+Authors: Mingyang Fu, Yuyang Peng, Dongping Chen, Zetong Zhou, Benlin Liu, Yao Wan, Zhou Zhao, Philip S. Yu, Ranjay Krishna
+Abstract: The visual world around us constantly evolves, from real-time news and social media trends to global infrastructure changes visible through satellite imagery and augmented reality enhancements. However, Multimodal… ▽ More
+Submitted 30 June, 2025; v1 submitted 7 April, 2025; originally announced April 2025.
+Comments: Preprint. Under Review
+arXiv:2504.03767  [pdf, other]
+cs.CR cs.AI cs.LG
+MCP Safety Audit: LLMs with the Model Context Protocol Allow Major Security Exploits
+Authors: Brandon Radosevich, John Halloran
+Abstract: To reduce development overhead and enable seamless integration between potential components comprising any given generative AI application, the Model Context Protocol (MCP) (Anthropic,… ▽ More
+Submitted 11 April, 2025; v1 submitted 2 April, 2025; originally announced April 2025.
+Comments: 27 pages, 21 figures, and 2 Tables. Cleans up the TeX source
+arXiv:2503.02582  [pdf, ps, other]
+cs.AI cs.GT
+Playing games with Large language models: Randomness and strategy
+Authors: Alicia Vidler, Toby Walsh
+Abstract: Playing games has a long history of describing intricate interactions in simplified forms. In this paper we explore if large… ▽ More
+Submitted 4 March, 2025; originally announced March 2025.
+Comments: 9 pages
+arXiv:2412.20145  [pdf, other]
+cs.CL
+Efficient Multi-Agent Collaboration with Tool Use for Online Planning in Complex Table Question Answering
+Authors: Wei Zhou, Mohsen Mesgar, Annemarie Friedrich, Heike Adel
+Abstract: …such as multi-step or multi-category reasoning, over data represented in tabular form. Previous approaches demonstrated notable performance by leveraging either closed-source large… ▽ More
+Submitted 8 February, 2025; v1 submitted 28 December, 2024; originally announced December 2024.
+Comments: Accepted at NAACL 2025 Findings
+arXiv:2412.19994  [pdf, other]
+physics.chem-ph cs.AI cs.CL cs.LG
+From Generalist to Specialist: A Survey of Large Language Models for Chemistry
+Authors: Yang Han, Ziping Wan, Lu Chen, Kai Yu, Xin Chen
+Abstract: Large… ▽ More
+Submitted 27 December, 2024; originally announced December 2024.
+Comments: COLING2025,We maintain an up-to-date Github repository at: https://github.com/OpenDFM/LLM4Chemistry
+arXiv:2412.18531  [pdf, other]
+cs.SE
+Automated Code Review In Practice
+Authors: Umut Cihan, Vahid Haratian, Arda İçöz, Mert Kaan Gül, Ömercan Devran, Emircan Furkan Bayendur, Baykal Mehmet Uçar, Eray Tüzün
+Abstract: …practice to improve software quality and transfer knowledge. It is often seen as time-consuming due to the need for manual effort and potential delays. Several AI-assisted tools, such as Qodo, GitHub Copilot, and Coderabbit, provide automated reviews… ▽ More
+Submitted 28 December, 2024; v1 submitted 24 December, 2024; originally announced December 2024.
+Comments: To be presented at ICSE 2025 47th International Conference on Software Engineering, Software Engineering in Practice (SEIP) Track
+arXiv:2412.18351
+cs.CL cs.AI
+Multi-Agents Based on Large Language Models for Knowledge-based Visual Question Answering
+Authors: Zhongjian Hu, Peng Yang, Bing Li, Zhenqi Wang
+Abstract: Large… ▽ More
+Submitted 6 August, 2025; v…[+14031 chars]

@@ -1595,3 +1595,104 @@ Coolblue click-robustness (`text=Zoeken` timeout) remains a **separate** problem
 - No planner hard-bias “always prefer search” (Open #21 preference hypothesis not required once capability exists — LLM chose FILL unaided on 05)
 - No Coolblue-specific selectors
 - No list-results OPEN_URL relaxation without a structural affordance fix
+
+## 2026-09-17 — Fase H diagnosis: Open #24 root cause + word-boundary item_link bugfix (shipped) + deeper chunking issue (found, NOT fixed)
+
+### Goal
+Start the Fase H roadmap item: diagnose Open #24 (`list_results` item hrefs not in
+affordances, task 05) offline using the real saved trace of run `20260916T170647Z`
+(`step_002_*` artifacts) before touching any code — per testdiscipline.
+
+### Diagnosis (offline, real artifacts, no new live run)
+Grepped `step_002_affordances.json`: `arxiv.org/abs/*` links ARE present as `kind=link`
+structural affordances — but only for **4 of 50** results on the page
+(`2608.06909`, `2606.05711`, `2605.28359`, `2603.23802`). The paper the LLM wanted
+(`arXiv:2601.14696`, "AdaTIR") never appears in the affordance list at all.
+
+Two independent, distinct root causes found (all with citation, no paraphrase):
+
+1. **Word-boundary bug in `candidate_units._link_for_block` / the link-anchor pass**
+   (BUG, fixed this session). Label/text matching used raw substring containment
+   (`lab in norm(t)`). `step_002_candidate_units.json` showed the unit containing
+   `AdaTIR` / `arXiv:2601.14696` bound to `item_link = {"text": "Submit", "href":
+   ".../user/create"}` — a completely unrelated global nav link — because
+   `"submit" in "submitted 24 march, 2026; originally announced march 2026."`
+   is true. This is a structural token-boundary defect, not a domain/language rule
+   (same audit class as MOVE items — but this one was never lexical to begin with,
+   just an unguarded substring check).
+
+2. **Deeper, NOT fixed: chunking/representation gap on this page shape** (found,
+   documented, deliberately not patched). The entire 50-result list on this arXiv
+   search page renders as **one single blank-line block** (no blank line separates
+   `<li>` result cards in the flattened `page_text`). `package_candidate_units`
+   then slices that one block into fixed 8-line chunks, which straddle paper
+   boundaries (a chunk can end mid-paper-A and start mid-paper-B). Separately,
+   `browser_list_affordances`'s JS-side de-dupe-by-visible-text
+   (`browser.py` `push()`, `textKey` dedupe) means a generic repeated label like
+   `"pdf"` is captured **once** for the whole page (first paper only); every other
+   chunk that also contains the literal substring `"pdf"` (true of nearly every
+   result, via `"[pdf, ps, other]"`) falls back to matching that one surviving
+   `"pdf"` link — silently binding to a **different, wrong paper's** pdf href.
+
+### Fix shipped (small, tested, non-regressive)
+`_label_matches_text(a, b)`: require a non-alphanumeric boundary (or string edge)
+on both sides of the shorter string inside the longer one — a mechanical
+token-boundary check, no word lists, no language content. Applied at **both**
+match sites inside `package_candidate_units` (block→link pass and the
+link-anchor→block pass) — lesson from HANDOVER bug #2 applied: when the same
+matching logic is duplicated, fix both call sites, not just the one you found
+first.
+
+New offline regression: `evals/candidate_units_link_binding/test_link_binding_offline_v0.py`,
+fixtures = real `step_002_page_text.txt` / `step_002_affordances.json` copied
+verbatim from run `20260916T170647Z`. Covers: the fixed false-positive
+(Submit/Submitted), a positive control that a *legitimate* exact-word "Submit"
+match on the real top-nav chrome block still works (fix must not become too
+strict), and a frozen-hash check against the existing accepted-good
+`evals/candidate_offline/fixtures_from_traces/manifest.json` (01/02/synthetic) —
+item_link bindings on those fixtures are byte-identical before/after this change.
+
+### Attempted, measured, and reverted: href-segment disambiguation
+Tried extending `_link_for_block` to disambiguate when a label matches more
+than one item_link (to fix case #2 above): prefer a candidate whose href's own
+path-tail identifier also appears verbatim in the block text; else return
+`None` instead of guessing (same fail-closed principle as entity-binding /
+Open #22). **Regression on the known-good manifest**: on `02_monica_detail`,
+this caused `"Prijzen & boeken"` and `"Bekijk deze Fly & Go vakantie"` — real,
+distinctive action links — to be replaced by repeated `"Costa Calma"` bindings
+(a literally-duplicated breadcrumb link on the same page, previously correctly
+out-prioritized by path-depth ordering). Root cause of the regression: treating
+"same label appears in >1 candidate" as inherently ambiguous does not distinguish
+*harmless exact duplicates of the same href* (breadcrumb repeated in header/
+footer) from *genuinely different hrefs sharing a generic label* (per-paper
+"pdf"). Reverted in full (both call sites) rather than ship a heuristic that
+passed on the new fixture but broke the old one — testdiscipline rule "no new
+heuristic without a measurable experiment," and the experiment said no.
+
+### Verdict / next step (do not re-attempt as a text patch)
+Root cause of #2 is a **representation gap**, not a matching-algorithm gap: this
+page shape (no blank lines between list items) breaks the blank-line + fixed-
+chunk packaging assumption entirely. This is the exact failure class
+`structural_observer.py` (`extract_candidates_via_html` / `html_b2`, see
+`CANDIDATE_LAYER.md` §12) was built to address but which was never wired into
+the live acquisition path ("Wiring HTML observer into live acquisition path" —
+listed as "Not yet" since 2026-08-28). **Recommendation for next Open #24
+session:** measure the HTML arm on a live-captured arXiv search-results page
+(list of `<li>`/`<dt>`/`<dd>` result records) offline before any further text-
+heuristic attempt; do not spend another cycle patching `candidate_units.py`
+text matching for this specific failure mode.
+
+### FRAMEWORK_BOUNDARY Open #24 — updated
+Split into two sub-findings (see doc): 24a (word-boundary matching — CLOSED,
+shipped) and 24b (chunking/representation gap on blank-line-less list pages,
+compounded by affordance-capture de-dupe — OPEN, HTML-arm investigation is the
+recommended next step, not a text patch).
+
+### Explicit non-actions this slice
+- No live re-run of task 05 yet (the shipped fix does not by itself close Open
+  #24 end-to-end; a live retest would still hit case #2 on this specific page)
+- No change to `browser_list_affordances` de-dupe-by-text behaviour (needs its
+  own isolated measurement — may affect other tasks, e.g. task 01 "Bekijk
+  vakantie" CTAs repeated per card)
+- No wiring of `structural_observer` HTML arm into the live path yet (next step,
+  not this slice)
