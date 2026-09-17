@@ -363,10 +363,20 @@ def extract_candidates(
 def candidates_to_observations(
     candidates: list[Candidate],
     *,
-    max_candidates: int = 6,
+    max_candidates: int | None = None,
 ) -> list[dict[str, Any]]:
+    """Map selected candidates to interpret observations.
+
+    Default (`max_candidates=None`): no extra cap — pass through all of
+    `candidates`. Live acquisition already budgets via extract_candidates
+    (Open #6: max_candidates=3, max_units=6) plus at most one Open #27
+    long-text splice. An independent recap here (hardcoded 3) dropped
+    spliced c3 in 20260917T102344Z. Pass an explicit int only in tests
+    that need a tighter slice.
+    """
+    cap = len(candidates) if max_candidates is None else max_candidates
     units = []
-    for c in candidates[:max_candidates]:
+    for c in candidates[:cap]:
         units.append(
             {
                 "unit_id": c.candidate_id,
@@ -382,7 +392,7 @@ def candidates_to_observations(
         units,
         page_url=candidates[0].source_url if candidates else "",
         surface=candidates[0].surface if candidates else "",
-        max_units=max_candidates,
+        max_units=cap,
     )
 
 

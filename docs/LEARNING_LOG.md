@@ -1820,7 +1820,27 @@ Offline test `test_long_line_units_offline_v0.py` gebruikte `max_candidates=8` e
 **Niet categorie 3:** het model heeft c3 niet gelabeld; het heeft c3 niet gekregen.
 **Niet categorie 1.** Categorie 2-familie (packaging), concrete mechaniek = observation-cap vs splice — niet identity-context in wrap-chunks.
 
-### Niet gedaan
+### Niet gedaan (op diagnose-moment)
 Geen codefix. PDF/#24b onaangeroerd. #26 geen extra live-run.
+
+## 2026-09-17 — #27 follow-up: observation-cap mismatch (code + offline)
+
+### Root cause (bevestigd)
+Oud: `live_offer_state_slice.py` `obs = candidates_to_observations(selected, max_candidates=3)`.
+`extract_candidates(..., max_candidates=3, max_units=6)` + Open #27 splice mag `len(selected)=4` (c3 = abstract). Tweede cap gooide c3 weg vóór interpret.
+
+### Fix — optie (a), kleinste ingreep die Open #6 respecteert
+Nieuw: `obs = candidates_to_observations(selected)` — geen onafhankelijke recap.
+`candidates_to_observations` default `max_candidates=None` → `cap = len(candidates)`.
+Optie (b) (hardcode hetzelfde 3) zou c3 **nog steeds** droppen; Open #6 zit al op `extract_candidates`. Comment bij de call verwijst naar #6/#27/`102344Z`.
+
+### Offline
+- Negatief: frozen 102344Z 4 candidates, recap=3 → c3 **niet** in observations.
+- Verplicht: zelfde 4, synced cap → c3-tekst `Tool-Integrated Reasoning (TIR) has significantly enhanced…` **wel** in observations (`candidate_id=c3`).
+- Harness: live-budget 3/6 (niet meer `max_candidates=8` als enige pad); apart wide-budget=8.
+- 01/02/06: first-3 `candidate_claim` teksten identiek vóór/na; extra 4e observation = spliced long-text (zelfde klasse als 05 c3, geen herschikking van de oorspronkelijke 3).
+
+### Open
+**#26 blijft OPEN** (ongerelateerd; geen unbind/switch in 093236Z/102344Z). PDF/#24b later. Live 05 hertest na deze commit.
 
 

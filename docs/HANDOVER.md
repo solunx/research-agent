@@ -79,14 +79,14 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 **Net gevonden, nog open (zie Fase H-prompt hierboven/in laatste conversatie):**
 - Na een succesvolle zoekopdracht kan de agent nog niet doorklikken naar een individueel resultaat — de link staat wel in de candidate-data maar niet in de affordance-lijst die `OPEN_URL` mag gebruiken
-- **2026-09-17 live `102344Z`:** wrap+splice zette AdaTIR-abstract in **c3**; `claim_preview` heeft c3 **niet** (`candidates_to_observations(..., max_candidates=3)`). #27 niet contract-dicht. #26 geen scope-event — OPEN, geen extra 05-run.
+- **2026-09-17 live `102344Z`:** wrap+splice zette AdaTIR-abstract in **c3**; `claim_preview` had c3 **niet** (observation-cap 3). Follow-up gefixt: geen tweede recap. #26 geen scope-event — **blijft OPEN**.
 
 **Bewust nog niet opgelost, met reden (zie FRAMEWORK_BOUNDARY.md Open items):**
 - Open #4: welke minimale structurele stat-set een LLM nodig heeft om "chrome" te herkennen — nog niet gevalideerd, kleine n
 - Open #6: `max_candidates`-budget is provisional, niet gevalideerd over diverse paginatypes
 - Open #10: taalneutrale surface-detector-drempel, herijking nog niet afgerond (abs `price_hits=4` → ten onrechte `list_results`)
 - Open #26: candidate-scope reset in code; live unbind-pad nog niet voorgekomen
-- Open #27: wrap in code; live splice in c3 maar observation-cap 3 — follow-up gediagnosticeerd, geen fix nog
+- Open #27: wrap + observation-cap-sync in code; live contract-dichtheid (claim_extracted) wacht op 05-retest. Follow-up observation-cap-mismatch **gesloten** (offline). #26 blijft OPEN.
 - Open #19/#22-vervolg: `NOT_STATED` als "zwak" label is een contract-specifieke workaround, geen generiek mechanisme — als een toekomstige taak een ander afwezigheidslabel gebruikt (`NOT_VISIBLE`, `UNSTATED`), moet dit generieker (richting: contract-gedreven sufficiency-set, geen vaste strings)
 - Taak 03 (Coolblue GPU): zoekknop-klik faalt op een fragiele tekst-locator (`text=Zoeken`) — apart probleem van de zoekcapaciteit zelf, nog niet gefixt
 - Efficiëntie: `batch_decisions=True` is bewezen veilig en veel goedkoper (tot 7x minder LLM-calls) maar blijft bewust **opt-in**, geen default
@@ -117,4 +117,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#27 follow-up** (observation-cap 3 laat spliced c3 niet naar interpret — gediagnosticeerd, geen fix). **#26 blijft OPEN:** geen unbind/switch in `093236Z`/`102344Z`; geen extra 05-run forceren. Daarna: PDF-download + **#24b**; niet batch-default.
+Open **#27 observation-cap-mismatch gesloten** (geen tweede recap; c3 bereikt observations offline). Live 05-retest voor contract-dichtheid. **#26 blijft OPEN:** geen unbind/switch in `093236Z`/`102344Z`; niet forceren. Daarna: PDF-download + **#24b**; niet batch-default.

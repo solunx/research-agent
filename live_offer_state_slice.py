@@ -682,7 +682,12 @@ def run_acquisition_loop(
         )
         unit_preview = unit_claim_preview(units)
 
-        obs = candidates_to_observations(selected, max_candidates=3)
+        # Open #6: extract_candidates already applied the provisional budget
+        # (max_candidates=3, max_units=6). Open #27 may splice one extra
+        # long-text candidate, so len(selected) can be 4. Do not recap here
+        # with a hardcoded 3 — that dropped spliced c3 in 20260917T102344Z
+        # before interpret ever saw the abstract.
+        obs = candidates_to_observations(selected)
         if title:
             obs.insert(
                 0,

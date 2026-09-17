@@ -1,0 +1,422 @@
+[
+  {
+    "kind": "tab",
+    "text": "Toggle History subsection",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Toggle Flag subsection",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Toggle Geography subsection",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Toggle Demographics subsection",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Toggle Administration subsection",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Toggle Economy subsection",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Toggle Art and culture subsection",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Toggle Transport and communications subsection",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Toggle Sport subsection",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Main menu",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "65 languages",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Tools",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Small",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Standard",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Large",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Wide",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Automatic",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Light",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Dark",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "Search",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "hide",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "show",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "Play audio",
+    "href": "//upload.wikimedia.org/wikipedia/commons/transcoded/1/1e/Pronunciation_of_Fuerteventura_in_Spanish.ogg/Pronunciation_of_Fuerteventura_in_Spanish.ogg.mp3",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Donate",
+    "href": "https://donate.wikimedia.org/?wmf_source=donate&wmf_medium=sidebar&wmf_campaign=en.wikipedia.org&uselang=en",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Create account",
+    "href": "/w/index.php?title=Special:CreateAccount&returnto=Fuerteventura",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Log in",
+    "href": "/w/index.php?title=Special:UserLogin&returnto=Fuerteventura",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Wiki Loves Monuments: Photograph a monument, help Wikipedia and win! Learn more",
+    "href": "https://commons.wikimedia.org/wiki/Event:Wiki_Loves_Monuments_Belgium/2026/en",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "(Top)",
+    "href": "#",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Toponymy",
+    "href": "#Toponymy",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "History",
+    "href": "#History",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Flag",
+    "href": "#Flag",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Geography",
+    "href": "#Geography",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Natural symbols",
+    "href": "#Natural_symbols",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Demographics",
+    "href": "#Demographics",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Administration",
+    "href": "#Administration",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Economy",
+    "href": "#Economy",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Art and culture",
+    "href": "#Art_and_culture",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Main sights",
+    "href": "#Main_sights",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Food",
+    "href": "#Food",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Transport and communications",
+    "href": "#Transport_and_communications",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Sport",
+    "href": "#Sport",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Notable people",
+    "href": "#Notable_people",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "See also",
+    "href": "#See_also",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "References",
+    "href": "#References",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "External links",
+    "href": "#External_links",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Article",
+    "href": "/wiki/Fuerteventura",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Talk",
+    "href": "/wiki/Talk:Fuerteventura",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Read",
+    "href": "/wiki/Fuerteventura",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Edit",
+    "href": "/w/index.php?title=Fuerteventura&action=edit",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "View history",
+    "href": "/w/index.php?title=Fuerteventura&action=history",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Coordinates",
+    "href": "https://en.wikipedia.org/wiki/Geographic_coordinate_system",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "28°24′N 14°00′W",
+    "href": "https://geohack.toolforge.org/geohack.php?pagename=Fuerteventura&params=28_24_N_14_00_W_type:isle",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "the corresponding article",
+    "href": "https://es.wikipedia.org/wiki/Fuerteventura",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Canary Islands",
+    "href": "https://en.wikipedia.org/wiki/Canary_Islands",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "[1]",
+    "href": "#cite_note-istac_territorio-1",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Autonomous Community",
+    "href": "https://en.wikipedia.org/wiki/Autonomous_communities_of_Spain",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "[ˌfweɾteβenˈtuɾa]",
+    "href": "https://en.wikipedia.org/wiki/Help:IPA/Spanish",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Macaronesia",
+    "href": "https://en.wikipedia.org/wiki/Macaronesia",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Spain",
+    "href": "https://en.wikipedia.org/wiki/Spain",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "North Africa",
+    "href": "https://en.wikipedia.org/wiki/North_Africa",
+    "role": "a",
+    "scope": "local"
+  }
+]
