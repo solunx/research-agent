@@ -309,9 +309,18 @@ def select_top_candidates(
     """
     Top-K by structural rank. No chrome gate (#5).
     include_chrome is ignored (API compat); all candidates are eligible.
+
+    Open #27: if a candidate has a long evidence blob (>= 240 chars) that lost
+    the action-first rank, append it so interpret still sees body paragraphs.
+    Does not drop the navigation top-K.
     """
     ranked = rank_candidates(_dedupe_candidates_exact(candidates))
     chosen = ranked[: max(1, max_n)] if ranked else []
+    if ranked:
+        best_long = max(ranked, key=lambda c: sum(len(t or "") for t in (c.evidence or [])))
+        long_n = sum(len(t or "") for t in (best_long.evidence or []))
+        if long_n >= 240 and all(best_long is not c for c in chosen):
+            chosen = list(chosen) + [best_long]
     for i, c in enumerate(chosen):
         c.candidate_id = f"c{i}"
     return chosen

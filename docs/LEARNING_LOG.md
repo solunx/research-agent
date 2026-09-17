@@ -1734,4 +1734,53 @@ Bind via `preferred_item_links` + path-leave vanaf `list_results` of switch naar
 ### Niet gedaan
 Live 05 — alleen na user-OK + `docker compose build`.
 
+## 2026-09-17 — Live #26 retest `20260917T093236Z` (niet gesloten)
+
+### Config
+Rebuild `--no-cache`, `batch_decisions=False`, zelfde frozen contract, `--max-steps 6`. Apples-to-apples vs `083112Z`.
+
+### Citaat raw `result_05_web_literature_abstract_20260917T093236Z.json`
+`stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` `gaps_n=1` alleen `claim_extracted=NOT_VISIBLE`.
+PASS: `subject_instance=RELEVANT` `access_status=OPEN_ACCESS` `recency=IN_RANGE` `title_extracted=EXTRACTED` `url_extracted=EXTRACTED`.
+`final_url=https://arxiv.org/abs/2609.19059v1` `llm_calls_total=156` (083112Z: 216).
+
+### Lus (loop + terminal)
+- Stap 0 homepage `NOT_RELEVANT` (geen bound paper) → Search → FILL `large language model agents tool use`.
+- Stap 2 lijst `OPEN_URL https://arxiv.org/abs/2609.19059` — href **zat** in affordances (niet het #24 `href_not_in_affordances` pad).
+- Stap 3–5 zelfde abs: LLM `subject_instance=RELEVANT` (083112Z: **NOT_RELEVANT** op dit abs — labelvariant, geen codebewijs).
+- `CLICK_TEXT View PDF` `soft_fail`: locator `text=View PDF` is onzichtbare `a.mobile-submission-download`.
+- Enige scope-event: `candidate_scope event=bind path=/abs/2609.19059v1 bound_step=6`. **Geen unbind/switch.**
+
+### Waarom #26 niet live bewezen
+Het ontwerp-faalpad (bound reject → leave → merge houdt `NOT_RELEVANT` vast t.o.v. later `UNKNOWN`) is niet voorgekomen.
+- Eerste list→abs bond **niet**: `preferred_item_links` op `/search` waren chrome (`Submit`→`/user/create`, `Advanced Search`) — top-3 candidates = header (#24b).
+- Bind op v1 is same-record deepening; `from_list` was true omdat abs `surface=list_results` is (`_classify_surface` via price-like digit density: **4** hits, drempel 3 — Open #10).
+- Homepage-`NOT_RELEVANT` verdween via #19 (later concreet `RELEVANT`), niet via scope-reset.
+Stap-log `outcomes=` is `pipe` (huidige pagina), niet `best_outcomes`.
+
+### Resterende contract-gap (niet merge)
+`step_003_page_text.txt` bevat de MIRAGE-abstractparagraaf. `claim_extracted` bleef `NOT_VISIBLE` omdat die regel **nooit in een unit zat**. Zie Open #27.
+
+## 2026-09-17 — Open #27 long innerText lines dropped (claim_extracted gap)
+
+### Citaat / meting (offline, echte artifacts `093236Z` step 003)
+- 70 non-empty regels; **1** regel `len=1524` begint met `Multimodal large language model (MLLM) agents`.
+- `_skip_line_structural` behandelde `len>240` als skip-and-split → abstract verdween; title overleefde in de 8-regel prefix-chunk (`title_extracted=EXTRACTED`).
+- `extract_candidates` top-3: Submit `/user/create`, view email, View PDF — geen abstract.
+- 01/02 fixtures hebben ook huge lines (max 832–837) die al gedropped werden; top-3 item_link hrefs mogen niet herschikken.
+
+### Regel (structureel, geen lexicon)
+- Wrap `len>240` in vensters van 240 als **eigen blok** (niet droppen, niet aan chrome-chunk plakken).
+- 1-regel / digit-loze chunks behouden als tot char-count ≥ 240.
+- Na action-first rank: append hoogstens **één** long-text unit/candidate als die ontbreekt (nav top-K blijft).
+
+### Offline
+`evals/long_line_units/test_long_line_units_offline_v0.py` — abstract in units + observations; short-only pagina verzint geen paragraaf; 01/02/synthetic top-3 hrefs ongewijzigd. Regressie #24a/#25/#26 groen.
+
+### Niet gedaan
+- Live 05 hertest — alleen na user-OK + `docker compose build`.
+- Surface-tag abs=`list_results` (Open #10) niet “gefixed” in deze slice: monica detail heeft price_hits=29; drempel ophogen lost abs=4 niet zuiver op en zou 01-lijsten raken.
+- #24b HTML-observer; #26 unbind-pad nog ongetest live.
+- View PDF mobile-locator.
+
 

@@ -24,6 +24,11 @@ _CURRENCY_GLYPH = re.compile(r"[€$£¥]")
 # Digit run: 2+ digits, optional groups with . or , as separators (structural, not lexical).
 _DIGIT_RUN = re.compile(r"\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d{2,}")
 
+# Structural line cap (Open #27): innerText often emits a whole paragraph as
+# one line. Dropping those lines discarded the only claim-bearing evidence on
+# arXiv abs pages (run 20260917T093236Z, 1524-char abstract). Wrap, do not drop.
+_LINE_CHAR_CAP = 240
+
 
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip()).lower()
@@ -57,13 +62,27 @@ def _label_matches_text(a_norm: str, b_norm: str) -> bool:
 
 
 def _skip_line_structural(line: str) -> bool:
-    """Empty / tiny / extreme length only — no lexicon chrome filter (#3, #8)."""
+    """Empty / tiny only — no lexicon chrome filter (#3, #8).
+
+    Length > _LINE_CHAR_CAP is *not* a skip: `_blank_line_blocks` wraps those
+    lines into windows so body paragraphs survive packaging (Open #27).
+    """
     t = (line or "").strip()
-    if not t or len(t) < 2:
-        return True
-    if len(t) > 240:
-        return True
-    return False
+    return (not t) or len(t) < 2
+
+
+def _wrap_long_line(line: str, cap: int = _LINE_CHAR_CAP) -> list[str]:
+    """Split a long innerText line into structural windows. No NLP."""
+    t = (line or "").strip()
+    if not t:
+        return []
+    if len(t) <= cap:
+        return [t]
+    return [t[i : i + cap] for i in range(0, len(t), cap)]
+
+
+def _texts_char_count(texts: list[str] | None) -> int:
+    return sum(len(str(t or "")) for t in (texts or []))
 
 
 def _currency_glyph_count(texts: list[str]) -> int:
@@ -182,10 +201,20 @@ def _blank_line_blocks(raw_text: str) -> list[list[str]]:
             continue
         t = ln.strip()
         if _skip_line_structural(t):
-            # structural skip only (empty/tiny/huge) — does not break on word lists
+            # structural skip only (empty/tiny) — does not break on word lists
             if cur:
                 blocks.append(cur)
                 cur = []
+            continue
+        if len(t) > _LINE_CHAR_CAP:
+            # Own block of windows so a paragraph is not glued into the
+            # preceding 8-line chrome chunk, and is not dropped.
+            if cur:
+                blocks.append(cur)
+                cur = []
+            windows = _wrap_long_line(t)
+            if windows:
+                blocks.append(windows)
             continue
         cur.append(t)
     if cur:
@@ -256,7 +285,7 @@ def package_candidate_units(
     for bi, block in enumerate(blocks):
         if len(units) >= collect_cap:
             break
-        if len(block) < 2:
+        if len(block) < 2 and _texts_char_count(block) < _LINE_CHAR_CAP:
             continue
         chunks = [
             block[i : i + max_lines_per_unit]
@@ -277,7 +306,8 @@ def package_candidate_units(
             dens_f = _density_fields(chunk)
             linked = _link_for_block(chunk)
             structural = dens_f["currency_glyph_count"] + dens_f["digit_run_count"]
-            if structural < 1 and not linked:
+            # Keep long wrapped paragraphs even without digits/links (Open #27).
+            if structural < 1 and not linked and _texts_char_count(chunk) < _LINE_CHAR_CAP:
                 continue
             units.append(
                 {
@@ -364,9 +394,20 @@ def package_candidate_units(
         )
 
     units.sort(key=_rank)
-    for i, u in enumerate(units[:max_units]):
+    chosen = units[:max_units]
+    # Open #27: action-first rank can fill max_units with linked chrome while
+    # a wrapped paragraph (no item_link) never reaches interpret. Keep nav
+    # units; append at most one long-text unit if it is missing.
+    if units:
+        best_long = max(units, key=lambda u: _texts_char_count(u.get("texts")))
+        if (
+            _texts_char_count(best_long.get("texts")) >= _LINE_CHAR_CAP
+            and all(best_long is not u for u in chosen)
+        ):
+            chosen = list(chosen) + [best_long]
+    for i, u in enumerate(chosen):
         u["unit_id"] = f"u{i}"
-    return units[:max_units]
+    return chosen
 
 
 def units_to_observations(

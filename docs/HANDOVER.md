@@ -79,12 +79,14 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 **Net gevonden, nog open (zie Fase H-prompt hierboven/in laatste conversatie):**
 - Na een succesvolle zoekopdracht kan de agent nog niet doorklikken naar een individueel resultaat — de link staat wel in de candidate-data maar niet in de affordance-lijst die `OPEN_URL` mag gebruiken
-- **2026-09-17 update (Fase H, offline diagnose van Open #24):** twee losse oorzaken gevonden. (a) een woordgrens-bug in `candidate_units._link_for_block` (`"submit"` matchte per ongeluk binnen `"submitted 24 march..."`) — **gefixt en getest**, geen regressie op taak 01/02. (b) een dieperliggend representatieprobleem: deze pagina rendert de hele resultatenlijst als ÉÉN blank-line-blok (geen scheiding tussen kaarten), waardoor vaste 8-regel-chunking entiteiten doorsnijdt, gecombineerd met een de-dupe-by-tekst in `browser_list_affordances` die herhaalde generieke labels (`"pdf"`) maar één keer vastlegt. Een disambiguatiepoging (href-padsegment-matching) werd getest tegen de bekende-goede fixtures en **teruggedraaid** — die brak taak 02 (`Prijzen & boeken` verdween). Zie `FRAMEWORK_BOUNDARY.md` Open #24b en `LEARNING_LOG.md` 2026-09-17 voor het volledige citaat-onderbouwde verslag. **Aanbevolen volgende stap: de al gebouwde maar nooit ingehaakte HTML-observer (`structural_observer.py`) offline meten op een lijstpagina — geen nieuwe tekstheuristiek meer op `candidate_units.py` proberen.**
+- **2026-09-17 live `093236Z`:** OPEN naar `/abs/2609.19059` **lukte** (href in affordances). Contract false alleen door `claim_extracted=NOT_VISIBLE`. #26 niet live bewezen (geen unbind). Open **#27** wrapte de gedropte 1524-char abstractregel (offline groen). #24b blijft: list `preferred_item_links` zijn chrome. HTML-observer meten op lijstpagina — geen nieuwe tekstheuristiek voor card-grenzen.
 
 **Bewust nog niet opgelost, met reden (zie FRAMEWORK_BOUNDARY.md Open items):**
 - Open #4: welke minimale structurele stat-set een LLM nodig heeft om "chrome" te herkennen — nog niet gevalideerd, kleine n
 - Open #6: `max_candidates`-budget is provisional, niet gevalideerd over diverse paginatypes
-- Open #10: taalneutrale surface-detector-drempel, herijking nog niet afgerond
+- Open #10: taalneutrale surface-detector-drempel, herijking nog niet afgerond (abs `price_hits=4` → ten onrechte `list_results`)
+- Open #26: candidate-scope reset in code; live unbind-pad nog niet voorgekomen
+- Open #27: long-line wrap in code; live taak 05 retest pending
 - Open #19/#22-vervolg: `NOT_STATED` als "zwak" label is een contract-specifieke workaround, geen generiek mechanisme — als een toekomstige taak een ander afwezigheidslabel gebruikt (`NOT_VISIBLE`, `UNSTATED`), moet dit generieker (richting: contract-gedreven sufficiency-set, geen vaste strings)
 - Taak 03 (Coolblue GPU): zoekknop-klik faalt op een fragiele tekst-locator (`text=Zoeken`) — apart probleem van de zoekcapaciteit zelf, nog niet gefixt
 - Efficiëntie: `batch_decisions=True` is bewezen veilig en veel goedkoper (tot 7x minder LLM-calls) maar blijft bewust **opt-in**, geen default
@@ -115,4 +117,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26** live retest taak 05 (candidate-scope reset na reject/unbind) — alleen na expliciete user-OK + `docker compose build`. **Niet #24b eerst:** als merge een stale `NOT_RELEVANT` vasthoudt, kan betere lijst-extractie alsnog `contract_satisfied=false` geven. Daarna: **#24b** HTML-observer; taak 03 Coolblue; generaliteit 04/08.
+Open **#27** live retest taak 05 (long-line wrap zodat de abstract in interpret komt) — alleen na expliciete user-OK + `docker compose build`. **#26 blijft open:** `093236Z` had geen unbind/switch na abs-reject. Daarna: **#24b** HTML-observer; taak 03 Coolblue; generaliteit 04/08.

@@ -1,0 +1,70 @@
+Skip to main content
+Search
+Submit
+Donate
+Log in
+Computer Science > Computation and Language
+[Submitted on 25 Aug 2026]
+MIRAGE: How Conversation State Shapes Historical Evidence Use in Multimodal Personal Agents
+Yu Liu, Wenxiao Zhang, Cheng Hu, Cong Cao, Fangfang Yuan, Xinyu Wang, Jin B. Hong, Yanbing Liu
+Multimodal large language model (MLLM) agents are increasingly used as personal assistants for long-running tasks. Their utility depends on continuity: agents must retrieve and use earlier evidence across dialogue, files, and workspace state. However, agents can generate plausible answers even when access to that history has degraded, causing outcome-only evaluation to overestimate true evidence use. We present MIRAGE (Multimodal Interaction Retrieval, Attribution, and Grounding Evaluation), a controlled study of historical evidence use under conversation-state variation in multimodal personal agents. MIRAGE holds evidence objects, questions, and scoring fixed while varying only conversation state, and evaluates whether an agent can determine answerability, recover the correct source, and answer from it. Across seven frontier and open-weight multimodal backbones, we find that: 1) pre-compaction depth and post-compaction continuation form distinct, non-monotonic failure regimes rather than a single degradation curve; 2) open-weight models rely heavily on context continuity and are reluctant to spontaneously switch to tool-mediated retrieval when provenance fails; and 3) retrieval pressure improves source attribution in deep pre-compaction states for tool-compliant models, but consistently regresses after compaction, where stored evidence has already degraded. These findings show that historical evidence use should be evaluated under state variation, rather than inferred from outcome-only correctness.
+Comments:	Accepted by ACM MM 2026
+Subjects:	Computation and Language (cs.CL); Artificial Intelligence (cs.AI)
+Cite as:	arXiv:2609.19059 [cs.CL]
+(or arXiv:2609.19059v1 [cs.CL] for this version)
+https://doi.org/10.48550/arXiv.2609.19059
+Focus to learn more
+Submission history
+From: Yu Liu [view email]
+[v1] Tue, 25 Aug 2026 10:59:10 UTC (2,522 KB)
+Access Paper:
+View PDF
+HTML (experimental)
+TeX Source
+view license
+Current browse context:
+cs.CL
+< prev   |   next >
+new | recent | 2026-09
+Change to browse by:
+cs
+cs.AI
+References & Citations
+NASA ADS
+Google Scholar
+Semantic Scholar
+Export BibTeX Citation
+Bookmark
+Bibliographic Tools
+Bibliographic and Citation Tools
+Bibliographic Explorer Toggle
+Bibliographic Explorer (What is the Explorer?)
+Connected Papers Toggle
+Connected Papers (What is Connected Papers?)
+Litmaps Toggle
+Litmaps (What is Litmaps?)
+scite.ai Toggle
+scite Smart Citations (What are Smart Citations?)
+Code, Data, Media
+Demos
+Related Papers
+About arXivLabs
+Which authors of this paper are endorsers? | Disable MathJax (What is MathJax?)
+We gratefully acknowledge support from our major funders, member institutions, and all contributors.
+About
+·
+Help
+·
+Contact
+·
+Subscribe
+·
+Copyright
+·
+Privacy
+·
+Accessibility
+·
+Operational Status
+(opens in new tab)
+Major funding support from

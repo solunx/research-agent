@@ -200,7 +200,7 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - Principle locked: glyph/digit (or equivalent structural) detector; no `vanaf`/`p.p.` lexicon.  
 - **Threshold not locked.** Do not assume old `>= 3` transfers.  
 - Evidence of divergence: Monica detail fixture PRICE_LINE hits **7** vs glyph/digit hits **37**.  
-- Re-calibrate on multi-page / multi-surface traces (with `same_entity_path`) before locking a number.
+- **2026-09-17 addendum (`093236Z` abs):** `count_price_like_lines` = **4** (threshold 3) → arXiv **detail** tagged `list_results`. Monica detail fixture = **29**. Density-as-list is not a reliable single-record detector; do not raise the threshold as a silent #27 fix (would also move synthetic list at 3). Re-calibrate on multi-page traces before locking.
 
 ### #19 — outcomes persistence across acquisition steps (provisional)
 
@@ -315,7 +315,16 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
   - **Reset:** drop `best_outcomes` with `step >= candidate_bound_step`; keep pre-bind (e.g. `source_site`). No `subject_instance` special-case — any required decision with a concrete non-satisfying outcome is “instance FAIL”.
 - **01/02 offline:** tab same-path no-op; Fly & Go from `live_detail` without list-bind no-op; list `ALL_INCLUSIVE` → detail bind without wipe.
 - **Offline:** `evals/candidate_scope_reset/test_candidate_scope_offline_v0.py`. Live 05 only after user OK + `docker compose build`.
-- **Order:** #26 before #24b — better list extraction can still fail the contract if merge keeps a stale reject.
+- **Live `20260917T093236Z` (rebuild, `batch_decisions=False`):** `contract_satisfied=false` `gaps_n=1` only `claim_extracted=NOT_VISIBLE`; `subject_instance=RELEVANT` (083112Z: `NOT_RELEVANT` on the same abs — LLM label variance). One `candidate_scope event=bind` on `/abs/2609.19059v1` at step 6; **no unbind/switch**. First list→abs OPEN succeeded (href in affordances) but did **not** bind: `preferred_item_links` were chrome (`Submit`/`Advanced Search`) — #24b. Homepage `NOT_RELEVANT` overwritten by later concrete `RELEVANT` (#19), not by scope reset. **#26 not live-proven — do not close.** Remaining gap was Open #27 (abstract line dropped), not merge.
+
+### #27 — long innerText paragraphs dropped from units (code in place; live retest pending)
+
+- **Symptom (`20260917T093236Z` step 003):** abstract present in `step_003_page_text.txt` as one **1524-char** line; `claim_extracted=NOT_VISIBLE`. `_skip_line_structural` skipped `len>240` and split the blank-line block, so the paragraph never entered a unit. Title survived in the 8-line prefix chunk.
+- **Not a surface-only bug:** even if abs were tagged `live_detail`, `len(selected)==3` chrome candidates skip the `page_text_to_observations` safety net (`len(selected) < 2`). `page_text_to_observations` also skipped `len>240`.
+- **Fix (structural):** wrap long lines into 240-char windows as their own block; keep high-char chunks without requiring digit-density or `item_link`; after action-first rank, **append** at most one long-text unit/candidate (do not drop nav top-K).
+- **01/02:** fixtures also contain huge lines (already dropped pre-fix). Offline: top-3 item_link hrefs unchanged.
+- **Offline:** `evals/long_line_units/test_long_line_units_offline_v0.py`. Live 05 only after user OK + `docker compose build`.
+- **Not this slice:** Open #10 abs `price_hits=4` → `list_results`; #24b list chrome candidates; #26 unbind live path.
 
 ---
 

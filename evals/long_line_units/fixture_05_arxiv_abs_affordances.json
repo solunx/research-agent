@@ -1,0 +1,408 @@
+[
+  {
+    "kind": "tab",
+    "text": "Bibliographic Tools",
+    "href": "",
+    "role": "tab",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Code, Data, Media",
+    "href": "",
+    "role": "tab",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Demos",
+    "href": "",
+    "role": "tab",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Related Papers",
+    "href": "",
+    "role": "tab",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "About arXivLabs",
+    "href": "",
+    "role": "tab",
+    "scope": "local"
+  },
+  {
+    "kind": "tab",
+    "text": "Search",
+    "href": "https://arxiv.org/search",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Bibliographic Explorer Toggle",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Connected Papers Toggle",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "Litmaps Toggle",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "panel_option",
+    "text": "scite.ai Toggle",
+    "href": "",
+    "role": "label",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "Focus to learn more",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "button",
+    "text": "Export BibTeX Citation",
+    "href": "",
+    "role": "button",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "arXiv:2609.19059",
+    "href": "https://arxiv.org/abs/2609.19059",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "arXiv:2609.19059v1",
+    "href": "https://arxiv.org/abs/2609.19059v1",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "https://doi.org/10.48550/arXiv.2609.19059",
+    "href": "https://doi.org/10.48550/arXiv.2609.19059",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "What is the Explorer?",
+    "href": "https://info.arxiv.org/labs/showcase.html#arxiv-bibliographic-explorer",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "What is Connected Papers?",
+    "href": "https://www.connectedpapers.com/about",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "What is Litmaps?",
+    "href": "https://www.litmaps.co/",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "What are Smart Citations?",
+    "href": "https://www.scite.ai/",
+    "role": "a",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Submit",
+    "href": "https://arxiv.org/user/create",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Yu Liu",
+    "href": "https://arxiv.org/search/cs?searchtype=author&query=Liu,+Y",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Wenxiao Zhang",
+    "href": "https://arxiv.org/search/cs?searchtype=author&query=Zhang,+W",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Cheng Hu",
+    "href": "https://arxiv.org/search/cs?searchtype=author&query=Hu,+C",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Cong Cao",
+    "href": "https://arxiv.org/search/cs?searchtype=author&query=Cao,+C",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Fangfang Yuan",
+    "href": "https://arxiv.org/search/cs?searchtype=author&query=Yuan,+F",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Xinyu Wang",
+    "href": "https://arxiv.org/search/cs?searchtype=author&query=Wang,+X",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Jin B. Hong",
+    "href": "https://arxiv.org/search/cs?searchtype=author&query=Hong,+J+B",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Yanbing Liu",
+    "href": "https://arxiv.org/search/cs?searchtype=author&query=Liu,+Y",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "view email",
+    "href": "https://arxiv.org/show-email/81150baa/2609.19059",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "View PDF",
+    "href": "https://arxiv.org/pdf/2609.19059",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "HTML (experimental)",
+    "href": "https://arxiv.org/html/2609.19059v1",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "TeX Source",
+    "href": "https://arxiv.org/src/2609.19059",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "new",
+    "href": "https://arxiv.org/list/cs.CL/new",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "recent",
+    "href": "https://arxiv.org/list/cs.CL/recent",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "2026-09",
+    "href": "https://arxiv.org/list/cs.CL/2026-09",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "cs",
+    "href": "https://arxiv.org/abs/2609.19059?context=cs",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "cs.AI",
+    "href": "https://arxiv.org/abs/2609.19059?context=cs.AI",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Which authors of this paper are endorsers?",
+    "href": "https://arxiv.org/auth/show-endorsers/2609.19059",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "Disable MathJax",
+    "href": "javascript:setMathjaxCookie()",
+    "role": "link",
+    "scope": "local"
+  },
+  {
+    "kind": "link",
+    "text": "archive home",
+    "href": "https://arxiv.org/",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Donate",
+    "href": "https://info.arxiv.org/about/donate.html",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Log in",
+    "href": "https://arxiv.org/login",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "view license",
+    "href": "http://arxiv.org/licenses/nonexclusive-distrib/1.0/",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "< prev",
+    "href": "https://arxiv.org/prevnext?id=2609.19059&function=prev&context=cs.CL",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "next >",
+    "href": "https://arxiv.org/prevnext?id=2609.19059&function=next&context=cs.CL",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "NASA ADS",
+    "href": "https://ui.adsabs.harvard.edu/abs/arXiv:2609.19059",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Google Scholar",
+    "href": "https://scholar.google.com/scholar_lookup?arxiv_id=2609.19059",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Semantic Scholar",
+    "href": "https://api.semanticscholar.org/arXiv:2609.19059",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Bookmark on Reddit",
+    "href": "https://reddit.com/submit?url=https://arxiv.org/abs/2609.19059&title=MIRAGE:%20How%20Conversation%20State%20Shapes%20Historical%20Evidence%20Use%20in%20Multimodal%20Personal%20Agents",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "What is MathJax?",
+    "href": "https://info.arxiv.org/help/mathjax.html",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "member institutions",
+    "href": "https://info.arxiv.org/about/ourmembers.html",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "About",
+    "href": "https://info.arxiv.org/about",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Help",
+    "href": "https://info.arxiv.org/help",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Contact",
+    "href": "https://info.arxiv.org/help/contact.html",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Subscribe",
+    "href": "https://info.arxiv.org/help/subscribe",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Copyright",
+    "href": "https://info.arxiv.org/help/license/index.html",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Privacy",
+    "href": "https://info.arxiv.org/help/policies/privacy_policy.html",
+    "role": "link",
+    "scope": "global"
+  },
+  {
+    "kind": "link",
+    "text": "Accessibility",
+    "href": "https://info.arxiv.org/help/web_accessibility.html",
+    "role": "link",
+    "scope": "global"
+  }
+]
