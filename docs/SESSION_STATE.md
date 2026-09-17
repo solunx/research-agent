@@ -2,7 +2,7 @@
 
 **Canoniek pad:** `scripts/run_contract_driven_task_v0.py` → frozen contract → candidates → interpret → code STOP. Regel: code = structuur, LLM = betekenis. Live Docker/GPU: zie `docs/AGENT_RULES.md`.
 **Stabiel:** taak 02 9/9 `CONTRACT_SATISFIED`; Fase G FILL_AND_SUBMIT; entity-binding (#22); #24a woordgrens (`0084f11`); batch_decisions opt-in.
-**Laatste commit:** zie git HEAD na Open #25 (refine-search na reject). Live 05 `20260917T072448Z` (vers image): `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` gaps `subject_instance=NOT_RELEVANT` `claim_extracted=NOT_VISIBLE`. Docker: altijd `docker compose build` vóór run.
+**Laatste commit:** `7556f64` — Open #25: refine `FILL_AND_SUBMIT` na current-page `NOT_RELEVANT`/`REJECTED` (offline groen). Live 05 `20260917T072448Z`: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` gaps `subject_instance=NOT_RELEVANT` `claim_extracted=NOT_VISIBLE`. Docker: altijd `docker compose build` vóór run.
 
 **Open (top 3):**
 1. **#24b** — lijstpagina = 1 blank-line-blok + affordance-dedupe `"pdf"`; HTML-arm meten, geen tekstheuristiek.
