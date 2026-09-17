@@ -655,6 +655,7 @@ def run_acquisition_loop(
             surface=surface,
             max_candidates=3,
             max_units=6,
+            html=html,
         )
         preferred_links = [
             {

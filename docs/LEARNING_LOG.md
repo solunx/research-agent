@@ -1926,6 +1926,20 @@ Sluit #24b niet (lijst is nog één blank-line-blok). **Geen Fase 2** (`extract_
 ### Niet
 Geen `extract_candidates_via_html` in de live extract. Geen html_b2.
 
+## 2026-09-17 — Open #24b Fase 2.2: leaf `extract_candidates_via_html` op `list_results`
+
+### Citaat oud (`162616Z` `step_002_candidates.json`)
+c3 identity `arXiv:2609.13860` (ClinAgent) + `primary_action` pdf `https://arxiv.org/pdf/2609.19059`. Top-3 = chrome. Eén blank-line-blok.
+
+### Citaat nieuw
+`extract_candidates(..., html=)` op `surface=list_results` roept `extract_candidates_via_html(repeating_only=True, min_repeating_siblings=3)` — **niet** `html_b2`. Selectie uit leaf-cards. Andere surfaces negeren html.
+
+### Offline
+`evals/html_leaf_list/test_html_leaf_list_offline_v0.py`: 01/02 candidates+obs byte-identiek met/zonder HTML. Reconstructie 19× `li.result`: nieuw `2609.19059`/`18736`/`18591` met matching `/abs/` hrefs. Negatief: `live_detail` + dezelfde HTML verandert niets. Synthetic list: 3 offer-hrefs.
+
+### Niet
+#24b pas sluiten na live 05 search-candidates. Geen html_b2. #26 OPEN.
+
 
 
 

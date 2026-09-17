@@ -117,4 +117,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26 blijft OPEN.** **#24b** Fase 1 (affordance `(text,href)`-identity) in code; chunking/HTML-arm nog open — **geen Fase 2** tot Fase-1 live-hertest (alleen na user-OK) onvoldoende blijkt. **#28** PDF-download-catch in code (`fb4b177`). Geen live 05 zonder user-OK + `docker compose build`. Niet batch-default.
+Open **#26 blijft OPEN.** **#24b** Fase 2.2 (leaf `extract_candidates_via_html` op `list_results`) in code; sluiten pas na live 05 search-candidates. **#28** live `162616Z` `download_kept_page`. Niet batch-default.

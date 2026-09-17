@@ -337,12 +337,17 @@ def extract_candidates(
     # measurement only; raise per caller when needed.
     max_candidates: int = 3,
     max_units: int = 6,
+    html: str = "",
 ) -> list[Candidate]:
     """
     Full path: page → units → candidates → top-K select.
     Defaults: max_candidates=3 / max_units=6 after post-1a volume measurement
     (PRE-1a ~276 tok; target ≤~550 tok total across 3 fixtures). Callers may raise.
     See FRAMEWORK_BOUNDARY Open item #6 — provisional, not locked.
+
+    Open #24b Fase 2.2: when surface=list_results and `html` contains a
+    repeating leaf-container list, those HTML candidates are selected instead
+    of the flattened-text chunks (additive: other surfaces ignore html).
     """
     units = package_candidate_units(
         text=text or "",
@@ -357,6 +362,24 @@ def extract_candidates(
         max_candidates=max_units,
         page_text=text or "",
     )
+    html_cands: list[Candidate] = []
+    if (surface or "") == "list_results" and (html or "").strip():
+        from structural_observer import extract_candidates_via_html
+
+        html_cands = extract_candidates_via_html(
+            html=html,
+            page_url=page_url or "",
+            surface=surface or "",
+            max_candidates=max(max_candidates, 12),
+            apply_quality=False,
+            drop_parents=True,
+            repeating_only=True,
+            min_repeating_siblings=3,
+        )
+    if html_cands:
+        # Repeating list recovered — select from leaf cards, not 8-line
+        # text chunks (those straddle cards on blank-line-less lists).
+        return select_top_candidates(html_cands, max_n=max_candidates)
     return select_top_candidates(raw, max_n=max_candidates)
 
 

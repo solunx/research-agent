@@ -315,6 +315,12 @@ DOM structure) rather than only a downstream classification problem on flattened
 | html_b2 | page.html mixed-signal NCA | `structural_observer.extract_candidates_via_html_b2` |
 | ax | accessibility snapshot (optional) | `structural_observer.extract_candidates_via_ax` |
 
+**Live path (Open #24b Fase 2.2):** `live_offer_state_slice` passes snapshot HTML into
+`extract_candidates`. On `surface=list_results` only, repeating leaf containers
+(`extract_candidates_via_html`, **not** `html_b2`) replace 8-line text chunks when
+a list-ish parent has ≥3 cardish siblings. Detail surfaces stay on the text arm
+so 01/02 stay byte-identical.
+
 **Why html_b2:** first A/B (leaf `html`) improved name+board co-location but not
 name+price. Possible confound: grouping on leaf tags vs the card container that
 holds both signals. `html_b2` groups on the nearest common ancestor of a heading

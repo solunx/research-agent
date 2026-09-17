@@ -171,7 +171,12 @@ def _is_descendant_of_any(el, ancestors: list[Any]) -> bool:
     return False
 
 
-def _find_structural_containers(soup) -> list[Any]:
+def _find_structural_containers(
+    soup,
+    *,
+    repeating_only: bool = False,
+    min_repeating_siblings: int = 2,
+) -> list[Any]:
     """
     Collect card-like structural units:
 
@@ -180,9 +185,13 @@ def _find_structural_containers(soup) -> list[Any]:
 
     Both are needed: list pages have repeating items; detail pages often have
     a few sibling cards (identity, price, promo) outside any list.
+
+    repeating_only=True skips (2). Used by the live list_results additive path
+    so a detail-like price surface (task 01 sketch) does not swap in HTML cards.
     """
     containers: list[Any] = []
     seen_ids: set[int] = set()
+    min_rep = max(2, int(min_repeating_siblings or 2))
 
     def add(el) -> None:
         i = id(el)
@@ -209,7 +218,7 @@ def _find_structural_containers(soup) -> list[Any]:
             if getattr(c, "name", None) and c.name not in _SKIP_TAG
         ]
         cardish_kids = [k for k in kids if _is_cardish_element(k)]
-        if len(cardish_kids) >= 2:
+        if len(cardish_kids) >= min_rep:
             for k in cardish_kids:
                 add(k)
             continue
@@ -219,9 +228,12 @@ def _find_structural_containers(soup) -> list[Any]:
             if _is_descendant_of_any(k, top):
                 continue
             top.append(k)
-        if len(top) >= 2:
+        if len(top) >= min_rep:
             for k in top:
                 add(k)
+
+    if repeating_only:
+        return containers
 
     # 2) Standalone articles / explicit cards (detail pages)
     for el in soup.find_all(["article"]):
@@ -466,6 +478,8 @@ def extract_candidates_via_html(
     max_candidates: int = 8,
     apply_quality: bool = False,
     drop_parents: bool = True,
+    repeating_only: bool = False,
+    min_repeating_siblings: int = 2,
 ) -> list[Candidate]:
     """
     Arm B (html): leaf-level DOM structural containers → Candidates.
@@ -473,6 +487,8 @@ def extract_candidates_via_html(
     apply_quality=False by default: the experiment measures structure alone,
     without chrome/density post-filters from candidates.py.
     drop_parents=True applies generic parent-duplicate suppression.
+    repeating_only / min_repeating_siblings: live list_results additive path
+    uses repeating siblings only (no heading/price NCA — that is html_b2).
     """
     if not html or not html.strip():
         return []
@@ -483,7 +499,11 @@ def extract_candidates_via_html(
     for tag in soup(list(_SKIP_TAG)):
         tag.decompose()
 
-    containers = _find_structural_containers(soup)
+    containers = _find_structural_containers(
+        soup,
+        repeating_only=repeating_only,
+        min_repeating_siblings=min_repeating_siblings,
+    )
     return _containers_to_candidates(
         containers,
         page_url=page_url,
