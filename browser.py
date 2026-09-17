@@ -30,6 +30,9 @@ DEFAULT_UA = (
 # Playwright raises this when navigation (goto/click) starts a file download
 # instead of loading a document (live 05: OPEN_URL /pdf/… → "Download is starting").
 _DOWNLOAD_NAV_RE = re.compile(r"download is starting", re.I)
+# Open #24b Fase 2 plumbing: keep raw DOM next to innerText. Cap avoids
+# unbounded trace files; extraction reads this string, not a live handle.
+_HTML_SNAP_CAP = 400_000
 
 # Generic consent buttons (NL/FR/EN – common CMP patterns)
 COOKIE_SELECTORS = [
@@ -195,10 +198,20 @@ def _snapshot(
     include_hints: bool = True,
 ) -> dict[str, Any]:
     title, text = _page_text(page, max_chars=max_chars)
+    html = ""
+    try:
+        html = str(page.content() or "")
+    except Exception:
+        html = ""
+    html_chars = len(html)
+    if html_chars > _HTML_SNAP_CAP:
+        html = html[:_HTML_SNAP_CAP]
     out: dict[str, Any] = {
         "url": page.url,
         "title": title,
         "text": text,
+        "html": html,
+        "html_chars": html_chars,
         "error": None,
     }
     if include_hints:

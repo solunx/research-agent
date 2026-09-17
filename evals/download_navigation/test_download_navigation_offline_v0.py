@@ -52,6 +52,9 @@ class _FakePage:
     def inner_text(self, _sel: str) -> str:
         return "SEARCH LIST STAYS HERE\nShowing 1–50 of 1934 results\n" * 3
 
+    def content(self) -> str:
+        return "<html><body><ol class='results'><li class='result'>card</li></ol></body></html>"
+
 
 def test_detects_live_download_error_string():
     assert _is_download_navigation_error(LIVE_ERR)
@@ -87,6 +90,7 @@ def test_download_navigation_keeps_current_page_text():
     assert "SEARCH LIST STAYS HERE" in str(snap.get("text") or "")
     assert snap.get("download_filename") == "paper.pdf"
     assert fired.cancelled is True
+    assert "<li class='result'>card</li>" in str(snap.get("html") or "")
     print("OK test_download_navigation_keeps_current_page_text")
 
 

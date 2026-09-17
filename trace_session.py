@@ -136,15 +136,24 @@ class TraceSession:
         title: str = "",
         text: str = "",
         text_chars: int | None = None,
+        html: str = "",
+        html_chars: int | None = None,
         error: str | None = None,
         backend: str | None = None,
     ) -> None:
         n = text_chars if text_chars is not None else len(text or "")
+        hn = html_chars if html_chars is not None else len(html or "")
         art = None
         if text:
             art = self.save_artifact(
                 f"step_{self._step:03d}_page_text.txt",
                 _truncate(text, self.max_text_artifact),
+            )
+        html_art = None
+        if html:
+            html_art = self.save_artifact(
+                f"step_{self._step:03d}_page.html",
+                html if len(html) <= 200_000 else html[:200_000] + f"<!-- truncated +{len(html)-200000} -->",
             )
         self.emit(
             "observe",
@@ -152,10 +161,13 @@ class TraceSession:
                 "url": url,
                 "title": (title or "")[:200],
                 "text_chars": n,
+                "html_chars": hn,
                 "error": error,
                 "backend": backend,
                 "text_artifact": art,
+                "html_artifact": html_art,
                 "text_hash": _hash_text(text) if text else None,
+                "html_hash": _hash_text(html) if html else None,
             },
         )
 

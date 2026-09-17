@@ -1912,6 +1912,21 @@ Identity = `(kind, text, href, name, id)` + cross-kind `TH|text|href`. Geen lexi
 ### Niet
 Sluit #24b niet (lijst is nog één blank-line-blok). **Geen Fase 2** (`extract_candidates_via_html`) tot een Fase-1 live-hertest onvoldoende blijkt. Geen live 05 zonder user-OK.
 
+## 2026-09-17 — Open #24b Fase 2.1: raw-HTML plumbing (geen candidate-wijziging)
+
+### Citaat oud
+`browser._snapshot` gaf alleen `url/title/text`. Live pad bewaarde geen DOM. `extract_candidates_via_html` bestond maar had geen input.
+
+### Citaat nieuw
+`_snapshot` zet `html` + `html_chars` via `page.content()` (cap 400k). Ontbrekende `content()` → `html=""`. Trace: `step_NNN_page.html`. Acquisition houdt `html` naast `text` bij navigatie.
+
+### Offline
+`evals/html_leaf_list/test_html_plumbing_offline_v0.py` groen. 01/02/06 extract-fingerprint ongewijzigd (html nog niet gewired).
+
+### Niet
+Geen `extract_candidates_via_html` in de live extract. Geen html_b2.
+
+
 
 
 

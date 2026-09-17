@@ -554,6 +554,7 @@ def run_acquisition_loop(
     page = browser_open(start_url, wait_seconds=wait_seconds, headless=True, max_chars=22000)
     err = page.get("error")
     text = str(page.get("text") or "")
+    html = str(page.get("html") or "")
     final_url = str(page.get("url") or start_url)
     title = str(page.get("title") or "")
 
@@ -571,6 +572,8 @@ def run_acquisition_loop(
             title=title,
             text=text,
             text_chars=len(text),
+            html=html,
+            html_chars=int(page.get("html_chars") or len(html)),
             error=str(err) if err else None,
             backend=backend,
         )
@@ -1074,6 +1077,7 @@ def run_acquisition_loop(
             )
         ok = bool(snap.get("ok")) and not snap.get("noop")
         new_text = str(snap.get("text") or "")
+        new_html = str(snap.get("html") or "")
         new_url = str(snap.get("url") or final_url)
         # Re-list affordances cheaply for signature (or use text-only if list fails)
         try:
@@ -1142,6 +1146,8 @@ def run_acquisition_loop(
                 title=str(snap.get("title") or title),
                 text=new_text,
                 text_chars=len(new_text),
+                html=new_html,
+                html_chars=int(snap.get("html_chars") or len(new_html)),
                 error=str(snap.get("error") or "") or None,
                 backend=backend,
             )
@@ -1180,6 +1186,7 @@ def run_acquisition_loop(
 
         page_url_before = final_url
         text = new_text
+        html = new_html
         final_url = new_url
         title = str(snap.get("title") or title)
         best_outcomes, active_candidate_path, candidate_bound_step, scope_event = (
