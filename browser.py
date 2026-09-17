@@ -608,13 +608,16 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
             } else {
               if (text && text.length > 120) text = text.slice(0, 120);
             }
-            const key = (kind + '|' + (text || '').toLowerCase() + '|' + (extra && extra.name ? extra.name : '') + '|' + (extra && extra.id ? extra.id : '')).slice(0, 200);
+            const hrefN = String(href || '').toLowerCase();
+            // Open #24b Fase 1: identity is (kind, text, href, name, id) — not text
+            // alone. Repeated labels ("pdf") with distinct hrefs must all survive.
+            // Mirrors Python affordance_identity_accepts.
+            const key = (kind + '|' + (text || '').toLowerCase() + '|' + hrefN + '|' + (extra && extra.name ? extra.name : '') + '|' + (extra && extra.id ? extra.id : ''));
             if (seen.has(key)) return;
-            // Also de-dupe across kinds on same text (prefer earlier buckets); inputs exempt
-            const textKey = 'T|' + (text || '').toLowerCase();
-            if (!isInput && text && seen.has(textKey) && kind !== 'tab') return;
+            const textHrefKey = 'TH|' + (text || '').toLowerCase() + '|' + hrefN;
+            if (!isInput && text && seen.has(textHrefKey) && kind !== 'tab') return;
             seen.add(key);
-            if (text) seen.add(textKey);
+            if (text) seen.add(textHrefKey);
             const scope = preferredScope || classifyHref(href);
             const item = {
               kind: kind,
@@ -835,3 +838,56 @@ def browser_list_affordances(max_items: int = 50) -> dict[str, Any]:
         return {"ok": True, "url": page.url, "affordances": items, "n": len(items)}
     except Exception as e:
         return {"ok": False, "url": "", "affordances": [], "n": 0, "error": str(e)}
+
+
+def affordance_identity_accepts(
+    seen: set[str],
+    *,
+    kind: str,
+    text: str,
+    href: str = "",
+    extra_name: str = "",
+    extra_id: str = "",
+    is_input: bool = False,
+) -> bool:
+    """Keep or drop one affordance by structural identity.
+
+    Mirrors `browser_list_affordances` JS `push()` (Open #24b Fase 1).
+    Identity is (kind, text, href, extra_name, extra_id) plus a cross-kind
+    (text, href) guard. Same visible text with *different* hrefs both survive.
+    Exact (text, href) duplicates still collapse. No lexicon.
+    """
+    text_n = re.sub(r"\s+", " ", (text or "")).strip()
+    href_n = (href or "").strip().lower()
+    if not is_input:
+        if not text_n or len(text_n) < 2 or len(text_n) > 100:
+            return False
+    key = f"{kind}|{text_n.lower()}|{href_n}|{extra_name}|{extra_id}"
+    if key in seen:
+        return False
+    text_href_key = f"TH|{text_n.lower()}|{href_n}"
+    if not is_input and text_n and text_href_key in seen and kind != "tab":
+        return False
+    seen.add(key)
+    if text_n:
+        seen.add(text_href_key)
+    return True
+
+
+def filter_affordances_by_identity(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Apply push()-style (text, href) identity to a raw list of affordance dicts."""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        kind = str(item.get("kind") or "link")
+        if affordance_identity_accepts(
+            seen,
+            kind=kind,
+            text=str(item.get("text") or ""),
+            href=str(item.get("href") or ""),
+            extra_name=str(item.get("name") or ""),
+            extra_id=str(item.get("id") or ""),
+            is_input=kind == "input_field",
+        ):
+            out.append(item)
+    return out

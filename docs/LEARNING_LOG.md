@@ -1890,4 +1890,28 @@ Publieke search-HTML (geen LLM): **50×** `li.arxiv-result`, titel in `<p class=
 ### Niet
 Geen PDF-tekst als bewijs. #24b (één `"pdf"`-affordance / verkeerde href) ongemoeid. Geen live 05 zonder user-OK.
 
+## 2026-09-17 — Open #24b Fase 1: affordance-identity `(text, href)`
+
+### Citaat oud (`browser.py` JS `push()`, live 111714Z/153607Z)
+```
+const key = (kind + '|' + (text || '').toLowerCase() + '|' + (extra && extra.name ? extra.name : '') + '|' + (extra && extra.id ? extra.id : '')).slice(0, 200);
+if (seen.has(key)) return;
+const textKey = 'T|' + (text || '').toLowerCase();
+if (!isInput && text && seen.has(textKey) && kind !== 'tab') return;
+seen.add(key);
+if (text) seen.add(textKey);
+```
+`111714Z`/`153607Z` `step_002_affordances.json`: precies **één** `"text": "pdf"` → `https://arxiv.org/pdf/2609.19059`. `step_002_page_text.txt`: **19** `arXiv:NNNN [pdf, …]`-kaarten.
+
+### Citaat nieuw
+Identity = `(kind, text, href, name, id)` + cross-kind `TH|text|href`. Geen lexicon. Exacte `(text, href)`-duplicaten blijven samenvallen.
+
+### Offline
+`evals/affordance_identity/test_affordance_identity_offline_v0.py`: reconstructie 19 paper-ids → legacy **1** pdf, nieuw **19** unieke pdf-hrefs. Negatief: zelfde `(text, href)` twee keer → 1. Regressie 01/02/06: saved counts + HTML-anchors identiek (01 n=49/14, 02 n=44/17, 06 n=60).
+
+### Niet
+Sluit #24b niet (lijst is nog één blank-line-blok). **Geen Fase 2** (`extract_candidates_via_html`) tot een Fase-1 live-hertest onvoldoende blijkt. Geen live 05 zonder user-OK.
+
+
+
 
