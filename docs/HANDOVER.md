@@ -117,4 +117,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26 blijft OPEN.** **#24b** Fase 2.2 (leaf `extract_candidates_via_html` op `list_results`) in code; sluiten pas na live 05 search-candidates. **#28** live `162616Z` `download_kept_page`. Niet batch-default.
+Open **#26 blijft OPEN.** **#24b** Fase 2.2 leaf-html live (`171515Z` per-paper `/abs/`-hrefs); contract niet dicht — `href_not_in_affordances` op preferred abs-link buiten de 60-cap. Niet html_b2. Niet batch-default.

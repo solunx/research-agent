@@ -1940,6 +1940,20 @@ c3 identity `arXiv:2609.13860` (ClinAgent) + `primary_action` pdf `https://arxiv
 ### Niet
 #24b pas sluiten na live 05 search-candidates. Geen html_b2. #26 OPEN.
 
+## 2026-09-17 — Open #24b Fase 2.2 live `171515Z`
+
+### Citaat result
+`stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` `claim_extracted=NOT_VISIBLE`. `final_url` bleef `/search/?query=tool-augmented+LLM+agents`. `llm_calls_total=161`.
+
+### Citaat leaf-arm (wel)
+`step_002_candidates.json`: drie `packager_source=html_structure` kaarten, `primary_action` = matching `/abs/2609.18445` / `18128` / `17698`. Geen ClinAgent→pdf-19059 mismatch.
+
+### Citaat remaining (niet)
+Loop stap 3: LLM `OPEN_URL` `target_href=https://arxiv.org/abs/2609.13860` (`source=code_reject` `href_not_in_affordances`). Href staat op c0 `primary_action` maar niet in `step_003_affordances.json` (60-cap). Drie keer herhaald tot MAX_STEPS.
+
+### Niet
+Geen extra live-run. Preferred-href injecteren in de OPEN-allowlist is een volgende slice, niet deze.
+
 
 
 
