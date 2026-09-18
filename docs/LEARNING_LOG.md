@@ -1980,6 +1980,20 @@ Live `171515Z` stap 3: LLM `OPEN_URL https://arxiv.org/abs/2609.13860` → `code
 ### Niet
 Geen html_b2. Geen PDF-parse. #26 OPEN. #24b representatie was al live-zichtbaar (`171515Z`); dit sluit alleen de allowlist-bron.
 
+## 2026-09-18 — Open #24 preferred-href live `062211Z`
+
+### Citaat result (`result_05_web_literature_abstract_20260918T062211Z.json`)
+`stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` `claim_extracted=NOT_VISIBLE` (overige required: RELEVANT / OPEN_ACCESS / IN_RANGE / title+url EXTRACTED). `final_url=https://arxiv.org/abs/2609.18128v1` `llm_calls_total=131`.
+
+### Citaat allowlist (wel)
+Loop stap 2 `acquisition_decision`: `OPEN_URL` `target_href=https://arxiv.org/abs/2609.18128` `source=llm` (niet `code_reject`). Href = c2 `primary_action`, **niet** in `step_002_affordances.json`. `candidate_scope event=bind path=/abs/2609.18128`. Geen `href_not_in_affordances` in de run.
+
+### Citaat remaining (niet deze slice)
+Abs-pagina `surface=list_results` (Open #10). `step_003_candidates.json` html-leaf: `View PDF` / `HTML (experimental)` / `TeX Source`. Abstract staat in `step_003_page_text.txt`. Interpret zag die chrome-cards, niet de claim.
+
+### Niet
+#24 allowlist live-bewezen; contract niet dicht. #10/#26 niet gesloten. Geen extra live-run.
+
 
 
 

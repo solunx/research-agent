@@ -117,4 +117,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26 blijft OPEN.** **#24** OPEN_URL-allowlist = planner-safe affordances ∪ shown-candidate `primary_action.href` (offline groen op 171515Z-fixture; invented URL nog reject). #24b leaf-html al live. Sluit #24 pas na live 05. Niet html_b2. Niet batch-default.
+Open **#10** is nu de contract-blocker op taak 05: abs wordt `list_results` → html-leaf pakt PDF/HTML/TeX i.p.v. abstract (`062211Z`). **#24 allowlist live-bewezen** (OPEN abs `source=llm`, href niet in affordances). **#26** bind gezien; unbind/switch niet. Niet html_b2. Niet batch-default. Niet threshold-hack voor #10.
