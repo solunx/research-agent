@@ -1994,6 +1994,28 @@ Abs-pagina `surface=list_results` (Open #10). `step_003_candidates.json` html-le
 ### Niet
 #24 allowlist live-bewezen; contract niet dicht. #10/#26 niet gesloten. Geen extra live-run.
 
+## 2026-09-18 — Open #10 surface-density herijking
+
+### Citaat oud (`_classify_surface`, drempel 3, D2c tot 4+ digit)
+`price_hits = count_price_like_lines(text); dense_list = price_hits >= 3`.
+Live `062211Z` step 3 abs: **4** D2c-regels → `list_results`:
+- `Cite as: arXiv:2609.18128` → 2609, 18128
+- `(or arXiv:2609.18128v1 …)` → 2609, 18128
+- `doi.org/10.48550/arXiv.2609.18128` → 48550, 2609, 18128
+- `[v1] … (5,658 KB)` → 5,658
+Publicatiedatum `16 Sep 2026` telde **niet** (jaar-skip + 2-digit dag). Monica detail: 29 hits waarvan review-scores `8,1` — zelfde 7-vs-37-klasse.
+
+### Citaat nieuw
+D2c: geen kale 4+ digit identifiers, geen 1-decimaal (`8,1`/`0.5`). T blijft 3.
+Gemeten: abs=1, search=3, synthetic=3, Monica=10, Flamenco=9.
+Root-start (`path=""`): `same_entity` = zelfde host → abs `live_offer_state` (niet `site_marketing`).
+
+### Offline
+`evals/surface_threshold/test_surface_threshold_offline_v0.py`: abs ≠ `list_results` (`live_offer_state`); search/synthetic blijven `list_results`; 01/02/06 step=0 `live_detail`; identifier/review-score negatief.
+
+### Niet
+Geen html_b2. Geen PDF-parse. #10 pas sluiten na live 05. Claim kan nog NOT_VISIBLE blijven (top-K mist abstract) — verwacht.
+
 
 
 

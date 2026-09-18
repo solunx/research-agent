@@ -117,4 +117,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#10** is nu de contract-blocker op taak 05: abs wordt `list_results` → html-leaf pakt PDF/HTML/TeX i.p.v. abstract (`062211Z`). **#24 allowlist live-bewezen** (OPEN abs `source=llm`, href niet in affordances). **#26** bind gezien; unbind/switch niet. Niet html_b2. Niet batch-default. Niet threshold-hack voor #10.
+Open **#10** herijkt offline (D2c geen kale identifiers/1-decimaal; abs → `live_offer_state`). Live 05 na user-OK + rebuild. **#24 allowlist live-bewezen.** **#26** bind gezien; unbind/switch niet. Niet html_b2. Niet batch-default.

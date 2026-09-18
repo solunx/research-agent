@@ -64,11 +64,12 @@ ChatFnStr = Callable[[list[dict[str, str]]], str]
 # Surface density: glyph ∨ D2c via shared candidate_units helpers (Fase 3).
 # Replaces language-specific _PRICE_LINE (vanaf/from/p.p.) — FRAMEWORK_BOUNDARY #10.
 # Provisional list-density threshold (Open #10 — NOT locked).
-# Fixture basis (post glyph∨D2c): synthetic multi-offer list ≈3 price-like lines;
-# detail pages can score much higher (Monica≈29) because D2c still flags some
-# non-price numerics — so this threshold alone does NOT separate list vs detail.
+# Recalibrated 2026-09-18: D2c no longer counts bare 4+ digit identifiers or
+# 1-decimal scores (Monica 8,1 / arXiv 2609.18128). Measured after that:
+#   abs 062211Z = 1, abs 102344Z = 1, synthetic list = 3, arXiv search = 3,
+#   Monica remaining 3-digit prices ≈10, Flamenco ≈9.
+# T=3 then separates single-record abs from multi-item lists on both families.
 # step==0 + same_entity → live_detail short-circuit remains the property-page guard.
-# Recalibrate across diverse page types before locking.
 _PRICE_LIKE_LIST_THRESHOLD = 3  # provisional; see Open #10 in FRAMEWORK_BOUNDARY.md
 
 
@@ -88,19 +89,26 @@ def _classify_surface(
     - never site-specific host/path string matching
     """
     try:
-        from urllib.parse import urlparse
-
-        start_path = urlparse(start_url).path.rstrip("/")
-        cur_path = urlparse(cur_url).path.rstrip("/")
-        same_entity = bool(
-            start_path
-            and cur_path
-            and (
-                cur_path == start_path
-                or cur_path.startswith(start_path + "/")
-                or start_path.startswith(cur_path + "/")
+        start_parts = urlparse(start_url)
+        cur_parts = urlparse(cur_url)
+        start_path = start_parts.path.rstrip("/")
+        cur_path = cur_parts.path.rstrip("/")
+        start_host = (start_parts.netloc or "").lower()
+        cur_host = (cur_parts.netloc or "").lower()
+        if start_path:
+            same_entity = bool(
+                cur_path
+                and (
+                    cur_path == start_path
+                    or cur_path.startswith(start_path + "/")
+                    or start_path.startswith(cur_path + "/")
+                )
             )
-        )
+        else:
+            # Site-root start: path nesting is undefined. Same host is still
+            # on-site (abs/search); leaving host is marketing. No site-name
+            # strings — netloc equality only.
+            same_entity = bool(start_host and start_host == cur_host)
     except Exception:
         same_entity = step == 0
 

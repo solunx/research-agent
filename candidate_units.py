@@ -121,8 +121,12 @@ def line_has_price_form_d2c(text: str) -> bool:
       - not part of a multi-separator date pattern
       - not a bare year 19xx/20xx
       - not a 1–2 digit score without further magnitude
-      - magnitude: >=3 digits OR decimal with 2+ chars after separator
-    No language words (vanaf/from/p.p.).
+      - not a 1-decimal fraction (review scores 8,1 / versions 0.5)
+      - not a bare 4+ digit integer (identifiers: arXiv yyMM, DOI fragments)
+      - accepted: 3-digit integers (388–920 prices without a glyph) OR
+        grouped/2+ fraction digits (1,936 / 12.50)
+    No language words (vanaf/from/p.p.). Open #10: bare identifier runs were
+    crossing the list-density threshold on single-record abs pages.
     """
     cleaned = _DATE_LIKE.sub(" ", text or "")
     for m in re.finditer(r"(?<!\d)(\d{1,6})([.,]\d{1,3})?(?!\d)", cleaned):
@@ -130,6 +134,12 @@ def line_has_price_form_d2c(text: str) -> bool:
         if re.fullmatch(r"(?:19|20)\d{2}", num) and not dec:
             continue
         if len(num) <= 2 and not dec:
+            continue
+        # 1-digit fraction: 8,1 / 0.5 — not cents, not thousands.
+        if dec and len(dec) == 2:
+            continue
+        # Bare 4+ digit integers are identifiers, not displayed prices.
+        if not dec and len(num) >= 4:
             continue
         if len(num) >= 3 or (dec and len(dec) >= 2):
             return True

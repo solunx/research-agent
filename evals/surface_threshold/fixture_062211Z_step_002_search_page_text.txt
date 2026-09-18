@@ -1,0 +1,174 @@
+Skip to main content
+arXiv is now an independent nonprofit!
+Learn more
+×
+Search
+Submit
+Donate
+Log in
+Showing 1–50 of 1,936 results for all: large language model agents tool use
+Search v0.5.6 released 2020-02-24
+Search term or terms
+All fields
+Title
+Author(s)
+Abstract
+Comments
+Journal reference
+ACM classification
+MSC classification
+Report number
+arXiv identifier
+DOI
+ORCID
+License (URI)
+arXiv author ID
+Help pages
+Full text
+Search
+Show abstracts  Hide abstracts
+Advanced Search
+25
+50
+100
+200
+results per page.
+Sort results by
+Announcement date (newest first)
+Announcement date (oldest first)
+Submission date (newest first)
+Submission date (oldest first)
+Relevance
+Go
+Next
+1
+2
+3
+4
+5
+…
+arXiv:2609.20625  [pdf, ps, other]
+cs.CL cs.AI
+Chronicle: Cut-Point Replay for Regression Testing of LLM Agents
+Authors: Tisha Chawla, Susheem Koul
+Abstract: Large… ▽ More
+Submitted 17 September, 2026; originally announced September 2026.
+arXiv:2609.19189  [pdf, ps, other]
+cs.AR cs.CL
+CovR: Coverage-Aware Hardware Verification via Reasoning-Guided Reinforcement Learning
+Authors: Manar Abdelatty, Maryam Nouh, Sherief Reda
+Abstract: …verification remains one of the most resource-intensive stages of hardware development, often consuming up to 70% of the total design effort. While recent work has explored using… ▽ More
+Submitted 15 September, 2026; originally announced September 2026.
+arXiv:2609.19059  [pdf, ps, other]
+cs.CL cs.AI
+MIRAGE: How Conversation State Shapes Historical Evidence Use in Multimodal Personal Agents
+Authors: Yu Liu, Wenxiao Zhang, Cheng Hu, Cong Cao, Fangfang Yuan, Xinyu Wang, Jin B. Hong, Yanbing Liu
+Abstract: Multimodal large… ▽ More
+Submitted 25 August, 2026; originally announced September 2026.
+Comments: Accepted by ACM MM 2026
+arXiv:2609.18736  [pdf, ps, other]
+cs.AI
+Clueing up LLMs with Tool-Augmented Deductive Reasoning
+Authors: Rebecca Ansell, Autumn Toney-Wails
+Abstract: Despite recent advances in large… ▽ More
+Submitted 16 September, 2026; originally announced September 2026.
+Journal ref: IJCAI 2026 Workshop Logical and Symbolic Reasoning
+arXiv:2609.18591  [pdf, ps, other]
+cs.AI econ.GN
+Recursive Reasoning or Statistical Extrapolation? In-Context Learning in Multi-Agent Interdependent Decision-Making
+Authors: Yu Liu, Wenwen Li, Yifan Dou, Guangnan Ye
+Abstract: In-context learning (ICL) enables large… ▽ More
+Submitted 16 September, 2026; originally announced September 2026.
+arXiv:2609.18128  [pdf, ps, other]
+cs.AI cs.LO
+Symbolic Temporal Supervision of LLM Agents Using Contracts
+Authors: Yifeng Xiao, Pierluigi Nuzzo
+Abstract: Large… ▽ More
+Submitted 16 September, 2026; originally announced September 2026.
+arXiv:2609.17698  [pdf, ps, other]
+cs.SE
+A Large-Scale Empirical Study of Quality Assurance Practices and Gaps in AI Agents
+Authors: Wuyang Dai, Moses Openja, Jiho Shin, Hung Viet Pham, Song Wang
+Abstract: Large… ▽ More
+Submitted 15 September, 2026; originally announced September 2026.
+arXiv:2609.17632  [pdf, ps, other]
+cs.AI cs.CL
+EvolveTrade: Experience-Driven Policy Refinement for Self-Evolving LLM Trading Agents
+Authors: Sehee Kim, Yumin Choi, Minki Kang, Sung Ju Hwang
+Abstract: Large… ▽ More
+Submitted 15 September, 2026; originally announced September 2026.
+arXiv:2609.16461  [pdf]
+cs.SE cs.AI
+Protocol-Preserving Context Trimming for Agentic Workflows: Benefits, Failure Regimes, and Budget Guardrails
+Authors: Harish Gaggar
+Abstract: Agentic… ▽ More
+Submitted 14 September, 2026; originally announced September 2026.
+Comments: 13 Pages, 4 Figures
+arXiv:2609.16305  [pdf, ps, other]
+cs.AI cs.CE cs.CL cs.LG cs.MA
+BLINDSPOT: A Benchmark for Safety and Refusal Calibration in Long-Horizon Tool-Using Agents
+Authors: Sadia Asif, Mohammad Mohammadi Amiri, Momin Abbas, Tejaswini Pedapati, Prasanna Sattigeri
+Abstract: Large… ▽ More
+Submitted 14 September, 2026; originally announced September 2026.
+arXiv:2609.16268  [pdf, ps, other]
+cs.CL
+Spurious Tool Use: When RL Agents Learn the Wrong Reason to Act
+Authors: Yiwei Yang, Haoxiang Zhang, Bingbing Wen, Yao Lu, Yuchen Wu, Lei Zhang, Julian McAuley, Pan Lu, Bill Howe
+Abstract: Large… ▽ More
+Submitted 14 September, 2026; originally announced September 2026.
+arXiv:2609.16213  [pdf]
+cs.AI
+Artificial intelligence and biosecurity: capabilities, threat pathways, and defense-in-depth governance
+Authors: Candace S. Y. Chan, Aris Karatzikos, Ilias Georgakopoulos-Soares
+Abstract: Artificial intelligence is reshaping biological research across an increasingly connected digital-to-physical workflow. General-purpose large… ▽ More
+Submitted 14 September, 2026; originally announced September 2026.
+arXiv:2609.16098  [pdf, ps, other]
+cs.CR cs.AI cs.CL
+Universal Defenses for Tool-Integrated LLM Agents Against Adversarial Attacks
+Authors: Xiaoyan Li, Yunli Wang
+Abstract: Large… ▽ More
+Submitted 14 September, 2026; originally announced September 2026.
+arXiv:2609.15963  [pdf, ps, other]
+cs.CR cs.SE
+Adversarial Testing of Automated Program Repair Agents for Security Vulnerabilities
+Authors: Fares Trad, Simin Chen, Hung Viet Pham, Gias Uddin, Baishakhi Ray
+Abstract: Software agents with… ▽ More
+Submitted 14 September, 2026; originally announced September 2026.
+Comments: 12 pages, 8 figures
+arXiv:2609.15309  [pdf, ps, other]
+cs.CL
+When Agents Slow Down: Understanding LLM Agents' Test-Time Strategies via Elo-per-token Analysis
+Authors: Kaiyuan Liu, Qiuyang Mang, Bo Peng, Wenhao Chai, Hanchen Li, Shreyas Pimpalgaonkar, Luke Zettlemoyer, Alex Dimakis, Alvin Cheung
+Abstract: Large… ▽ More
+Submitted 14 September, 2026; originally announced September 2026.
+arXiv:2609.14987  [pdf, ps, other]
+cs.CR cs.AI
+ActGuard: Pre-execution Action Auditing against Indirect Prompt Injection in LLM Agents
+Authors: Bingzheng Wang, Xiaoyan Gu, Wentao Wang, Xingyou Yang, Hongcheng Li, Rong Yin
+Abstract: Large… ▽ More
+Submitted 13 September, 2026; originally announced September 2026.
+arXiv:2609.14840  [pdf, ps, other]
+cs.AI physics.chem-ph
+El Agente Potente: High-Throughput Agentic Atomistic Simulations
+Authors: Tsz Wai Ko, Jiaru Bai, Thomas Swanick, Yeonghun Kang, Changhyeok Choi, Angelina Qihong Jiang, Aiwei Yin, Varinia Bernales, Alán Aspuru-Guzik
+Abstract: Foundational machine-learning interatomic potentials (MLIPs) are transforming atomistic simulations by achieving near-ab initio accuracy across large chemical spaces at a fraction of the computational cost. A central challenge in… ▽ More
+Submitted 13 September, 2026; originally announced September 2026.
+Comments: 64 pages, 16 figures, and 3 tables, including Supporting Information. Main text: 24 pages, 6 figures, and 1 table
+arXiv:2609.13860  [pdf, ps, other]
+cs.AI cs.CL cs.IR
+ClinAgent: A ReAct-Based Agent for Conversational Access to Clinical Trial Information
+Authors: Antonino Vaccarella, Riccardo Cantini, Domenico Talia, Paolo Trunfio, Marianna Talia, Rosamaria Lappano, Marcello Maggiolini
+Abstract: Querying clinical trial registries remains a manual and error-prone process, requiring researchers to navigate large volumes of semi-structured data without support for natural… ▽ More
+Submitted 12 September, 2026; originally announced September 2026.
+Comments: Accepted at the CIBB 2026 conference (https://cibb2026.teralab.ai/)
+arXiv:2609.13718  [pdf, ps, other]
+cs.HC cs.AI
+Oops, Not Now: PEARL, a RAG-Based Support Agent for Gameplay and What Players Want from AI Help
+Authors: Jiahong Li, Sai Siddartha Maram, Atieh Kashani, Ulia Zaman, Zhiyu Lin, Cameron Marano, Roger Azevedo, Jichen Zhu, Magy Seif El-Nasr
+Abstract: AI-powered gameplay support agents hold promise for game-based learning, yet grounding generative… ▽ More
+Submitted 12 September, 2026; originally announced September 2026.
+Comments: Author accepted manuscript. Accepted to the 2026 IEEE Conference on Games (CoG). 8 pages, 3 figures, 1 table
+arXiv:2609.13335  [pdf, ps, other]
+cs.RO cs.AI
+Bridging Thought and Action: Taming Long-Horizon Instability in Open-Source LLM Agents with a MetaTool-Enhanced ROS Framework
+Authors: Kazi Abrar Mahmud, Nilotpau…[+14031 chars]
