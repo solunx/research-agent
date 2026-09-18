@@ -117,4 +117,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26 blijft OPEN.** **#24b** Fase 2.2 leaf-html live (`171515Z` per-paper `/abs/`-hrefs); contract niet dicht — `href_not_in_affordances` op preferred abs-link buiten de 60-cap. Niet html_b2. Niet batch-default.
+Open **#26 blijft OPEN.** **#24** OPEN_URL-allowlist = planner-safe affordances ∪ shown-candidate `primary_action.href` (offline groen op 171515Z-fixture; invented URL nog reject). #24b leaf-html al live. Sluit #24 pas na live 05. Niet html_b2. Niet batch-default.

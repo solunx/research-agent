@@ -1954,6 +1954,32 @@ Loop stap 3: LLM `OPEN_URL` `target_href=https://arxiv.org/abs/2609.13860` (`sou
 ### Niet
 Geen extra live-run. Preferred-href injecteren in de OPEN-allowlist is een volgende slice, niet deze.
 
+## 2026-09-18 — Open #24: preferred-item href as OPEN_URL source
+
+### Citaat oud (`evidence_acquisition.py` vóór deze slice)
+```
+if action == "OPEN_URL":
+    hrefs = {str(a.get("href") or "").strip() for a in safe if a.get("href")}
+    if not target_href or target_href not in hrefs:
+        # allow if target_href is substring of an affordance href
+        ...
+        return {..., "reason": "href_not_in_affordances", "source": "code_reject", ...}
+```
+Live `171515Z` stap 3: LLM `OPEN_URL https://arxiv.org/abs/2609.13860` → `code_reject href_not_in_affordances`. Href = c0 `primary_action` (leaf-HTML, getoond aan de LLM), niet in de 60-item affordance-lijst.
+
+### Citaat nieuw
+`observed_open_hrefs(safe, preferred_item_links)` = affordance hrefs ∪ `primary_action.href` van elke candidate die deze stap is getoond. Invented URLs blijven `href_not_in_affordances`. Geen nieuwe extractie.
+
+### Offline
+`evals/preferred_href_allowlist/test_preferred_href_allowlist_offline_v0.py` groen:
+- 171515Z abs ontbreekt in affordances, zit in preferred → OPEN_URL nu geaccepteerd
+- verzonnen URL (niet in aff, niet in primary_action) → STOP `href_not_in_affordances`
+- zonder preferred_item_links blijft de abs-href afgewezen (oude regel)
+- 01/02 extra_vs_full_aff=0 extra_vs_safe=0; 06 extra_vs_full_aff=0 extra_vs_safe=4 (hrefs in de 60-lijst, buiten planner-cap 36 — zelfde observed-union, geen nieuwe extractie)
+
+### Niet
+Geen html_b2. Geen PDF-parse. #26 OPEN. #24b representatie was al live-zichtbaar (`171515Z`); dit sluit alleen de allowlist-bron.
+
 
 
 

@@ -221,6 +221,28 @@ def filter_safe_affordances(
     return safe[:max_keep]
 
 
+def observed_open_hrefs(
+    affordances: list[dict[str, Any]] | None,
+    preferred_item_links: list[dict[str, str]] | None = None,
+) -> set[str]:
+    """OPEN_URL allowlist: observed affordance hrefs ∪ shown-candidate primary_action hrefs.
+
+    The LLM may only open URLs the system already structurally observed this
+    step. Invented URLs stay rejected. Live `171515Z`: abs hrefs lived on
+    leaf-HTML `primary_action` but not in the capped 60-item affordance list.
+    """
+    hrefs: set[str] = set()
+    for a in affordances or []:
+        h = str(a.get("href") or "").strip()
+        if h:
+            hrefs.add(h)
+    for p in preferred_item_links or []:
+        h = str(p.get("href") or "").strip()
+        if h:
+            hrefs.add(h)
+    return hrefs
+
+
 def _parse_json_object(raw: str) -> dict[str, Any] | None:
     if not raw:
         return None
@@ -525,7 +547,7 @@ def acquisition_decide(
         "output_schema": {
             "action_class": "STOP|OPEN_URL|CLICK_TEXT|CLICK_SELECTOR|FILL_AND_SUBMIT|SCROLL|WAIT|OPEN_FILE",
             "target_text": "string|null — must match an affordance text if click/fill",
-            "target_href": "string|null — must match an affordance href if open_url",
+            "target_href": "string|null — must match an affordance href or a preferred_item_link href if open_url",
             "query_text": "string|null — FREE text for FILL_AND_SUBMIT only; LLM formulates the search query from task/gaps (code does not auto-fill this)",
             "for_decision_ids": ["decision ids this action aims to resolve"],
             "reason": "short",
@@ -580,9 +602,9 @@ def acquisition_decide(
                 "for_decision_ids": [g.get("decision_id") for g in gaps],
             }
     if action == "OPEN_URL":
-        hrefs = {str(a.get("href") or "").strip() for a in safe if a.get("href")}
+        hrefs = observed_open_hrefs(safe, preferred_item_links)
         if not target_href or target_href not in hrefs:
-            # allow if target_href is substring of an affordance href
+            # allow if target_href is substring of an observed href
             matched_h = None
             if target_href:
                 for h in hrefs:

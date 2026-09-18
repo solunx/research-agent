@@ -1,0 +1,113 @@
+{
+  "url": "https://arxiv.org/search/?query=tool-augmented+LLM+agents&searchtype=all&abstracts=show&order=-announced_date_first&size=50",
+  "surface": "list_results",
+  "candidates": [
+    {
+      "candidate_id": "c0",
+      "identity_hints": [
+        "arXiv:2609.13860",
+        "pdf",
+        "other"
+      ],
+      "evidence": [
+        "arXiv:2609.13860",
+        "[",
+        "pdf",
+        ",",
+        "ps",
+        "other",
+        "]",
+        "cs.AI",
+        "cs.CL",
+        "cs.IR",
+        "ClinAgent: A ReAct-Based"
+      ],
+      "primary_action": {
+        "text": "arXiv:2609.13860",
+        "href": "https://arxiv.org/abs/2609.13860"
+      },
+      "source_url": "https://arxiv.org/search/?query=tool-augmented+LLM+agents&searchtype=all&abstracts=show&order=-announced_date_first&size=50",
+      "surface": "list_results",
+      "packager_source": "html_structure",
+      "block_index": 10,
+      "repeat_count": 0,
+      "currency_glyph_count": 0,
+      "digit_run_count": 3,
+      "n_lines": 11,
+      "max_repeat": 1
+    },
+    {
+      "candidate_id": "c1",
+      "identity_hints": [
+        "arXiv:2609.13718",
+        "pdf",
+        "other"
+      ],
+      "evidence": [
+        "arXiv:2609.13718",
+        "[",
+        "pdf",
+        ",",
+        "ps",
+        "other",
+        "]",
+        "cs.HC",
+        "cs.AI",
+        "Oops, Not Now: PEARL, a RAG-Based Support",
+        "Agent"
+      ],
+      "primary_action": {
+        "text": "arXiv:2609.13718",
+        "href": "https://arxiv.org/abs/2609.13718"
+      },
+      "source_url": "https://arxiv.org/search/?query=tool-augmented+LLM+agents&searchtype=all&abstracts=show&order=-announced_date_first&size=50",
+      "surface": "list_results",
+      "packager_source": "html_structure",
+      "block_index": 11,
+      "repeat_count": 0,
+      "currency_glyph_count": 0,
+      "digit_run_count": 3,
+      "n_lines": 11,
+      "max_repeat": 1
+    },
+    {
+      "candidate_id": "c2",
+      "identity_hints": [
+        "arXiv:2609.13667",
+        "pdf",
+        "other"
+      ],
+      "evidence": [
+        "arXiv:2609.13667",
+        "[",
+        "pdf",
+        ",",
+        "ps",
+        "other",
+        "]",
+        "cs.AI",
+        "GeoSkill:Experience-Driven Hierarchical Skill Learning with Collaborative Revision forGeospatialAgents",
+        "Authors:",
+        "Han Luo"
+      ],
+      "primary_action": {
+        "text": "arXiv:2609.13667",
+        "href": "https://arxiv.org/abs/2609.13667"
+      },
+      "source_url": "https://arxiv.org/search/?query=tool-augmented+LLM+agents&searchtype=all&abstracts=show&order=-announced_date_first&size=50",
+      "surface": "list_results",
+      "packager_source": "html_structure",
+      "block_index": 12,
+      "repeat_count": 0,
+      "currency_glyph_count": 0,
+      "digit_run_count": 3,
+      "n_lines": 11,
+      "max_repeat": 1
+    }
+  ],
+  "preview": [
+    "[c0] g=0 d=3 r=0 ev=11 id+ | arXiv:2609.13860 · pdf → arXiv:2609.13860",
+    "[c1] g=0 d=3 r=0 ev=11 id+ | arXiv:2609.13718 · pdf → arXiv:2609.13718",
+    "[c2] g=0 d=3 r=0 ev=11 id+ | arXiv:2609.13667 · pdf → arXiv:2609.13667"
+  ]
+}
