@@ -95,7 +95,8 @@ class _Page:
 def test_snapshot_includes_html():
     html = "<html><body><li class='result'>A</li></body></html>"
     snap = _snapshot(_Page(html=html), include_hints=False)
-    assert snap.get("html") == html
+    assert "<li" in str(snap.get("html") or "")
+    assert "A" in str(snap.get("html") or "")
     assert snap.get("html_chars") == len(html)
     assert "visible body" in str(snap.get("text") or "")
     print("OK test_snapshot_includes_html")

@@ -33,6 +33,18 @@ _DOWNLOAD_NAV_RE = re.compile(r"download is starting", re.I)
 # Open #24b Fase 2 plumbing: keep raw DOM next to innerText. Cap avoids
 # unbounded trace files; extraction reads this string, not a live handle.
 _HTML_SNAP_CAP = 400_000
+# Non-content blocks must be stripped *before* the cap is applied.
+# Coolblue 110505Z: html_chars=699128, first 200k still in <style> inside
+# <head> — body product cards never reached extract_candidates.
+_NONCONTENT_BLOCK_RE = re.compile(
+    r"<(script|style|noscript|svg)\b[^>]*>.*?</\1>",
+    re.I | re.S,
+)
+_DANGLING_NONCONTENT_RE = re.compile(
+    r"<(script|style|noscript|svg)\b[^>]*$",
+    re.I,
+)
+_BODY_INNER_RE = re.compile(r"<body\b[^>]*>(.*)</body>", re.I | re.S)
 
 # Generic consent buttons (NL/FR/EN – common CMP patterns)
 COOKIE_SELECTORS = [
@@ -192,6 +204,25 @@ _BOT_WALL_RE = re.compile(
 )
 
 
+def prepare_html_for_snapshot(html: str, *, cap: int = _HTML_SNAP_CAP) -> str:
+    """Drop non-content tags, then keep <body>, *then* apply the char cap.
+
+    Counting the cap on raw page.content() cut Coolblue search pages inside
+    a giant <head> stylesheet (110505Z html_chars=699128). Script/style/svg/
+    noscript and head chrome are not candidate structure.
+    """
+    if not html:
+        return ""
+    stripped = _NONCONTENT_BLOCK_RE.sub("", html)
+    stripped = _DANGLING_NONCONTENT_RE.sub("", stripped)
+    body = _BODY_INNER_RE.search(stripped)
+    if body:
+        stripped = "<html><body>" + body.group(1) + "</body></html>"
+    if cap and len(stripped) > cap:
+        stripped = stripped[: cap]
+    return stripped
+
+
 def _snapshot(
     page,
     max_chars: int = 12000,
@@ -204,14 +235,14 @@ def _snapshot(
     except Exception:
         html = ""
     html_chars = len(html)
-    if html_chars > _HTML_SNAP_CAP:
-        html = html[:_HTML_SNAP_CAP]
+    html = prepare_html_for_snapshot(html, cap=_HTML_SNAP_CAP)
     out: dict[str, Any] = {
         "url": page.url,
         "title": title,
         "text": text,
         "html": html,
         "html_chars": html_chars,
+        "html_prepared_chars": len(html),
         "error": None,
     }
     if include_hints:
