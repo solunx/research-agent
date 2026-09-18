@@ -38,6 +38,7 @@ from candidates import (
     select_top_candidates,
 )
 from candidate_units import (
+    count_price_like_lines,
     currency_glyph_count,
     digit_run_count,
     has_structural_price_signal,
@@ -171,6 +172,28 @@ def _is_descendant_of_any(el, ancestors: list[Any]) -> bool:
     return False
 
 
+def _repeating_cluster_score(kids: list[Any]) -> tuple[int, int, int]:
+    """Score a repeating sibling group: n × (D2c price-hits + text-link itemish).
+
+    Price-only would zero arXiv cards (no €). Text-link: majority of siblings
+    have an href AND enough lines that this is not a 1-line chrome row.
+    """
+    n = len(kids)
+    if n < 1:
+        return (0, 0, 0)
+    lines: list[str] = []
+    n_with_link = 0
+    for el in kids:
+        lines.extend(_visible_text_lines(el))
+        if el.find("a", href=True):
+            n_with_link += 1
+    price_hits = count_price_like_lines("\n".join(lines))
+    text_link = (
+        1 if (n_with_link >= max(1, (n + 1) // 2) and len(lines) >= 2 * n) else 0
+    )
+    return (n * (price_hits + text_link), price_hits, n)
+
+
 def _find_structural_containers(
     soup,
     *,
@@ -211,7 +234,12 @@ def _find_structural_containers(
         if _LISTISH_CLASS.search(classes):
             parents.append(el)
 
+    clusters: list[list[Any]] = []
+    seen_parents: set[int] = set()
     for parent in parents:
+        pid = id(parent)
+        if pid in seen_parents:
+            continue
         kids = [
             c
             for c in parent.find_all(recursive=False)
@@ -219,8 +247,8 @@ def _find_structural_containers(
         ]
         cardish_kids = [k for k in kids if _is_cardish_element(k)]
         if len(cardish_kids) >= min_rep:
-            for k in cardish_kids:
-                add(k)
+            seen_parents.add(pid)
+            clusters.append(cardish_kids)
             continue
         deeper = [k for k in parent.find_all(True, recursive=True) if _is_cardish_element(k)]
         top: list[Any] = []
@@ -229,11 +257,20 @@ def _find_structural_containers(
                 continue
             top.append(k)
         if len(top) >= min_rep:
-            for k in top:
-                add(k)
+            seen_parents.add(pid)
+            clusters.append(top)
 
     if repeating_only:
+        if not clusters:
+            return []
+        best = max(clusters, key=_repeating_cluster_score)
+        for k in best:
+            add(k)
         return containers
+
+    for group in clusters:
+        for k in group:
+            add(k)
 
     # 2) Standalone articles / explicit cards (detail pages)
     for el in soup.find_all(["article"]):

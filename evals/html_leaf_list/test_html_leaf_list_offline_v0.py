@@ -26,8 +26,18 @@ from candidates import (  # noqa: E402
     candidates_to_jsonable,
     candidates_to_observations,
     extract_candidates,
+    html_leaf_should_replace_text,
 )
 from structural_observer import extract_candidates_via_html  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "evals" / "coolblue_list_detail"))
+from reconstruct_110505Z import (  # noqa: E402
+    ASUS_TITLE,
+    PAGE_TEXT,
+    VICTUS_A_HREF,
+    VICTUS_A_TITLE,
+    reconstruct_110505Z_search_html,
+)
 
 LIVE_MAX_CANDIDATES = 3
 LIVE_MAX_UNITS = 6
@@ -252,12 +262,76 @@ def test_synthetic_list_html_recovers_three_offer_cards():
     print("OK test_synthetic_list_html_recovers_three_offer_cards")
 
 
+def test_coolblue_leaf_picks_product_cards_not_header_chrome():
+    """Mandatory: after cluster score, VICTUS/ASUS beat Language/Account."""
+    html = reconstruct_110505Z_search_html(huge_head=False)
+    cands = _live_extract(
+        PAGE_TEXT,
+        [],
+        "https://www.coolblue.be/nl/zoeken?query=RTX+4070",
+        "list_results",
+        html=html,
+    )
+    blob = " ".join(
+        " ".join(list(c.identity_hints or []) + list(c.evidence or [])) for c in cands
+    )
+    hrefs = [str((c.primary_action or {}).get("href") or "") for c in cands]
+    assert VICTUS_A_TITLE in blob or ASUS_TITLE in blob, [c.identity_hints for c in cands]
+    assert "English (EN)" not in blob
+    assert not any("inloggen" in h or "verlanglijstje" in h or "switchlanguage" in h for h in hrefs)
+    assert any(VICTUS_A_HREF in h or "asus-rog" in h for h in hrefs), hrefs
+    assert html_leaf_should_replace_text(cands) is True
+    print(f"OK test_coolblue_leaf_picks_product_cards_not_header_chrome n={len(cands)} hrefs={hrefs}")
+
+
+def test_chrome_only_html_falls_back_to_text_arm():
+    """If leaf finds only header widgets, do not replace text candidates."""
+    html = """<html><body>
+    <ul class="header-nav">
+      <li><a href="https://www.coolblue.be/en/switchlanguage">English (EN)</a></li>
+      <li><a href="https://www.coolblue.be/nl/inloggen">Account</a></li>
+      <li><a href="https://www.coolblue.be/nl/verlanglijstje">Verlanglijstje</a></li>
+    </ul>
+    </body></html>"""
+    cands = _live_extract(
+        PAGE_TEXT,
+        [],
+        "https://www.coolblue.be/nl/zoeken?query=RTX+4070",
+        "list_results",
+        html=html,
+    )
+    blob = " ".join(
+        " ".join(list(c.identity_hints or []) + list(c.evidence or [])) for c in cands
+    )
+    assert "English (EN)" not in blob
+    assert "VICTUS" in blob or "ROG" in blob or "1.499" in blob or "1.649" in blob, [
+        c.identity_hints for c in cands
+    ]
+    print("OK test_chrome_only_html_falls_back_to_text_arm", [c.identity_hints[:2] for c in cands])
+
+
+def test_arxiv_leaf_still_replaces_text():
+    """arXiv cards have no €; text+link+digit-runs must still keep the leaf arm."""
+    text = SEARCH_TEXT.read_text(encoding="utf-8")
+    aff = json.loads(SEARCH_AFF.read_text(encoding="utf-8"))
+    html = reconstruct_repeating_list_html(text)
+    new = _live_extract(text, aff, SEARCH_URL, "list_results", html=html)
+    assert all((c.packager_source or "") == "html_structure" for c in new), [
+        c.packager_source for c in new
+    ]
+    assert html_leaf_should_replace_text(new) is True
+    print("OK test_arxiv_leaf_still_replaces_text", _paper_ids(new)[:3])
+
+
 def main():
     test_01_02_candidate_set_byte_identical_with_html()
     test_repeating_leaf_html_keeps_distinct_paper_cards()
     test_list_results_extract_uses_html_cards_not_straddling_chunk()
     test_negative_live_detail_ignores_list_html()
     test_synthetic_list_html_recovers_three_offer_cards()
+    test_coolblue_leaf_picks_product_cards_not_header_chrome()
+    test_chrome_only_html_falls_back_to_text_arm()
+    test_arxiv_leaf_still_replaces_text()
     print("\nALL OFFLINE TESTS PASSED")
 
 

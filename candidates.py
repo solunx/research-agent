@@ -326,6 +326,26 @@ def select_top_candidates(
     return chosen
 
 
+def html_leaf_should_replace_text(cands: list[Candidate]) -> bool:
+    """Keep HTML leaf only when at least one card looks itemish.
+
+    Itemish = D2c/glyph price line (Open #10) OR (href + digit runs + ≥2 lines).
+    The second arm is required for arXiv list cards (no €, but paper-ids + abs href).
+    Header chrome (Language / Account) has a link but no price and no digit runs.
+    """
+    from candidate_units import line_is_price_like
+
+    for c in cands or []:
+        lines = list(c.evidence or []) + list(c.identity_hints or [])
+        if any(line_is_price_like(ln) for ln in lines):
+            return True
+        href = str((c.primary_action or {}).get("href") or "").strip()
+        n_lines = int(c.n_lines or len(c.evidence or []))
+        if href and int(c.digit_run_count or 0) >= 2 and n_lines >= 2:
+            return True
+    return False
+
+
 def extract_candidates(
     *,
     text: str,
@@ -376,9 +396,9 @@ def extract_candidates(
             repeating_only=True,
             min_repeating_siblings=3,
         )
-    if html_cands:
-        # Repeating list recovered — select from leaf cards, not 8-line
-        # text chunks (those straddle cards on blank-line-less lists).
+    if html_cands and html_leaf_should_replace_text(html_cands):
+        # Repeating itemish list recovered — select from leaf cards, not
+        # 8-line text chunks. Chrome-only repeating groups fall back to text.
         return select_top_candidates(html_cands, max_n=max_candidates)
     return select_top_candidates(raw, max_n=max_candidates)
 
