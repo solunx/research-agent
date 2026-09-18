@@ -2044,10 +2044,15 @@ Generiek, geen Coolblue-regel. Na gemiste visible-text locators: unieke `input_f
 01 VERTREKPERIODE/Kerstvakantie/… None. 02 Prijzen & boeken/Ligging None. 06 Toggle Demographics None. 05 Related Papers/View PDF None; `Search` matcht `arxiv-search-input` (zelfde structurele klasse, alleen ná click-timeout).
 
 ### Offline
-`evals/click_related_input/test_click_related_input_offline_v0.py`
+`evals/click_related_input/test_click_related_input_offline_v0.py` (Docker Playwright: Zoeken → `#search` `click_fallback=related_input_field`; NietBestaand → `click_text_no_locator` zonder search-focus; Computers & tablets → `text=` zonder fallback).
+
+### Live `103711Z` (rebuild `7863753`)
+`result_03_web_product_gpu_20260918T103711Z.json`: `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true` `subject_instance=RTX_4070_SUPER` `final_url=https://www.coolblue.be/nl/zoeken?query=RTX+4070+Super+grafische+kaart` `acquisition_steps=2`.
+
+Planner koos FILL, niet CLICK_TEXT: step 0 `FILL_AND_SUBMIT` `target_text=Zoeken naar...` `query_text=RTX 4070` `target_id=search`. Step 1 refine `q=rtx 4070 super grafische kaart`. Geen `text=Zoeken` timeout in deze run. `step_000_affordances.json` heeft **beide**: `button` `text=Zoeken` én `input_field` `id=search` placeholder `Zoeken naar...`.
 
 ### Niet
-Geen html_b2. Geen "Zoeken"-lexicon. #26 OPEN.
+Geen html_b2. Geen "Zoeken"-lexicon. #26 OPEN. Click-fallback is vangnet; deze live-run bewijst FILL-pad, niet de timeout-fallback zelf (die zit in de offline execute-test).
 
 
 

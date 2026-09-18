@@ -93,7 +93,7 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 - Open #10: **deze abs-trigger live-bewezen** (`070449Z`); T=3 + D2c-tighten blijft provisionally, niet gelockt over alle paginatypes
 - Open #26: bind live gezien; unbind/switch-pad nog niet voorgekomen — open laten
 - Open #19/#22-vervolg: `NOT_STATED` is contract-vocabulaire, geen framework-sentinel
-- Taak 03 (Coolblue): click-robuustheid code in; live retest na rebuild (niet html_b2)
+- Taak 03 (Coolblue): click-fallback `7863753`; live `103711Z` `CONTRACT_SATISFIED` via FILL `q=rtx 4070` / refine. Niet html_b2
 - `batch_decisions=True` bewezen goedkoper, blijft **opt-in**
 - Niet `html_b2` als #24b-fix (heading+price NCA is de verkeerde vorm voor arXiv `<li>`)
 
@@ -123,4 +123,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26** (unbind/switch live nog niet gezien). **#10** abs-trigger live-bewezen, T niet gelockt. Taak 03 click-fallback code in (live retest). Niet html_b2. Niet batch-default. Niet #24/#27/#28 opnieuw openen.
+Open **#26** (unbind/switch live nog niet gezien). **#10** abs-trigger live-bewezen, T niet gelockt. Taak 03 click-fallback `7863753`; live `103711Z` `CONTRACT_SATISFIED`. Niet html_b2. Niet batch-default. Niet #24/#27/#28 opnieuw openen.
