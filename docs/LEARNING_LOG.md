@@ -2054,6 +2054,32 @@ Planner koos FILL, niet CLICK_TEXT: step 0 `FILL_AND_SUBMIT` `target_text=Zoeken
 ### Niet
 Geen html_b2. Geen "Zoeken"-lexicon. #26 OPEN. Click-fallback is vangnet; deze live-run bewijst FILL-pad, niet de timeout-fallback zelf (die zit in de offline execute-test).
 
+## 2026-09-18 — Coolblue list→detail (offline A+B+C)
+
+Live repeats after FILL: `110505Z` / `114603Z` / `123057Z` `MAX_ACQUISITION_STEPS` `detail_link=NO_URL`. Surface was already `list_results`. Candidates were header chrome (`Language` / `Account` / `Verlanglijstje`). Affordances 60 = 47 `panel_option` + 4 nav hrefs. `html_chars=699128`; naive 400k cut still inside `<head><style>`. `page_text` had ASUS ROG / HP VICTUS `1.649,-` / `1.499,-`. No vision, no LLM-chunk class, no network intercept, no `/product/` lexicon.
+
+### Fix A — cap after non-content strip
+Was: `_snapshot` `html = html[:400_000]` on raw `page.content()`.
+Now: `prepare_html_for_snapshot` drops `<script>`/`<style>`/`<noscript>`/`<svg>`, keeps `<body>`, *then* caps. `html_chars` stays raw length; `html_prepared_chars` is post-strip.
+Negatief: reconstructed `110505Z` huge-head HTML — naive cap drops VICTUS/ASUS; prepare keeps both, `prepared=1334`.
+Regressie 01/02 fingerprints unchanged after prepare; 05 arXiv cards survive; 06 text-only.
+
+### Fix B — cluster score + text fallback
+Was: `repeating_only` added every repeating group in DOM order; `if html_cands: return html` (chrome wins).
+Now: pick max `_repeating_cluster_score` = n × (D2c `count_price_like_lines` + text-link). Text-link = majority siblings have href AND ≥2 lines each (chrome rows are 1-line). `html_leaf_should_replace_text`: keep leaf only if some card is D2c-price **or** (href + `digit_run_count≥2` + `n_lines≥2`). Price-only would zero arXiv cards.
+Negatief: Coolblue fixture → VICTUS/ASUS hrefs, not `inloggen`/`verlanglijstje`/`switchlanguage`. Chrome-only HTML falls back to text (VICTUS/ROG remain).
+Regressie taak 05: leaf still papers `2609.19059`/`18736`/`18591` with `/abs/` hrefs, `html_leaf_should_replace_text=True`. 01/02 byte-identical with vs without HTML.
+
+### Fix C — inject primary_action before panel_option cap
+Was: `filter_safe_affordances` boosted preferred items *already in* the list; Coolblue product hrefs were absent, so 47 filters filled the cap.
+Now: `inject_preferred_action_affordances` prepends shown-candidate `primary_action` hrefs (same source as #24 `observed_open_hrefs`). Preferred rank still 0 → before `panel_option`. No URL-path lexicon.
+Negatief: filter-heavy 58-item list, `max_keep=36` — without inject product hrefs absent; with inject ASUS/VICTUS at index 0, first `panel_option` at 3. Invented URL still `STOP href_not_in_affordances`.
+Regressie 01/02 extra_vs_full_aff=0 extra_vs_safe=0; 05 `171515Z` abs still OPEN, invented still STOP; 06 invented rejected.
+
+### Niet
+Geen live taak 03 in deze FASE (wacht op expliciete OK, dan 2–3 herhalingen). Geen html_b2. #26 OPEN. Commits: A `06f7f00` B `ef3b066` C `64a4f88`.
+
+
 
 
 

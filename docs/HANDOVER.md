@@ -71,6 +71,9 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 | 15 | Lijstkaarten: één `"pdf"`-href + blank-line-blok; daarna abs-href niet in affordance-allowlist (`#24b`/`#24`) | Fase 1 `(text,href)`-identity `cc1871e`; Fase 2.2 leaf-html op `list_results` `26e89af`; OPEN_URL-allowlist = safe aff ∪ shown `primary_action.href` `41d5fc7`. Live `171515Z` leaf-cards; `062211Z` OPEN abs `source=llm` | Representatie eerst; allowlist daarna. Niet `html_b2`. LLM mag geen verzonnen URL |
 | 16 | Abs-pagina `price_hits=4` → ten onrechte `list_results` → html-leaf pakte PDF/HTML/TeX (`#10`) | D2c weigert kale 4+ digit identifiers en 1-decimaal; T=3; root-start = same-host → `live_offer_state`. `6debab8`. Live `070449Z` `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` | Drempel 3 was van de lexicon-detector; identifier-runs zijn geen prijzen (Monica 7-vs-37, zelfde klasse) |
 | 17 | Taak 03: `CLICK_TEXT Zoeken` timeout op aria-only icon-button (`text=Zoeken`); daarna categorie-browse | Na timeout: unieke `input_field` waarvan accessible name token-boundary-matcht met click-text (`_label_matches_text`); klik/focus die field, geen verzonnen query. Geen lexicon, geen index-nabijheid. `evals/click_related_input/` | input_field-capaciteit loste de klik niet vanzelf op; fallback alleen bij aantoonbare naamrelatie (negatief: `Computers & tablets` / `NietBestaand` pakt search niet) |
+| 18 | Coolblue list HTML: 400k-cap telde `<script>`/`<style>`/`<head>` mee → body-kaarten vielen buiten de snapshot (`110505Z` `html_chars=699128`) | `prepare_html_for_snapshot`: strip non-content, houd `<body>`, *dan* cap. `06f7f00`. `evals/html_cap_body/` | Cap op ruwe `page.content()` is geen content-budget |
+| 19 | Leaf `repeating_only` nam de eerste repeating group (header-widgets) i.p.v. productkaarten; niet-lege HTML verving de text-arm blind | Cluster-score = n × (D2c + text-link); `html_leaf_should_replace_text` (prijs OF href+digit-runs+≥2 regels). `ef3b066`. `evals/html_leaf_list/` | Eerste cluster ≠ item-cluster; chrome-HTML mag text niet verdringen. arXiv heeft geen € — tie-break is niet prijs-only |
+| 20 | Product-`primary_action` verdronk in `panel_option`-filters (47 filters, 4 nav hrefs, geen product-URL in cap) | `inject_preferred_action_affordances` vóór cap; zelfde bron als #24 allowlist. Geen `/product/`-lexicon. `64a4f88`. `evals/preferred_href_allowlist/` | Allowlist accepteert een href die de planner nooit ziet; inject maakt hem zichtbaar |
 
 **Meta-les, zelf ook een keer fout gegaan:** een van de externe reviewers (mij, Claude) las ooit een run-resultaat verkeerd en rapporteerde een fictieve regressie, wat tot een halve dag onnodige diagnose leidde. **Daarom deze procesregel, dwing 'm af:**
 
@@ -93,7 +96,7 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 - Open #10: **deze abs-trigger live-bewezen** (`070449Z`); T=3 + D2c-tighten blijft provisionally, niet gelockt over alle paginatypes
 - Open #26: bind live gezien; unbind/switch-pad nog niet voorgekomen — open laten
 - Open #19/#22-vervolg: `NOT_STATED` is contract-vocabulaire, geen framework-sentinel
-- Taak 03 (Coolblue): click-fallback `7863753`; live `103711Z` `CONTRACT_SATISFIED` via FILL `q=rtx 4070` / refine. Niet html_b2
+- Taak 03 (Coolblue): click-fallback `7863753`; live `103711Z` `CONTRACT_SATISFIED` via FILL `q=rtx 4070` / refine. List→detail offline A+B+C (cap/cluster/inject). **Geen live 03 tot expliciete OK**, dan 2–3 herhalingen. Niet html_b2
 - `batch_decisions=True` bewezen goedkoper, blijft **opt-in**
 - Niet `html_b2` als #24b-fix (heading+price NCA is de verkeerde vorm voor arXiv `<li>`)
 
@@ -123,4 +126,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26** (unbind/switch live nog niet gezien). **#10** abs-trigger live-bewezen, T niet gelockt. Taak 03 click-fallback `7863753`; live `103711Z` `CONTRACT_SATISFIED`. Niet html_b2. Niet batch-default. Niet #24/#27/#28 opnieuw openen.
+Open **#26** (unbind/switch live nog niet gezien). **#10** abs-trigger live-bewezen, T niet gelockt. Taak 03 list→detail: offline A+B+C; live 03 **alleen na expliciete OK**, 2–3 herhalingen. Niet html_b2. Niet batch-default. Niet #24/#27/#28 opnieuw openen.
