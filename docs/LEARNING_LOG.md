@@ -2077,7 +2077,32 @@ Negatief: filter-heavy 58-item list, `max_keep=36` — without inject product hr
 Regressie 01/02 extra_vs_full_aff=0 extra_vs_safe=0; 05 `171515Z` abs still OPEN, invented still STOP; 06 invented rejected.
 
 ### Niet
-Geen live taak 03 in deze FASE (wacht op expliciete OK, dan 2–3 herhalingen). Geen html_b2. #26 OPEN. Commits: A `06f7f00` B `ef3b066` C `64a4f88`.
+Geen html_b2. #26 OPEN. Commits: A `06f7f00` B `ef3b066` C `64a4f88`.
+
+## 2026-09-18 — Coolblue list→detail live 3× (`174311Z` / `183956Z` / `190223Z`)
+
+Rebuild `3a3407bb` (A+B+C in image). Canoniek pad, `--max-steps 6`, frozen contract `20260908T061529Z`.
+
+### Citaat result (raw)
+- `result_03_web_product_gpu_20260918T174311Z.json`: `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true` `detail_link=CONCRETE_PRODUCT_PAGE` `subject_instance=RTX_4070` `final_url=https://www.coolblue.be/nl/zoeken?query=RTX+4070+videokaart` `acquisition_steps=2`
+- `result_03_web_product_gpu_20260918T183956Z.json`: `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true` `subject_instance=RTX_4070_SUPER` `final_url=https://www.coolblue.be/nl/zoeken?query=RTX+4070+Super` `acquisition_steps=3`
+- `result_03_web_product_gpu_20260918T190223Z.json`: `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true` `subject_instance=RTX_4070_SUPER` `final_url=https://www.coolblue.be/nl/zoeken?query=RTX+4070+Super+grafische+kaart` `acquisition_steps=2`
+
+### Citaat A+B (step 1, alle drie)
+`step_001_candidates.json` `surface=list_results` `packager_source=html_structure`. `primary_action.href`:
+`https://www.coolblue.be/nl/product/947851/asus-rog-strix-g614jir-n4139w-azerty.html`,
+`…/969894/hp-victus-16-s1044nb-azerty.html`,
+`…/948809/hp-victus-16-r1054nb-azerty.html`.
+Evidence bevat ASUS ROG / HP VICTUS. **Niet** Language/Account/Verlanglijstje (`110505Z`).
+
+### Citaat C
+Raw `step_001_affordances.json`: 60 items, 47 `panel_option`, **0** `/product/` hrefs. Replay `filter_safe_affordances(..., preferred_item_links=cands)` zet de drie product-links eerst (`preferred_item=True`).
+
+### Citaat navigatie
+Loop: 0× `OPEN_URL` in alle drie runs. Step 1 action = `FILL_AND_SUBMIT` `query_text` refine (`rtx 4070 videokaart` / `rtx 4070 Super`). Reason (174311Z): “Current results are all laptops with RTX 4070, not standalone graphics cards.”
+
+### Niet
+Dit sluit **niet** list→detail en **niet** #24b. Contract-PASS is interpret `detail_link=CONCRETE_PRODUCT_PAGE` op de zoeklijst (zelfde klasse als `103711Z`), niet een bezochte product-URL. Geen extra live-run zonder nieuwe hypothese. Geen html_b2.
 
 
 
