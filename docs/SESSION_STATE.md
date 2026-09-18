@@ -9,7 +9,7 @@
 - **#28** `fb4b177` download = stay-on-page
 - **#24b** `cc1871e`/`26e89af` `(text,href)` + leaf-html op `list_results` (live `171515Z` per-paper `/abs/`)
 - **#24** `41d5fc7` OPEN_URL-allowlist = aff ∪ shown `primary_action.href` (live `062211Z` OPEN abs `source=llm`)
-- **#10** `6debab8` D2c geen kale identifiers/1-decimaal; abs=`live_offer_state`. Live `070449Z` `stop_reason=CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` `final_url=/abs/2609.18128`
+- **#10** `6debab8` D2c geen kale identifiers/1-decimaal; abs=`live_offer_state`. Taak 05 na #10 **4/4** `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`: `070449Z` `/abs/2609.18128`; `073200Z` `/abs/2609.18128`; `075144Z` `/abs/2609.13860`; `081459Z` `/abs/2609.18128`
 
 **Laatste commit:** `6debab8` (#10). Docker: altijd `docker compose build` vóór live.
 

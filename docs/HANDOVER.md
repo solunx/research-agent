@@ -82,7 +82,7 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 - Taak 06 (Wikipedia): stabiel, inclusief batch-decisions-modus
 - Entity-binding (#22): hard bevestigd via offline A/B met echte LLM
 - Architecture-freeze P0: hard-fail bij ontbrekend/niet-bevroren contract
-- Fase G zoekcapaciteit + §5 #10–#16 (taak 05 list→abs pad). Live `070449Z`: `stop_reason=CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` `final_url=/abs/2609.18128` abs=`live_offer_state`. Stabiliteitsbatch 05: zie SESSION_STATE
+- Fase G zoekcapaciteit + §5 #10–#16 (taak 05 list→abs pad). **Na #10: 4/4** live `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` (`070449Z` `/abs/2609.18128`, `073200Z` zelfde, `075144Z` `/abs/2609.13860`, `081459Z` `/abs/2609.18128`). Niet één paper, niet één run.
 
 **Niet opnieuw diagnosticeren (al in §5):** #24a/#24b/#24 allowlist, #25, #27, #28, #10-trigger op arXiv abs. #26 **code** niet herschrijven — alleen live unbind/switch ontbreekt.
 
