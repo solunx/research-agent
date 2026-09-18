@@ -63,33 +63,38 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 | 7 | `_claim_priority` had nog hardcoded travel-lexicon lang nadat dit als MOVE gemarkeerd was in de audit | Puur FIFO op list-index | Documentatie "DONE" ≠ code daadwerkelijk aangepast — verifieer met citaat |
 | 8 | Multi-decision batching gaf `board_type=UNKNOWN` op alle stappen | Bleek NIET aan modelbelasting te liggen (offline A/B toonde pariteit) maar aan bug #6, die toen nog niet gefixt was | Falsifieer hypotheses met een geïsoleerd experiment vóór je een architectuurbeslissing baseert op een enkel live resultaat |
 | 9 | Geen actieklasse om tekst in te typen — agent kon niet zoeken, enkel klikken | `input_field`-affordance-type + `FILL_AND_SUBMIT`-actie, LLM formuleert querytekst vrij, code voert uit | Ontbrekende capability, geen datalek — eerste van dit type gevonden |
+| 10 | `Submit` bond aan `Submitted …` in arXiv-units (`#24a`) | `_label_matches_text` woordgrens (niet-alfanumeriek aan beide kanten), geen lexicon. `0084f11` | Substring-containment is geen token-match — zelfde les als bug #2: fix op elke gedupliceerde match-site |
+| 11 | Na `subject_instance=NOT_RELEVANT` bleef de planner op dezelfde paper (`#25`) | Planner-hint: current-page reject + `list_results` gezien → mag nieuwe `FILL_AND_SUBMIT` (`query_text` blijft LLM). `7556f64`. Live `083112Z` | Gaps waren al zichtbaar; de system prompt dwong “blijf op dit object” |
+| 12 | Merge hield `NOT_RELEVANT` vast na item-wissel (`#26`) | `apply_candidate_scope_after_action`: bind alleen `preferred_item_links`; unbind FILL / leave-path. `cae4402`. Live bind `062211Z`/`070449Z`; unbind/switch nog niet gezien — **niet opnieuw implementeren, open laten tot dat pad live is** | `_merge_outcomes` is correct binnen één bound candidate; reset is scope, geen zwakke-label-hack |
+| 13 | Abstractparagraaf als één innerText-regel >240 chars verdween (`#27`) | Wrap i.p.v. drop (`d9e8000`) + niet recappen vóór interpret (`1f0557e`). Live `111714Z` `CONTRACT_SATISFIED` | Budgetlimiet mag nooit stil data laten vallen (bug #1 opnieuw) |
+| 14 | `Page.goto: Download is starting` op `/pdf/…` crashte de stap (`#28`) | Playwright `download`-event: `cancel()`, blijf op huidige pagina, `soft_fail`. `fb4b177` | Navigatie≠parse; PDF-tekst als bewijs is een andere capability |
+| 15 | Lijstkaarten: één `"pdf"`-href + blank-line-blok; daarna abs-href niet in affordance-allowlist (`#24b`/`#24`) | Fase 1 `(text,href)`-identity `cc1871e`; Fase 2.2 leaf-html op `list_results` `26e89af`; OPEN_URL-allowlist = safe aff ∪ shown `primary_action.href` `41d5fc7`. Live `171515Z` leaf-cards; `062211Z` OPEN abs `source=llm` | Representatie eerst; allowlist daarna. Niet `html_b2`. LLM mag geen verzonnen URL |
+| 16 | Abs-pagina `price_hits=4` → ten onrechte `list_results` → html-leaf pakte PDF/HTML/TeX (`#10`) | D2c weigert kale 4+ digit identifiers en 1-decimaal; T=3; root-start = same-host → `live_offer_state`. `6debab8`. Live `070449Z` `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` | Drempel 3 was van de lexicon-detector; identifier-runs zijn geen prijzen (Monica 7-vs-37, zelfde klasse) |
 
 **Meta-les, zelf ook een keer fout gegaan:** een van de externe reviewers (mij, Claude) las ooit een run-resultaat verkeerd en rapporteerde een fictieve regressie, wat tot een halve dag onnodige diagnose leidde. **Daarom deze procesregel, dwing 'm af:**
 
 > **Elke bewering over een run-resultaat (geslaagd/gefaald/regressie) moet vergezeld gaan van een letterlijk citaat van `stop_reason`/`outcomes`/`contract_satisfied` uit het ruwe `result_*.json`-bestand. Nooit een parafrase, nooit uit geheugen.**
 
-## 6. Huidige status (16 september 2026)
+## 6. Huidige status (18 september 2026)
 
 **Werkt, herhaaldelijk bevestigd stabiel:**
-- Taak 02 (hotel, detailpagina): 9/9 succesvolle runs, `CONTRACT_SATISFIED` op stap 0
+- Taak 02 (hotel, detailpagina): 9/9 `CONTRACT_SATISFIED` op stap 0
 - Taak 06 (Wikipedia): stabiel, inclusief batch-decisions-modus
 - Entity-binding (#22): hard bevestigd via offline A/B met echte LLM
-- Architecture-freeze P0: hard-fail bij ontbrekend/niet-bevroren contract, guards op lab-fallbacks, legacy-pad geïsoleerd en gelabeld — alle negatieve tests slagen
-- Zoekcapaciteit (Fase G): taak 05 (arXiv) — LLM formuleert zoekquery, code vult in, 232 resultaten opgehaald
+- Architecture-freeze P0: hard-fail bij ontbrekend/niet-bevroren contract
+- Fase G zoekcapaciteit + §5 #10–#16 (taak 05 list→abs pad). Live `070449Z`: `stop_reason=CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` `final_url=/abs/2609.18128` abs=`live_offer_state`. Stabiliteitsbatch 05: zie SESSION_STATE
 
-**Net gevonden, nog open (zie Fase H-prompt hierboven/in laatste conversatie):**
-- Na een succesvolle zoekopdracht kan de agent nog niet doorklikken naar een individueel resultaat — de link staat wel in de candidate-data maar niet in de affordance-lijst die `OPEN_URL` mag gebruiken
-- **2026-09-17 live `111714Z`:** na cap-sync `stop_reason=CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`; c3-abstract in `claim_preview`. #26 geen scope-event — **blijft OPEN**. #24b nog actief. PDF-goto-exception = Open #28 (code).
+**Niet opnieuw diagnosticeren (al in §5):** #24a/#24b/#24 allowlist, #25, #27, #28, #10-trigger op arXiv abs. #26 **code** niet herschrijven — alleen live unbind/switch ontbreekt.
 
 **Bewust nog niet opgelost, met reden (zie FRAMEWORK_BOUNDARY.md Open items):**
-- Open #4: welke minimale structurele stat-set een LLM nodig heeft om "chrome" te herkennen — nog niet gevalideerd, kleine n
-- Open #6: `max_candidates`-budget is provisional, niet gevalideerd over diverse paginatypes
-- Open #10: taalneutrale surface-detector-drempel, herijking nog niet afgerond (abs `price_hits=4` → ten onrechte `list_results`)
-- Open #26: candidate-scope reset in code; live unbind-pad nog niet voorgekomen
-- Open #27: wrap + observation-cap-sync **gesloten** — live `111714Z` `CONTRACT_SATISFIED` / `claim_extracted=EXTRACTED`. #26 blijft OPEN.
-- Open #19/#22-vervolg: `NOT_STATED` als "zwak" label is een contract-specifieke workaround, geen generiek mechanisme — als een toekomstige taak een ander afwezigheidslabel gebruikt (`NOT_VISIBLE`, `UNSTATED`), moet dit generieker (richting: contract-gedreven sufficiency-set, geen vaste strings)
-- Taak 03 (Coolblue GPU): zoekknop-klik faalt op een fragiele tekst-locator (`text=Zoeken`) — apart probleem van de zoekcapaciteit zelf, nog niet gefixt
-- Efficiëntie: `batch_decisions=True` is bewezen veilig en veel goedkoper (tot 7x minder LLM-calls) maar blijft bewust **opt-in**, geen default
+- Open #4: minimale structurele stat-set voor "chrome" — kleine n, niet gevalideerd
+- Open #6: `max_candidates`-budget provisional
+- Open #10: **deze abs-trigger live-bewezen** (`070449Z`); T=3 + D2c-tighten blijft provisionally, niet gelockt over alle paginatypes
+- Open #26: bind live gezien; unbind/switch-pad nog niet voorgekomen — open laten
+- Open #19/#22-vervolg: `NOT_STATED` is contract-vocabulaire, geen framework-sentinel
+- Taak 03 (Coolblue): `CLICK_TEXT Zoeken` fragiel — apart van zoekcapaciteit
+- `batch_decisions=True` bewezen goedkoper, blijft **opt-in**
+- Niet `html_b2` als #24b-fix (heading+price NCA is de verkeerde vorm voor arXiv `<li>`)
 
 ## 7. Belangrijkste bestanden, met rol
 
@@ -117,4 +122,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#10** deze trigger live-bewezen (`070449Z` `CONTRACT_SATISFIED`, abs=`live_offer_state`); T blijft provisionally. **#24 allowlist live-bewezen.** **#26** bind gezien; unbind/switch niet. Niet html_b2. Niet batch-default.
+Open **#26** (unbind/switch live nog niet gezien). **#10** abs-trigger live-bewezen, T niet gelockt. Taak 03 Coolblue click. Niet html_b2. Niet batch-default. Niet #24/#27/#28 opnieuw openen.
