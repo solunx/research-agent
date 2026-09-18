@@ -280,7 +280,7 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
   - Action enum had no fill → new class `FILL_AND_SUBMIT`; **`query_text` is free LLM text** (code does not copy from gaps).
   - Anti-loop fingerprint includes `(target, query_text)`.
 - **Live proof (task 05, 20260916T170647Z):** LLM chose FILL unaided; `query_text="large language model agents tool use 2024"` → 232 arXiv hits. Preference bias **not required** once inputs are visible and fill is executable.
-- **Still open under #21 / follow-ons:** Coolblue CLICK_TEXT robustness (pre-field reachability); list_results → abs href not in affordances (see Open #24). No site-specific search selectors.
+- **Still open under #21 / follow-ons:** list_results → abs href not in affordances (see Open #24). Coolblue CLICK_TEXT: input_field did not self-solve `text=Zoeken` timeout (icon submit, empty innerText). Generic fallback: after visible-text locators miss, click the unique `input_field` whose accessible name token-boundary-matches the click text (`_label_matches_text`). No site selector, no search lexicon. Negative: unrelated failed clicks do not bind a random input. Live 03 retest after rebuild.
 
 ### #24 — list_results item hrefs not in affordances (post-FILL bottleneck)
 

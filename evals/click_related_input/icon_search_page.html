@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8"/>
+  <title>Click robustness fixture</title>
+</head>
+<body>
+  <header>
+    <form id="search-form" action="#" method="get" onsubmit="event.preventDefault(); return false;">
+      <input id="search" name="query" type="search"
+             placeholder="Zoeken naar producten"
+             aria-label="Zoeken naar producten"/>
+      <!-- Icon submit: accessible name only, empty innerText (Coolblue shape). -->
+      <button type="submit" id="search-submit" aria-label="Zoeken"></button>
+    </form>
+    <button type="button" id="account-btn">Account</button>
+  </header>
+  <nav>
+    <button type="button" id="cat-computers">Computers &amp; tablets</button>
+  </nav>
+  <form id="newsletter">
+    <label for="email">Nieuwsbrief</label>
+    <input id="email" name="email" type="email"
+           placeholder="E-mailadres" aria-label="Nieuwsbrief"/>
+  </form>
+  <p id="status">Fixture body text for snapshot length. Category browse must not run.</p>
+</body>
+</html>

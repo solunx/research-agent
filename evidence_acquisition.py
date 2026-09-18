@@ -762,6 +762,114 @@ def acquisition_decide(
     return candidate
 
 
+def click_text_selectors(target_text: str) -> list[str]:
+    """Primary CLICK_TEXT locators: visible innerText only (Playwright text engine)."""
+    t = (target_text or "").strip()
+    if not t:
+        return []
+    safe = t.replace("\\", "\\\\").replace("'", "\\'")
+    return [
+        f"text={t}",
+        f"button:has-text('{safe}')",
+        f"a:has-text('{safe}')",
+    ]
+
+
+def click_text_accessible_name_selectors(target_text: str) -> list[str]:
+    """Generic accessible-name locators. No site or 'search' lexicon."""
+    t = (target_text or "").strip()
+    if not t:
+        return []
+    safe = t.replace("\\", "\\\\").replace("'", "\\'")
+    return [
+        f"[aria-label='{safe}']",
+        f"[title='{safe}']",
+    ]
+
+
+def related_input_field(
+    target_text: str, affordances: list[dict[str, Any]] | None
+) -> dict[str, Any] | None:
+    """
+    Input field structurally related to a failed CLICK_TEXT target.
+
+    Relation = token-boundary match of the click text into the input's
+    accessible name (placeholder / aria_label / name / id / text) via
+    `_label_matches_text`. Exactly one match required — ambiguous or
+    unrelated fields return None. Not index proximity, not type=search.
+    """
+    from candidate_units import _label_matches_text, _norm
+
+    needle = _norm(target_text)
+    if not needle:
+        return None
+    matches: list[dict[str, Any]] = []
+    for a in affordances or []:
+        if not isinstance(a, dict) or a.get("kind") != "input_field":
+            continue
+        hay = _norm(
+            " ".join(
+                str(a.get(k) or "")
+                for k in ("placeholder", "aria_label", "name", "id", "text")
+            )
+        )
+        if hay and _label_matches_text(needle, hay):
+            matches.append(a)
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def related_input_locator(related: dict[str, Any] | None) -> str | None:
+    """Locator for one related input. Never the generic first-visible-input fallback."""
+    if not isinstance(related, dict):
+        return None
+    tid = str(related.get("id") or "").strip()
+    tname = str(related.get("name") or "").strip()
+    ttype = str(related.get("type") or "").strip().lower()
+    ttext = str(
+        related.get("placeholder")
+        or related.get("aria_label")
+        or related.get("text")
+        or ""
+    ).strip()
+    if not (tid or tname or ttext):
+        return None
+    return _fill_locator_from_decision(
+        {
+            "target_id": tid,
+            "target_name": tname,
+            "target_type": ttype,
+            "target_text": ttext,
+        }
+    )
+
+
+def _click_first_present(selectors: list[str], *, max_chars: int) -> dict[str, Any] | None:
+    """Click the first selector that currently matches ≥1 node. Skip absent locators (no 15s wait)."""
+    from browser import _ensure_browser, browser_click
+
+    page = _ensure_browser()
+    last: dict[str, Any] | None = None
+    attempted = False
+    for sel in selectors:
+        try:
+            n = page.locator(sel).count()
+        except Exception:
+            n = 0
+        if n < 1:
+            continue
+        attempted = True
+        snap = browser_click(sel, max_chars=max_chars)
+        if snap.get("ok"):
+            snap["clicked_selector"] = sel[:200]
+            return snap
+        last = snap
+    if not attempted:
+        return None
+    return last
+
+
 def _fill_locator_from_decision(decision: dict[str, Any]) -> str | None:
     """
     Build a safe Playwright locator for FILL_AND_SUBMIT from structural
@@ -862,21 +970,32 @@ def execute_acquisition_action(decision: dict[str, Any], *, max_chars: int = 200
         text = decision.get("target_text") or ""
         if not text:
             return {"ok": False, "error": "missing_target_text"}
-        # Playwright text selector — target is literal from page
-        # Escape single quotes for has-text
-        safe = text.replace("\\", "\\\\").replace("'", "\\'")
-        selector = f"text={text}"
-        # Prefer role-agnostic text engine
-        snap = browser_click(selector, max_chars=max_chars)
-        if not snap.get("ok"):
-            # fallback has-text on button/link
-            snap2 = browser_click(f"button:has-text('{safe}')", max_chars=max_chars)
+        # 1. Visible innerText locators (existing path). Skip absent nodes
+        #    so a missing text= match does not burn 15s+8s before fallbacks.
+        snap = _click_first_present(click_text_selectors(str(text)), max_chars=max_chars)
+        if snap and snap.get("ok"):
+            return snap
+        # 2. Related input_field: token-boundary match into accessible name.
+        #    Focus/click that field — do not invent query_text.
+        from browser import browser_list_affordances
+
+        aff_snap = browser_list_affordances()
+        related = related_input_field(str(text), aff_snap.get("affordances") or [])
+        loc = related_input_locator(related)
+        if loc:
+            snap2 = browser_click(loc, max_chars=max_chars)
             if snap2.get("ok"):
+                snap2["click_fallback"] = "related_input_field"
+                snap2["clicked_selector"] = loc[:200]
                 return snap2
-            snap3 = browser_click(f"a:has-text('{safe}')", max_chars=max_chars)
-            if snap3.get("ok"):
-                return snap3
-        return snap
+        # 3. Accessible-name locators (icon buttons without a related field).
+        snap3 = _click_first_present(
+            click_text_accessible_name_selectors(str(text)), max_chars=max_chars
+        )
+        if snap3 and snap3.get("ok"):
+            snap3["click_fallback"] = "accessible_name"
+            return snap3
+        return snap or snap3 or {"ok": False, "error": "click_text_no_locator"}
     if action == "CLICK_SELECTOR":
         # Intentionally conservative: only allow simple text= selectors from decision
         sel = str(decision.get("target_text") or decision.get("selector") or "")

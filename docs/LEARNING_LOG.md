@@ -2027,6 +2027,28 @@ Stap 2 search `surface=list_results`. Stap 3 abs `surface=live_offer_state` (nie
 ### Niet
 Drempel T=3 blijft provisionally. #26 unbind/switch niet gezien. Geen extra live-run.
 
+## 2026-09-18 — Taak 03 CLICK_TEXT related-input fallback
+
+### Reconfirm (probleem bestond nog)
+Fase G `input_field` loste de klik niet op. Live homepage: button `Zoeken` (aria-label, lege innerText) **en** `input_field` placeholder `Zoeken naar...` `id=search`. `CLICK_TEXT Zoeken` nog `Timeout 8000ms` op `locator("text=Zoeken")`. `text=Zoeken` count=0.
+
+Oud citaat `20260916T110052Z` step 0: `CLICK_TEXT` `target_text=Zoeken` → `execute_error` Timeout 8000ms `locator("text=Zoeken").first`; daarna `Computers & tablets`.
+
+### Fix
+Generiek, geen Coolblue-regel. Na gemiste visible-text locators: unieke `input_field` waarvan placeholder/aria/name/id token-boundary-matcht (`_label_matches_text`). Klik/focus die field; geen verzonnen `query_text`. Absent locators worden overgeslagen (geen 15s+8s). Daarna pas aria-label/title voor icon-buttons zonder related field.
+
+### Negatief
+`Computers & tablets` / `Account` / `NietBestaand` → geen related input. Twee matching inputs → None. Type-only field zonder id/name/naam → geen locator (niet first-visible-input).
+
+### Regressie 01/02/05/06
+01 VERTREKPERIODE/Kerstvakantie/… None. 02 Prijzen & boeken/Ligging None. 06 Toggle Demographics None. 05 Related Papers/View PDF None; `Search` matcht `arxiv-search-input` (zelfde structurele klasse, alleen ná click-timeout).
+
+### Offline
+`evals/click_related_input/test_click_related_input_offline_v0.py`
+
+### Niet
+Geen html_b2. Geen "Zoeken"-lexicon. #26 OPEN.
+
 
 
 

@@ -70,6 +70,7 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 | 14 | `Page.goto: Download is starting` op `/pdf/…` crashte de stap (`#28`) | Playwright `download`-event: `cancel()`, blijf op huidige pagina, `soft_fail`. `fb4b177` | Navigatie≠parse; PDF-tekst als bewijs is een andere capability |
 | 15 | Lijstkaarten: één `"pdf"`-href + blank-line-blok; daarna abs-href niet in affordance-allowlist (`#24b`/`#24`) | Fase 1 `(text,href)`-identity `cc1871e`; Fase 2.2 leaf-html op `list_results` `26e89af`; OPEN_URL-allowlist = safe aff ∪ shown `primary_action.href` `41d5fc7`. Live `171515Z` leaf-cards; `062211Z` OPEN abs `source=llm` | Representatie eerst; allowlist daarna. Niet `html_b2`. LLM mag geen verzonnen URL |
 | 16 | Abs-pagina `price_hits=4` → ten onrechte `list_results` → html-leaf pakte PDF/HTML/TeX (`#10`) | D2c weigert kale 4+ digit identifiers en 1-decimaal; T=3; root-start = same-host → `live_offer_state`. `6debab8`. Live `070449Z` `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` | Drempel 3 was van de lexicon-detector; identifier-runs zijn geen prijzen (Monica 7-vs-37, zelfde klasse) |
+| 17 | Taak 03: `CLICK_TEXT Zoeken` timeout op aria-only icon-button (`text=Zoeken`); daarna categorie-browse | Na timeout: unieke `input_field` waarvan accessible name token-boundary-matcht met click-text (`_label_matches_text`); klik/focus die field, geen verzonnen query. Geen lexicon, geen index-nabijheid. `evals/click_related_input/` | input_field-capaciteit loste de klik niet vanzelf op; fallback alleen bij aantoonbare naamrelatie (negatief: `Computers & tablets` / `NietBestaand` pakt search niet) |
 
 **Meta-les, zelf ook een keer fout gegaan:** een van de externe reviewers (mij, Claude) las ooit een run-resultaat verkeerd en rapporteerde een fictieve regressie, wat tot een halve dag onnodige diagnose leidde. **Daarom deze procesregel, dwing 'm af:**
 
@@ -92,7 +93,7 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 - Open #10: **deze abs-trigger live-bewezen** (`070449Z`); T=3 + D2c-tighten blijft provisionally, niet gelockt over alle paginatypes
 - Open #26: bind live gezien; unbind/switch-pad nog niet voorgekomen — open laten
 - Open #19/#22-vervolg: `NOT_STATED` is contract-vocabulaire, geen framework-sentinel
-- Taak 03 (Coolblue): `CLICK_TEXT Zoeken` fragiel — apart van zoekcapaciteit
+- Taak 03 (Coolblue): click-robuustheid code in; live retest na rebuild (niet html_b2)
 - `batch_decisions=True` bewezen goedkoper, blijft **opt-in**
 - Niet `html_b2` als #24b-fix (heading+price NCA is de verkeerde vorm voor arXiv `<li>`)
 
@@ -122,4 +123,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26** (unbind/switch live nog niet gezien). **#10** abs-trigger live-bewezen, T niet gelockt. Taak 03 Coolblue click. Niet html_b2. Niet batch-default. Niet #24/#27/#28 opnieuw openen.
+Open **#26** (unbind/switch live nog niet gezien). **#10** abs-trigger live-bewezen, T niet gelockt. Taak 03 click-fallback code in (live retest). Niet html_b2. Niet batch-default. Niet #24/#27/#28 opnieuw openen.
