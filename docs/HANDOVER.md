@@ -117,4 +117,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#10** herijkt offline (D2c geen kale identifiers/1-decimaal; abs → `live_offer_state`). Live 05 na user-OK + rebuild. **#24 allowlist live-bewezen.** **#26** bind gezien; unbind/switch niet. Niet html_b2. Niet batch-default.
+Open **#10** deze trigger live-bewezen (`070449Z` `CONTRACT_SATISFIED`, abs=`live_offer_state`); T blijft provisionally. **#24 allowlist live-bewezen.** **#26** bind gezien; unbind/switch niet. Niet html_b2. Niet batch-default.

@@ -2016,6 +2016,17 @@ Root-start (`path=""`): `same_entity` = zelfde host → abs `live_offer_state` (
 ### Niet
 Geen html_b2. Geen PDF-parse. #10 pas sluiten na live 05. Claim kan nog NOT_VISIBLE blijven (top-K mist abstract) — verwacht.
 
+## 2026-09-18 — Open #10 live `070449Z`
+
+### Citaat result (`result_05_web_literature_abstract_20260918T070449Z.json`)
+`stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true` `claim_extracted=EXTRACTED` (required allemaal PASS). `final_url=https://arxiv.org/abs/2609.18128` `llm_calls_total=143` `acquisition_steps=3`.
+
+### Citaat surface
+Stap 2 search `surface=list_results`. Stap 3 abs `surface=live_offer_state` (niet `list_results`). `step_003_candidates.json` `packager_source=blank_block`; c3 = abstractparagraaf. HTML-leaf niet gevuurd.
+
+### Niet
+Drempel T=3 blijft provisionally. #26 unbind/switch niet gezien. Geen extra live-run.
+
 
 
 
