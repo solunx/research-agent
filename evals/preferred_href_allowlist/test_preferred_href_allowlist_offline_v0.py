@@ -22,7 +22,17 @@ from candidates import extract_candidates  # noqa: E402
 from evidence_acquisition import (  # noqa: E402
     acquisition_decide,
     filter_safe_affordances,
+    inject_preferred_action_affordances,
     observed_open_hrefs,
+)
+
+sys.path.insert(0, str(ROOT / "evals" / "coolblue_list_detail"))
+from reconstruct_110505Z import (  # noqa: E402
+    ASUS_HREF,
+    PAGE_TEXT,
+    VICTUS_A_HREF,
+    filter_heavy_affordances,
+    reconstruct_110505Z_search_html,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -202,12 +212,84 @@ def test_01_02_06_no_new_accepts_from_primary_action():
     print("OK test_01_02_06_no_new_accepts_from_primary_action")
 
 
+def test_coolblue_product_hrefs_injected_before_panel_options():
+    """Mandatory: product primary_action links survive the filter-heavy cap."""
+    aff = filter_heavy_affordances()
+    html = reconstruct_110505Z_search_html(huge_head=False)
+    cands = extract_candidates(
+        text=PAGE_TEXT,
+        affordances=aff,
+        page_url="https://www.coolblue.be/nl/zoeken?query=RTX+4070",
+        surface="list_results",
+        max_candidates=LIVE_MAX_CANDIDATES,
+        max_units=LIVE_MAX_UNITS,
+        html=html,
+    )
+    pref = [
+        {
+            "text": str((c.primary_action or {}).get("text") or ""),
+            "href": str((c.primary_action or {}).get("href") or ""),
+        }
+        for c in cands
+        if c.has_action()
+    ]
+    product_hrefs = {ASUS_HREF, VICTUS_A_HREF}
+    aff_hrefs = {str(a.get("href") or "") for a in aff if a.get("href")}
+    assert product_hrefs.isdisjoint(aff_hrefs), aff_hrefs
+    assert any(p["href"] in product_hrefs for p in pref), pref
+
+    safe_old = filter_safe_affordances(aff, max_keep=36)
+    old_hrefs = [str(a.get("href") or "") for a in safe_old]
+    assert not any(h in product_hrefs for h in old_hrefs)
+
+    safe_new = filter_safe_affordances(
+        aff, max_keep=36, preferred_item_links=pref
+    )
+    new_hrefs = [str(a.get("href") or "") for a in safe_new]
+    kept = [h for h in new_hrefs if h in product_hrefs]
+    assert kept, new_hrefs[:8]
+    first_panel = next(
+        i for i, a in enumerate(safe_new) if a.get("kind") == "panel_option"
+    )
+    first_prod = min(new_hrefs.index(h) for h in kept)
+    assert first_prod < first_panel, (first_prod, first_panel, new_hrefs[:6])
+
+    product_target = next(p["href"] for p in pref if p["href"] in product_hrefs)
+    d_ok = _decide(aff, pref, product_target)
+    assert d_ok.get("action_class") == "OPEN_URL", d_ok
+    d_bad = _decide(aff, pref, INVENTED)
+    assert d_bad.get("action_class") == "STOP", d_bad
+    assert d_bad.get("reason") == "href_not_in_affordances", d_bad
+    print(
+        f"OK test_coolblue_product_hrefs_injected_before_panel_options "
+        f"kept={kept} first_prod={first_prod} first_panel={first_panel}"
+    )
+
+
+def test_05_inject_does_not_invent_or_drop_abs():
+    """Regression taak 05: inject uses primary_action only; invented still STOP."""
+    aff = json.loads(AFF_1715.read_text(encoding="utf-8"))
+    cands = json.loads(CAND_1715.read_text(encoding="utf-8"))
+    pref = _pref_from_candidates(cands)
+    injected = inject_preferred_action_affordances(aff, pref)
+    inj_hrefs = {str(a.get("href") or "") for a in injected if a.get("href")}
+    assert ABS_HREF in inj_hrefs
+    assert INVENTED not in inj_hrefs
+    d_ok = _decide(aff, pref, ABS_HREF)
+    assert d_ok.get("action_class") == "OPEN_URL", d_ok
+    d_bad = _decide(aff, pref, INVENTED)
+    assert d_bad.get("action_class") == "STOP", d_bad
+    print("OK test_05_inject_does_not_invent_or_drop_abs")
+
+
 def main():
     test_live_fixture_abs_missing_from_affordances()
     test_171515Z_open_candidate_abs_now_accepted()
     test_negative_invented_url_still_rejected()
     test_observed_open_hrefs_unions_sets()
     test_01_02_06_no_new_accepts_from_primary_action()
+    test_coolblue_product_hrefs_injected_before_panel_options()
+    test_05_inject_does_not_invent_or_drop_abs()
     print("\nALL OFFLINE TESTS PASSED")
 
 

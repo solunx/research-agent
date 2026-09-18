@@ -142,6 +142,38 @@ def sufficiency_stop(
 
 
 
+def inject_preferred_action_affordances(
+    affordances: list[dict[str, Any]] | None,
+    preferred_item_links: list[dict[str, str]] | None = None,
+) -> list[dict[str, Any]]:
+    """Put candidate primary_action links into the affordance list before cap.
+
+    Same source as observed_open_hrefs / the #24 allowlist. Does not invent
+    URLs. Filter panel_options that filled the 60-item cap (Coolblue 110505Z:
+    47 panel_option, 4 nav hrefs) no longer hide item links the leaf already
+    bound on a candidate.
+    """
+    out = list(affordances or [])
+    seen = {str(a.get("href") or "").strip().lower() for a in out if a.get("href")}
+    extra: list[dict[str, Any]] = []
+    for p in preferred_item_links or []:
+        href = str(p.get("href") or "").strip()
+        if not href or href.lower() in seen:
+            continue
+        extra.append(
+            {
+                "kind": "link",
+                "text": str(p.get("text") or "")[:120],
+                "href": href[:300],
+                "role": "link",
+                "scope": "local",
+                "preferred_item": True,
+            }
+        )
+        seen.add(href.lower())
+    return extra + out
+
+
 def filter_safe_affordances(
     affordances: list[dict[str, Any]],
     *,
@@ -151,10 +183,14 @@ def filter_safe_affordances(
     """
     Drop irreversible controls; prefer local/tab/button over global nav.
     When preferred_item_links is provided (from candidate-unit packaging),
-    boost matching local links so the planner sees concrete item targets first.
+    inject those hrefs if missing, then boost them so the planner sees
+    concrete item targets before panel_option filters.
 
     Structural only — no domain vocabulary.
     """
+    affordances = inject_preferred_action_affordances(
+        affordances, preferred_item_links
+    )
     pref_texts = {
         str(p.get("text") or "").strip().lower()
         for p in (preferred_item_links or [])
@@ -203,9 +239,10 @@ def filter_safe_affordances(
     def _rank(item: dict[str, Any]) -> tuple[int, int, int]:
         kind = str(item.get("kind") or "")
         scope = str(item.get("scope") or "unknown")
-        # lower = better
+        # preferred_item (candidate primary_action) first — before panel_option
+        # filters that otherwise fill the cap (Coolblue 110505Z).
         pref_rank = 0 if item.get("preferred_item") else 1
-        # tabs > buttons > input_fields > rest
+        # tabs > buttons > input_fields > rest (panel_option and non-item links)
         if kind == "tab":
             kind_rank = 0
         elif kind == "button":
