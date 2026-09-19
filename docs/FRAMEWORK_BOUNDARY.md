@@ -317,19 +317,28 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Offline:** `evals/refine_search_after_reject/test_refine_search_offline_v0.py` green. Live taak 05: only after explicit user OK + `docker compose build`.
 - **Live `20260917T083112Z` (user):** #25 held — after abs `NOT_RELEVANT`, `OPEN_URL Search` then new FILL queries. Contract still false because merge kept `NOT_RELEVANT` (Open #26).
 
-### #26 — candidate-scoped outcome reset on item switch / unbind (code in place; live retest pending)
+### #26 — candidate-scoped outcome reset on item switch / unbind **and** unbound-list search-round reset
+
+Two **separate** reset paths. Neither makes the other redundant:
+
+1. **Bound `candidate_path` (#22-style unbind — already shipped).** Trigger: preferred-item bind / switch / leave-path / FILL while `active_candidate_path is not None`. Reset: **drop** `best_outcomes` with `step >= candidate_bound_step` (`_reset_post_bind_outcomes`). Live bind seen (`062211Z`/`070449Z`); unbind/switch still rare.
+2. **Unbound list-interpretation (this slice).** Trigger: successful `FILL_AND_SUBMIT` whose normalized `query_text` **differs** from the previous successful FILL in the same run (same `q=` signal as the anti-loop fingerprint). First FILL: no-op. Reset: **weaken** entries with `step >= last_fill_result_step` to `UNKNOWN` **without deleting the key** (`apply_fill_query_round_reset`). `_merge_outcomes` is unchanged (confirming still beats later UNKNOWN).
+
+Coolblue `183956Z`/`190223Z`: laptop list set `detail_link=CONCRETE_PRODUCT_PAGE` with **no bind** (0× OPEN_URL). Path (1) did nothing (`active_candidate_path is None`). Path (2) is the hole: refine FILL `q=rtx 4070 videokaart` left that confirming label in `best_outcomes`; Open #19 then `skip_satisfied=['detail_link', …]` on the empty result page.
 
 - **Symptom (`20260917T083112Z`):** #25 correctly left the rejected paper; `best_outcomes.subject_instance` stayed `NOT_RELEVANT` because `_merge_outcomes` treats any non-`UNKNOWN`/`NOT_STATED` label as persistent. Later list `UNKNOWN` does not overwrite. Mixing risk: title from paper A + `RELEVANT` from paper B.
 - **No existing cross-step entity key.** `#22 subject_candidate_ref` is intra-page only. `same_entity_path` is vs `start_url` (breaks 02 Fly & Go / arxiv root).
-- **Fix:** `apply_candidate_scope_after_action` after a successful navigation.
+- **Fix path (1):** `apply_candidate_scope_after_action` after a successful navigation.
   - **Bind** only if `target_href` ∈ that step’s `preferred_item_links` and path left the current page, from `list_results` (first bind) or onto a different bound path (switch). First list→detail with *satisfying* labels does **not** reset (#19 / taak 01).
-  - **Unbind** on `FILL_AND_SUBMIT`, or leaving the bound path without a preferred-item bind (e.g. OPEN Search). Same-record deepening (`/abs/id` → `/html/id…` via last-segment prefix) does not unbind.
+  - **Unbind** on `FILL_AND_SUBMIT` **when already bound**, or leaving the bound path without a preferred-item bind (e.g. OPEN Search). Same-record deepening (`/abs/id` → `/html/id…` via last-segment prefix) does not unbind.
   - **Reset:** drop `best_outcomes` with `step >= candidate_bound_step`; keep pre-bind (e.g. `source_site`). No `subject_instance` special-case — any required decision with a concrete non-satisfying outcome is “instance FAIL”.
-- **01/02 offline:** tab same-path no-op; Fly & Go from `live_detail` without list-bind no-op; list `ALL_INCLUSIVE` → detail bind without wipe.
-- **Offline:** `evals/candidate_scope_reset/test_candidate_scope_offline_v0.py`. Live 05 only after user OK + `docker compose build`.
+- **Fix path (2) (2026-09-19):** `apply_fill_query_round_reset` after path (1) on a successful FILL. Loop keeps `last_fill_query_text` + `last_fill_result_step` (no `search_round_id` on candidates; `c0`/`block_index` recycle per page). No decision_id lexicon. Empty/chrome new pool: weakened keys stay `UNKNOWN` so sufficiency still sees a gap.
+- **01/02 offline:** tab same-path no-op; Fly & Go from `live_detail` without list-bind no-op; list `ALL_INCLUSIVE` → detail bind without wipe. Path (2) dead (0 FILL in 01/02/06 loops) — fingerprints unchanged.
+- **Offline:** `evals/candidate_scope_reset/test_candidate_scope_offline_v0.py` — plus FILL-2 `NOT_RELEVANT`→`UNKNOWN`; FILL-1-only no wipe; Coolblue laptop-pool weaken keeping step-0 shop labels; keys remain on empty-pool reset.
 - **Live `20260917T093236Z` (rebuild, `batch_decisions=False`):** `contract_satisfied=false` `gaps_n=1` only `claim_extracted=NOT_VISIBLE`; `subject_instance=RELEVANT` (083112Z: `NOT_RELEVANT` on the same abs — LLM label variance). One `candidate_scope event=bind` on `/abs/2609.19059v1` at step 6; **no unbind/switch**. First list→abs OPEN succeeded (href in affordances) but did **not** bind: `preferred_item_links` were chrome (`Submit`/`Advanced Search`) — #24b. Homepage `NOT_RELEVANT` overwritten by later concrete `RELEVANT` (#19), not by scope reset. **#26 not live-proven — do not close.** Remaining gap was Open #27 (abstract line dropped), not merge.
 
 - **Live `20260917T102344Z`:** still **no** `candidate_scope` bind/unbind/switch. Do not force another 05-run hoping for abs-reject. Offline tests remain the #26 proof. Keep OPEN until an unbind/switch event is observed or the item is explicitly deferred. PDF-download and #24b are later slices.
+- **Live path (2):** Coolblue 03 **and** taak 05 (#25 FILL-retry) only after explicit `ja, start` per task + `docker compose build`. Do not treat 03-only as #25 regression proof.
 
 ### #27 — long innerText paragraphs dropped from units (wrap + observation-cap closed; live `111714Z` CONTRACT_SATISFIED)
 

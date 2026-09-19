@@ -2104,6 +2104,25 @@ Loop: 0× `OPEN_URL` in alle drie runs. Step 1 action = `FILL_AND_SUBMIT` `query
 ### Niet
 Dit sluit **niet** list→detail en **niet** #24b. Contract-PASS is interpret `detail_link=CONCRETE_PRODUCT_PAGE` op de zoeklijst (zelfde klasse als `103711Z`), niet een bezochte product-URL. Geen extra live-run zonder nieuwe hypothese. Geen html_b2.
 
+## 2026-09-19 — Open #26 unbound FILL-query search-round reset
+
+### Citaat root cause (`183956Z` / `190223Z`)
+Step 1 laptops: `detail_link=CONCRETE_PRODUCT_PAGE` `subject_instance=OTHER_GPU`. Refine FILL andere `q=`. Step 1 ∩ step 2 product-hrefs = ∅. `candidate_scope=None`. `detail_link` bleef confirming; step 2 `skip_satisfied` bevatte `detail_link`. Bound-unbind vuurde niet (`active_candidate_path is None`).
+
+### Fix
+Pad (1) bound `_reset_post_bind_outcomes` (drop) ongewijzigd. Pad (2) `apply_fill_query_round_reset`: nieuwe FILL-`query_text` vs vorige → weaken `step >= last_fill_result_step` naar `UNKNOWN`, keys blijven. `_merge_outcomes` niet aangeraakt. Geen `search_round_id`.
+
+### Offline
+`evals/candidate_scope_reset/test_candidate_scope_offline_v0.py`:
+- 01/02/06 trigger dood, fingerprint ongewijzigd
+- 05 FILL-2: `NOT_RELEVANT` → `UNKNOWN`, `source_site=ARXIV` blijft
+- 05 FILL-1: geen wipe, `event=''`
+- Coolblue: `detail_link`/`OTHER_GPU` → `UNKNOWN`; `PRICE_INCL_VAT`/`BE_SHOP` blijven
+- Lege pool: keys blijven, `detail_link=UNKNOWN` na merge met UNKNOWN
+
+### Niet
+Geen live tot `ja, start` per taak (03 én 05). Geen html_b2. #26 niet sluiten op offline alleen.
+
 
 
 

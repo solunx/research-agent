@@ -65,7 +65,7 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 | 9 | Geen actieklasse om tekst in te typen — agent kon niet zoeken, enkel klikken | `input_field`-affordance-type + `FILL_AND_SUBMIT`-actie, LLM formuleert querytekst vrij, code voert uit | Ontbrekende capability, geen datalek — eerste van dit type gevonden |
 | 10 | `Submit` bond aan `Submitted …` in arXiv-units (`#24a`) | `_label_matches_text` woordgrens (niet-alfanumeriek aan beide kanten), geen lexicon. `0084f11` | Substring-containment is geen token-match — zelfde les als bug #2: fix op elke gedupliceerde match-site |
 | 11 | Na `subject_instance=NOT_RELEVANT` bleef de planner op dezelfde paper (`#25`) | Planner-hint: current-page reject + `list_results` gezien → mag nieuwe `FILL_AND_SUBMIT` (`query_text` blijft LLM). `7556f64`. Live `083112Z` | Gaps waren al zichtbaar; de system prompt dwong “blijf op dit object” |
-| 12 | Merge hield `NOT_RELEVANT` vast na item-wissel (`#26`) | `apply_candidate_scope_after_action`: bind alleen `preferred_item_links`; unbind FILL / leave-path. `cae4402`. Live bind `062211Z`/`070449Z`; unbind/switch nog niet gezien — **niet opnieuw implementeren, open laten tot dat pad live is** | `_merge_outcomes` is correct binnen één bound candidate; reset is scope, geen zwakke-label-hack |
+| 12 | Merge hield `NOT_RELEVANT` vast na item-wissel (`#26` pad 1, bound) | `apply_candidate_scope_after_action`: bind alleen `preferred_item_links`; unbind FILL / leave-path **als gebonden**. `cae4402`. Live bind `062211Z`/`070449Z`. Pad 1 verwijdert post-bind keys | `_merge_outcomes` is correct binnen één bound candidate; reset is scope, geen zwakke-label-hack |
 | 13 | Abstractparagraaf als één innerText-regel >240 chars verdween (`#27`) | Wrap i.p.v. drop (`d9e8000`) + niet recappen vóór interpret (`1f0557e`). Live `111714Z` `CONTRACT_SATISFIED` | Budgetlimiet mag nooit stil data laten vallen (bug #1 opnieuw) |
 | 14 | `Page.goto: Download is starting` op `/pdf/…` crashte de stap (`#28`) | Playwright `download`-event: `cancel()`, blijf op huidige pagina, `soft_fail`. `fb4b177` | Navigatie≠parse; PDF-tekst als bewijs is een andere capability |
 | 15 | Lijstkaarten: één `"pdf"`-href + blank-line-blok; daarna abs-href niet in affordance-allowlist (`#24b`/`#24`) | Fase 1 `(text,href)`-identity `cc1871e`; Fase 2.2 leaf-html op `list_results` `26e89af`; OPEN_URL-allowlist = safe aff ∪ shown `primary_action.href` `41d5fc7`. Live `171515Z` leaf-cards; `062211Z` OPEN abs `source=llm` | Representatie eerst; allowlist daarna. Niet `html_b2`. LLM mag geen verzonnen URL |
@@ -74,6 +74,7 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 | 18 | Coolblue list HTML: 400k-cap telde `<script>`/`<style>`/`<head>` mee → body-kaarten vielen buiten de snapshot (`110505Z` `html_chars=699128`) | `prepare_html_for_snapshot`: strip non-content, houd `<body>`, *dan* cap. `06f7f00`. `evals/html_cap_body/` | Cap op ruwe `page.content()` is geen content-budget |
 | 19 | Leaf `repeating_only` nam de eerste repeating group (header-widgets) i.p.v. productkaarten; niet-lege HTML verving de text-arm blind | Cluster-score = n × (D2c + text-link); `html_leaf_should_replace_text` (prijs OF href+digit-runs+≥2 regels). `ef3b066`. `evals/html_leaf_list/` | Eerste cluster ≠ item-cluster; chrome-HTML mag text niet verdringen. arXiv heeft geen € — tie-break is niet prijs-only |
 | 20 | Product-`primary_action` verdronk in `panel_option`-filters (47 filters, 4 nav hrefs, geen product-URL in cap) | `inject_preferred_action_affordances` vóór cap; zelfde bron als #24 allowlist. Geen `/product/`-lexicon. `64a4f88`. `evals/preferred_href_allowlist/` | Allowlist accepteert een href die de planner nooit ziet; inject maakt hem zichtbaar |
+| 21 | Unbound lijst-interpret zette `detail_link=CONCRETE_PRODUCT_PAGE`; refine FILL andere query liet die confirming label plakken (`#26` pad 2; `183956Z`/`190223Z`) | `apply_fill_query_round_reset`: andere FILL-`query_text` → weaken `step>=last_fill_result_step` naar `UNKNOWN`, keys blijven. `_merge_outcomes` ongewijzigd. Pad 1 (bound unbind) blijft apart. `23028a0`. `evals/candidate_scope_reset/` | Twee reset-paden: bound path vs unbound search-round. Eén maakt de ander niet overbodig |
 
 **Meta-les, zelf ook een keer fout gegaan:** een van de externe reviewers (mij, Claude) las ooit een run-resultaat verkeerd en rapporteerde een fictieve regressie, wat tot een halve dag onnodige diagnose leidde. **Daarom deze procesregel, dwing 'm af:**
 
@@ -88,13 +89,13 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 - Architecture-freeze P0: hard-fail bij ontbrekend/niet-bevroren contract
 - Fase G zoekcapaciteit + §5 #10–#16 (taak 05 list→abs pad). **Na #10: 4/4** live `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` (`070449Z` `/abs/2609.18128`, `073200Z` zelfde, `075144Z` `/abs/2609.13860`, `081459Z` `/abs/2609.18128`). Niet één paper, niet één run.
 
-**Niet opnieuw diagnosticeren (al in §5):** #24a/#24b/#24 allowlist, #25, #27, #28, #10-trigger op arXiv abs. #26 **code** niet herschrijven — alleen live unbind/switch ontbreekt.
+**Niet opnieuw diagnosticeren (al in §5):** #24a/#24b/#24 allowlist, #25, #27, #28, #10-trigger op arXiv abs. #26: bound-pad niet herschrijven; unbound FILL-round is een **tweede** pad (niet een vervanging).
 
 **Bewust nog niet opgelost, met reden (zie FRAMEWORK_BOUNDARY.md Open items):**
 - Open #4: minimale structurele stat-set voor "chrome" — kleine n, niet gevalideerd
 - Open #6: `max_candidates`-budget provisional
 - Open #10: **deze abs-trigger live-bewezen** (`070449Z`); T=3 + D2c-tighten blijft provisionally, niet gelockt over alle paginatypes
-- Open #26: bind live gezien; unbind/switch-pad nog niet voorgekomen — open laten
+- Open #26: bound-unbind **en** unbound FILL-query-round (twee paden). Offline `evals/candidate_scope_reset/`. Live 03+05 na `ja, start` per taak — niet 03-only als #25-bewijs
 - Open #19/#22-vervolg: `NOT_STATED` is contract-vocabulaire, geen framework-sentinel
 - Taak 03 (Coolblue): click-fallback `7863753`; live FILL `103711Z`. A+B+C `06f7f00`/`ef3b066`/`64a4f88`. Live 3× `174311Z`/`183956Z`/`190223Z` allemaal `CONTRACT_SATISFIED` — leaf pakt productkaarten, maar **geen OPEN_URL**, `final_url` blijft zoeklijst. Niet html_b2
 - `batch_decisions=True` bewezen goedkoper, blijft **opt-in**
@@ -126,4 +127,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26** (unbind/switch live nog niet gezien). **#10** abs-trigger live-bewezen, T niet gelockt. Taak 03: A+B live op lijst (product-hrefs); 3/3 `CONTRACT_SATISFIED` zonder product-OPEN. Niet html_b2. Niet batch-default. Niet #24/#27/#28 opnieuw openen.
+Open **#26** unbound FILL-query-round offline groen. Live **03 én 05** alleen na expliciet `ja, start` per taak (`docker compose build` eerst). #25-planner niet wijzigen. Niet html_b2. Niet batch-default.

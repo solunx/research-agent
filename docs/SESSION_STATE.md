@@ -11,10 +11,10 @@
 - **#24** `41d5fc7` OPEN_URL-allowlist = aff ∪ shown `primary_action.href` (live `062211Z` OPEN abs `source=llm`)
 - **#10** `6debab8` D2c geen kale identifiers/1-decimaal; abs=`live_offer_state`. Taak 05 na #10 **4/4** `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`: `070449Z` `/abs/2609.18128`; `073200Z` `/abs/2609.18128`; `075144Z` `/abs/2609.13860`; `081459Z` `/abs/2609.18128`
 
-**Laatste commit:** `84afe94` (docs pin A+B+C). Live 03 3× na rebuild `3a3407bb`. Docker: altijd `docker compose build` vóór live.
+**Laatste commit:** `23028a0` (#26 unbound FILL-query-round reset). Docker: altijd `docker compose build` vóór live.
 
 **Open (top 3):**
-1. **#26** — bind live (`062211Z`/`070449Z`); unbind/switch niet gezien. Code niet herschrijven.
+1. **#26** — twee reset-paden: bound unbind (bestaand) **en** unbound FILL-query-round (`apply_fill_query_round_reset`). Offline groen. Live 03 **en** 05 alleen na `ja, start` per taak.
 2. **#10** — deze trigger bewezen; T=3 provisionally, niet gelockt over alle paginatypes.
 3. **Taak 03 Coolblue list→detail** — A+B **live-zichtbaar** op zoeklijst (`packager_source=html_structure`, `/product/`-hrefs ASUS/VICTUS; niet Language/Account). 3/3 `CONTRACT_SATISFIED` (`174311Z`/`183956Z`/`190223Z`) maar `final_url` blijft `/zoeken?query=…`; **0× OPEN_URL**. Contract-PASS is interpret-op-lijst (`detail_link=CONCRETE_PRODUCT_PAGE` op `list_results`), niet list→detail-navigatie. Planner koos FILL-refine (laptops ≠ GPU). #24b niet sluiten. Niet `html_b2`.
 
