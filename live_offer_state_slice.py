@@ -434,6 +434,76 @@ def apply_candidate_scope_after_action(
     return best, active_candidate_path, candidate_bound_step, ""
 
 
+def _norm_fill_query(query_text: str | None) -> str:
+    """Same normalization as action_fingerprint FILL `q=` (lower, strip, 120)."""
+    return str(query_text or "").strip().lower()[:120]
+
+
+def _weaken_outcomes_from_step(
+    best: dict[str, dict[str, Any]],
+    from_step: int,
+    reset_step: int,
+) -> dict[str, dict[str, Any]]:
+    """Set outcomes written at/after from_step to UNKNOWN; keep the keys.
+
+    Open #26 search-round path: a reset must not drop a decision from the
+    dict (that would hide the gap). Unconfirmed = UNKNOWN, still present.
+    Distinct from `_reset_post_bind_outcomes`, which deletes post-bind keys.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for k, v in (best or {}).items():
+        try:
+            si = int((v or {}).get("step"))
+        except (TypeError, ValueError):
+            si = -1
+        if si >= from_step:
+            out[k] = {"outcome": "UNKNOWN", "step": reset_step}
+        else:
+            out[k] = v
+    return out
+
+
+def apply_fill_query_round_reset(
+    *,
+    best_outcomes: dict[str, dict[str, Any]],
+    action_class: str,
+    query_text: str | None,
+    last_fill_query_text: str | None,
+    last_fill_result_step: int | None,
+    next_step: int,
+    ok: bool,
+) -> tuple[dict[str, dict[str, Any]], str | None, int | None, str]:
+    """Open #26 unbound-list path: new FILL query_text → weaken prior pool.
+
+    Trigger: successful FILL_AND_SUBMIT whose normalized query_text differs
+    from the previous successful FILL in this run. First FILL: no reset.
+    Does not inspect decision_id names. `_merge_outcomes` is unchanged.
+
+    Returns (best, last_fill_query_text, last_fill_result_step, event)
+    event ∈ {"", "search_round_reset"}.
+    """
+    best = dict(best_outcomes or {})
+    if not ok:
+        return best, last_fill_query_text, last_fill_result_step, ""
+    action = str(action_class or "").strip().upper()
+    if action != "FILL_AND_SUBMIT":
+        return best, last_fill_query_text, last_fill_result_step, ""
+    new_q = _norm_fill_query(query_text)
+    if not new_q:
+        return best, last_fill_query_text, last_fill_result_step, ""
+    event = ""
+    prev_q = _norm_fill_query(last_fill_query_text) if last_fill_query_text is not None else ""
+    if (
+        last_fill_query_text is not None
+        and prev_q
+        and new_q != prev_q
+        and last_fill_result_step is not None
+    ):
+        best = _weaken_outcomes_from_step(best, last_fill_result_step, next_step)
+        event = "search_round_reset"
+    return best, new_q, next_step, event
+
+
 def _decision_is_satisfied(
     decision: dict[str, Any],
     best_outcomes: dict[str, dict[str, Any]],
@@ -612,6 +682,9 @@ def run_acquisition_loop(
     # Open #26: bound item path (list→detail); None until first preferred-item bind
     active_candidate_path: str | None = None
     candidate_bound_step: int | None = None
+    # Open #26 unbound-list path: previous successful FILL query + landing step
+    last_fill_query_text: str | None = None
+    last_fill_result_step: int | None = None
     prev_state_sig: str | None = None
 
     for step in range(0, max_acquisition_steps + 1):
@@ -1214,14 +1287,28 @@ def run_acquisition_loop(
                 next_step=step + 1,
             )
         )
-        if scope_event:
+        best_outcomes, last_fill_query_text, last_fill_result_step, fill_round_event = (
+            apply_fill_query_round_reset(
+                best_outcomes=best_outcomes,
+                action_class=str(decision.get("action_class") or ""),
+                query_text=str(decision.get("query_text") or "") or None,
+                last_fill_query_text=last_fill_query_text,
+                last_fill_result_step=last_fill_result_step,
+                next_step=step + 1,
+                ok=ok,
+            )
+        )
+        if scope_event or fill_round_event:
             step_rec["candidate_scope"] = {
                 "event": scope_event,
+                "search_round_event": fill_round_event,
                 "active_candidate_path": active_candidate_path,
                 "candidate_bound_step": candidate_bound_step,
+                "last_fill_result_step": last_fill_result_step,
             }
             print(
                 f"[acquisition] candidate_scope event={scope_event} "
+                f"search_round={fill_round_event} "
                 f"path={active_candidate_path} bound_step={candidate_bound_step} "
                 f"best_n={len(best_outcomes)}",
                 flush=True,
