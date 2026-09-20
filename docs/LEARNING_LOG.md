@@ -2267,6 +2267,51 @@ Offline: `evals/dead_surface/test_dead_surface_offline_v0.py`. Geen live (AGENT_
 
 Offline: `evals/entity_claim/test_entity_not_claim_offline_v0.py` + `evals/h_leak/` (injectie-assert omgedraaid). Geen live.
 
+## 2026-09-20 — Ontwerp H-dead-surface-2 (bol 6×-reject) — NIET GEBOUWD
+
+Hypothese ter beoordeling ná live TUI/bol. Geen code.
+
+### Waarom FIX 1 bol niet vangt
+
+`result_bol_airpods_pro_20260919T131049Z.json`: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` `subject_instance=UNKNOWN`. Step 0: aff=3, units=2, `text_chars=1093`. Titel in loop = `"bol"`. Eerste paginaregel: `IP address is blocked`. Affordances: `mailto:customerservice@bol.com`, `https://whatismyip.akamai.com/`, `https://developers.bol.com/` — alle `scope=global`, geen same-host http(s). Geen token `403`/`404`/`429` in titel of body.
+
+FIX 1 eist aff==0 ∧ units≤1 ∧ chars<400. Bol faalt alle drie. Units≤2 zou de 2–3-unit negatieve test (06 wiki / sparse-real) breken.
+
+### Twee sub-hypothesen (generiek, geen sitenaam)
+
+**2a — 0 research-navigable same-host hrefs + weinig units** (bol-kandidaat)
+
+- `fetch_ok` (niet `FETCH_FAILED_OR_EMPTY`)
+- `not is_dead_surface` (FIX 1 al gedaan)
+- aantal affordances met `href` scheme http(s) én `urlparse(href).netloc == urlparse(final_url).netloc` **== 0**
+  - mailto / tel / javascript / leeg / andere host tellen niet als same-host navigatie
+- `candidate_units_count <= 2`
+
+Structureel: host-gelijkheid, geen “bol.com”. Zou `131049Z` vangen. Risico: dunne verhuis/contactpagina met alleen externe links + 2 tekstblokken.
+
+**2b — HTTP-status-achtige digit-tokens in titel/eerste regels** (SS-405-kandidaat, **niet** bol)
+
+- zelfde fetch_ok + niet FIX 1
+- in `title` of de eerste 3 niet-lege `page_text`-regels: woordgrens-token `\b(403|404|405|429|500|502|503)\b`
+- géén sitenaam, géén “Access Denied”-zin als lexicon
+- Semantic Scholar `145809Z` `step_001_page_text.txt` regel `Error: 405` zou matchen
+- Bol zou **niet** matchen (geen 3-cijfer-status; titel=`bol`)
+
+`blocked` als extra woord is een mini-lexicon (Engels), niet een statuscode. Alleen meenemen na overleg; 2a dekt bol zonder dat woord.
+
+### Afgewezen in dit ontwerp
+
+- `"Access Denied"` / `"IP address is blocked"` / `"abuse"` als strings — betekenis/taal in code
+- Hostnamen (`bol.com`, `edgesuite.net`)
+- Alleen 2b om bol te vangen — de pagina heeft geen 403
+- Units≤2 zonder same-host-filter — botst met 06/sparse-real
+
+### Verplichte negatieven als dit ooit gebouwd wordt
+
+01/02 fixtures (vele same-host hrefs). 05 arXiv list/abs. 06 `064738Z` wiki. Pagina die “HTTP 404” in een artikelparagraaf noemt maar same-host navigatie heeft. Geen live tot TUI/bol-retest van FIX 1 binnen is.
+
+**Niet implementeren.**
+
 
 
 
