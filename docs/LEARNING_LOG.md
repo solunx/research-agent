@@ -2312,6 +2312,72 @@ Structureel: host-gelijkheid, geen “bol.com”. Zou `131049Z` vangen. Risico: 
 
 **Niet implementeren.**
 
+## 2026-09-20 — Audit: andere `candidate_claim`-injecties (geen fix)
+
+Scope: `live_detail_slice.py` + `live_offer_state_slice.py`. Vraag: bestaat er
+naast de verwijderde `add("candidate_claim", candidate_id, "identity", "entity")`
+nog taaktekst of contracttekst die als pagina-bewijs de interpret in gaat?
+
+**Conclusie: nee.** Geen tweede `origin=entity` / `scope=identity` emitter.
+Wel andere `candidate_claim`-bronnen; die zijn paginatekst of unit-packaging.
+
+### Emitters die blijven (pagina-bewijs)
+
+`page_text_to_observations` — titel en bodyregels:
+
+```156:157:live_detail_slice.py
+    if title:
+        add("candidate_claim", title, "page_title", "browser_title")
+```
+
+```185:186:live_detail_slice.py
+    for ln in candidates[: max(0, int(max_claim_lines))]:
+        add("candidate_claim", ln, "page_body", "browser_inner_text")
+```
+
+Meal-params en URL zijn `search_context` / `navigation`, geen claim.
+
+Live-loop voegt de browsertitel extra vooraan (zelfde `origin=browser_title`,
+`text=title[:300]`, `candidate_id=entity` als **id**, niet als tekst):
+
+```877:892:live_offer_state_slice.py
+        if title:
+            obs.insert(
+                0,
+                {
+                    "observation_id": "live-title",
+                    "candidate_id": entity,
+                    "text": title[:300],
+                    "channel": "candidate_claim",
+                    "scope": "page_title",
+                    "provenance": {
+                        "origin": "browser_title",
+                        "source_url": final_url,
+                        "surface": surface,
+                    },
+                },
+            )
+```
+
+Op non-`list_results` met `len(selected) < 2` volgt `obs.extend(line_obs)` —
+zelfde `page_text_to_observations` (pagina, niet taak).
+
+`candidates_to_observations` → `units_to_observations`: unit-teksten van de
+pagina, `origin=candidate_unit_package`, `scope=unit`.
+
+### Adjacent, géén `candidate_claim`
+
+- `run_candidate_unit(..., task_text=task_text)` krijgt de volledige taak als
+  CU-context. CU is admissibility, niet interpret-`source_text`.
+- `observations_to_pipeline_row` zet `"entity": candidate_id` op de rij
+  (logging), niet als claim-kanaal.
+- `interpret_even_if_not_admitted=True` blijft: zolang er claims zijn, gaat
+  interpret door — relevant voor mechanisme 12/13, geen extra injectie.
+
+**Geen codewijziging.** Tweede `live-title` naast `page_text_to_observations`
+titel is duplicaat paginabewijs, geen H-leak. Alleen overleg als iemand die
+dedup wil.
+
 
 
 
