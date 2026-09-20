@@ -15,7 +15,7 @@
 
 **Campagne 1 klaar** (`campaign1_generaliteit_20260919T111126Z`): 18 runs, **0/18** SATISFIED, 5 CIRCUIT_BREAK. **Niet herstarten.**
 
-**H-leak:** FIX 1 `82cae84` Open #29; FIX 2 `2f030e3` entity-geen-claim. Open #30 2a same-host dead-surface shipped (offline). Path B geïnventariseerd (§14), niet gefixt. Middag-queue — **niet starten** zonder `ja, start` + tmux-sessienaam.
+**H-leak:** FIX 1 `82cae84` Open #29; FIX 2 `2f030e3` entity-geen-claim. Open #30 2a same-host (`e2229bc`). Open #31 overlay-dismiss (offline). Path B geïnventariseerd (§14), niet gefixt. Middag-queue — **niet starten** zonder `ja, start` + tmux-sessienaam.
 
 **Open (top 3):**
 1. **#26** — pad 2 live `061149Z`/`064948Z`. #25 onder pad 2 **offline geverifieerd** (canonieke abs-reject op bind-stap: unbind wist `NOT_RELEVANT`; pad 2 wekt het niet opnieuw). **Niet sluiten:** exacte `083112Z`-merge houdt homepage-`NOT_RELEVANT` op `step=0` (zelfde label op abs bump't de stap niet). Geen merge-fix zonder overleg. 03-run1 nog list-SATISFIED.

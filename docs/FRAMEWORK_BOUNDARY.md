@@ -379,6 +379,15 @@ Coolblue `183956Z`/`190223Z`: laptop list set `detail_link=CONCRETE_PRODUCT_PAGE
 - **Offline:** `evals/dead_surface/test_dead_surface_same_host_offline_v0.py`. Live bol only after user OK.
 - **Not 2b:** digit tokens 403/404/429 left undiscussed; do not add without a separate decision.
 
+### #31 — blocking overlay dismiss after repeated timeout (ARIA dialog)
+
+- **Symptom:** 2dehands `140350Z` FILL timeout. Playwright: `<div role="dialog" aria-modal="true" id="sp_message_container_*">` intercepts pointer events (Sourcepoint iframe inside). Every click/fill on that page fails, not only search.
+- **Trigger:** ≥2 CLICK/FILL timeouts on the **same URL-path** with **different** `action_fingerprint`s (anti-loop keys). First timeout never dismisses (Coolblue Zoeken is one miss + related-input fallback).
+- **Detect:** visible `[role="dialog"]` or `[aria-modal="true"]`. No cookie/consent/host lexicon. Existing `COOKIE_SELECTORS` unused on this path.
+- **Dismiss (chosen):** first `button` / `[role=button]` in DOM order inside the dialog. **Rejected:** shortest visible text (length-as-meaning / "OK" guess). Cross-origin iframe, no same-origin button → `hide_blocking_dialog` (cannot click into the iframe).
+- **Negatives:** 01/02/03/05/06 page HTML has no `sp_message_*` dialog; first-timeout gate is False. Icon-search fixture (Zoeken timeout class) has 0 overlays.
+- **Offline:** `evals/overlay_dismiss/test_overlay_dismiss_offline_v0.py`. Live 2dehands only after user OK.
+
 ---
 
 ## Hardcoded (framework) — allowed

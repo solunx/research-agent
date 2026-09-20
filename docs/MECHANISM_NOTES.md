@@ -812,6 +812,81 @@ Geen live zonder OK.
 
 ---
 
+## 16. Overlay-dismiss na herhaalde timeout (Open #31)
+
+### Probleem
+
+2dehands `140350Z`: `FILL_AND_SUBMIT` `q=fiets` daarna `q=2000` daarna
+`q=bicycle` — alle drie `Locator.click: Timeout`. Citaat:
+`<div role="dialog" aria-modal="true" id="sp_message_container_1494622">`
+onderschept pointer events (iframe `sp_message_iframe_*` erin). Niet
+alleen zoeken: élke klik/fill op die state.
+
+Bestaande `_hide_consent_overlays` / `COOKIE_SELECTORS` zijn
+consent-lexicon en golden **niet** op `browser_type` (FILL klikt de
+input zonder die hide-retry).
+
+### Afgewezen
+
+- Kortste zichtbare knoptekst in de modal — lengte als betekenis
+  ("OK"/"X"). Giswerk; een taalwissel `NL` kan korter zijn dan Accept.
+- `COOKIE_SELECTORS` / `iframe[src*="consent"]` uitbreiden — lexicon.
+- Elke timeout → overlay-dismiss — vangt Coolblue Zoeken (geen modal,
+  fragiele locator).
+- Alleen Escape — Sourcepoint negeert dat vaak; niet meetbaar offline
+  op deze fixture.
+
+### Gekozen optie
+
+**Eerste knop in DOM-volgorde** binnen `[role=dialog]` / `aria-modal=true`.
+ARIA-structuur, geen woordenlijst. Cross-origin iframe zonder
+same-origin knop: `hide_blocking_dialog` op de dialog-node (enige
+structurele actie die pointer-events teruggeeft).
+
+**Trigger:** tweede timeout op dezelfde URL-path met een **ander**
+`action_fingerprint`. Eerste timeout doet niets.
+
+```31:43:overlay_dismiss.py
+def overlay_dismiss_should_run(
+    *,
+    prior_timeout_fps: list[str] | None,
+    current_fp: str,
+) -> bool:
+    """True after ≥1 earlier timeout fingerprint on this page, different target.
+
+    Reuses action_fingerprint keys. First failure never dismisses (Coolblue
+    Zoeken is one timeout, then a different fallback — must not fire here).
+    """
+```
+
+```160:175:overlay_dismiss.py
+    buttons = list(ov.get("buttons") or [])
+    if buttons:
+        first = buttons[0]
+        return {
+            "method": "first_button",
+            "overlay_id": ov.get("id") or "",
+            "overlay_role": ov.get("role") or "",
+            "aria_modal": ov.get("aria_modal") or "",
+            "n_buttons": len(buttons),
+            "n_iframes": int(ov.get("n_iframes") or 0),
+            "first_button_text": first.get("text") or first.get("aria_label") or "",
+            "click_selector": (
+                '[role="dialog"], [aria-modal="true"]'
+                " >> button, [role='button'], input[type='button'], input[type='submit']"
+            ),
+        }
+
+### Bewijs
+
+Offline: eerste knop = `"Lees het cookiebeleid volledig"`, niet `"OK"`.
+2dehands-fixture: id `sp_message_container_1494622`, method
+`hide_blocking_dialog`. Gate: één fingerprint False; twee verschillende
+True. 01/02/03/05/06 HTML: 0 `sp_message_*`; first-timeout gate False.
+`evals/overlay_dismiss/test_overlay_dismiss_offline_v0.py`. Geen live.
+
+---
+
 ## 14. Path B — contractvraag + outcome-enum in de interpret-prompt (NIET GEFIXT)
 
 Audit 2026-09-20. Geen codewijziging. Path A was task-bold als

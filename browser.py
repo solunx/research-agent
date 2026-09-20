@@ -514,6 +514,132 @@ def browser_click(selector: str, max_chars: int = 10000) -> dict[str, Any]:
         return {"ok": False, "url": "", "title": "", "text": "", "error": str(e)}
 
 
+def browser_current_url() -> str:
+    try:
+        page = _ensure_browser()
+        return str(page.url or "")
+    except Exception:
+        return ""
+
+
+def browser_list_blocking_overlays() -> list[dict[str, Any]]:
+    """Visible role=dialog / aria-modal overlays. No cookie/consent selectors."""
+    js = """
+    () => {
+      const nodes = Array.from(document.querySelectorAll('[role="dialog"], [aria-modal="true"]'));
+      const out = [];
+      for (const el of nodes) {
+        const st = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        if (st.display === 'none' || st.visibility === 'hidden') continue;
+        if (r.width < 8 || r.height < 8) continue;
+        const btns = [];
+        el.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]').forEach((b) => {
+          const bs = getComputedStyle(b);
+          const br = b.getBoundingClientRect();
+          if (bs.display === 'none' || br.width < 2 || br.height < 2) return;
+          btns.push({
+            text: ((b.innerText || b.getAttribute('aria-label') || '') + '').trim().slice(0, 80)
+          });
+        });
+        out.push({
+          role: (el.getAttribute('role') || ''),
+          aria_modal: (el.getAttribute('aria-modal') || ''),
+          id: el.id || '',
+          buttons: btns,
+          n_iframes: el.querySelectorAll('iframe').length
+        });
+      }
+      return out;
+    }
+    """
+    try:
+        page = _ensure_browser()
+        raw = page.evaluate(js) or []
+        return list(raw) if isinstance(raw, list) else []
+    except Exception:
+        return []
+
+
+def browser_dismiss_blocking_overlay() -> dict[str, Any]:
+    """Open #31: first DOM button inside a blocking dialog, else hide the dialog.
+
+    Not COOKIE_SELECTORS. Not shortest-text. Cross-origin iframe → hide.
+    """
+    from overlay_dismiss import pick_overlay_dismiss
+
+    try:
+        page = _ensure_browser()
+    except Exception as e:
+        return {"ok": False, "attempted": False, "reason": str(e)}
+    overlays = browser_list_blocking_overlays()
+    plan = pick_overlay_dismiss(overlays)
+    if not plan:
+        return {"ok": False, "attempted": False, "reason": "no_overlay", "n_overlays": 0}
+    method = str(plan.get("method") or "")
+    if method == "first_button":
+        try:
+            loc = (
+                page.locator('[role="dialog"], [aria-modal="true"]')
+                .first.locator(
+                    'button, [role="button"], input[type="button"], input[type="submit"]'
+                )
+                .first
+            )
+            loc.click(timeout=3000)
+            time.sleep(0.35)
+            return {
+                "ok": True,
+                "attempted": True,
+                "method": "first_button",
+                "n_overlays": len(overlays),
+                "first_button_text": plan.get("first_button_text") or "",
+                "overlay_id": plan.get("overlay_id") or "",
+            }
+        except Exception as e:
+            method = "hide_blocking_dialog"
+            plan["click_error"] = str(e)[:200]
+    if method == "hide_blocking_dialog":
+        n = 0
+        try:
+            n = int(
+                page.evaluate(
+                    """
+                    () => {
+                      let n = 0;
+                      document.querySelectorAll('[role="dialog"], [aria-modal="true"]').forEach((el) => {
+                        const st = getComputedStyle(el);
+                        const r = el.getBoundingClientRect();
+                        if (st.display === 'none' || r.width < 8) return;
+                        el.style.setProperty('display', 'none', 'important');
+                        n++;
+                      });
+                      return n;
+                    }
+                    """
+                )
+                or 0
+            )
+        except Exception as e:
+            return {
+                "ok": False,
+                "attempted": True,
+                "method": "hide_blocking_dialog",
+                "reason": str(e)[:200],
+                "n_overlays": len(overlays),
+            }
+        return {
+            "ok": n > 0,
+            "attempted": True,
+            "method": "hide_blocking_dialog",
+            "n": n,
+            "n_overlays": len(overlays),
+            "overlay_id": plan.get("overlay_id") or "",
+            "first_button_text": "",
+        }
+    return {"ok": False, "attempted": False, "reason": "no_plan", "n_overlays": len(overlays)}
+
+
 def browser_type(
     selector: str,
     text: str,

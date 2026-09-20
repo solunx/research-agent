@@ -2416,6 +2416,13 @@ units≤2. Stop `DEAD_SURFACE_NO_SAME_HOST_CONTENT`. Bol `131049Z` triggert;
 06 33 same-host http niet. Contact mailto-only units=2 = aanvaard 2a-dead.
 Geen 2b. Geen live.
 
+## 2026-09-20 — Open #31 overlay-dismiss (ARIA dialog)
+
+Na 2 verschillende timeouts op dezelfde path: first-button in
+`role=dialog` / `aria-modal`, anders hide. Geen kortste-tekst, geen
+consent-lexicon. 2dehands-fixture herkent `sp_message_container_1494622`.
+Eerste timeout (Coolblue Zoeken) vuurt niet. Geen live.
+
 
 
 

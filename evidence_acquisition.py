@@ -943,6 +943,60 @@ def _fill_locator_from_decision(decision: dict[str, Any]) -> str | None:
     return 'input[type="search"], input[type="text"], input:not([type]), textarea'
 
 
+# Open #31: timeouts on this URL-path (action_fingerprint keys). First
+# timeout never dismisses; a later different target on the same path may.
+_OVERLAY_TIMEOUTS: dict[str, list[str]] = {}
+
+
+def reset_overlay_timeout_memory() -> None:
+    _OVERLAY_TIMEOUTS.clear()
+
+
+def _execute_with_overlay_retry(
+    decision: dict[str, Any],
+    snap: dict[str, Any],
+    retry: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    from overlay_dismiss import (
+        is_timeoutish_error,
+        overlay_dismiss_should_run,
+        page_state_key,
+    )
+
+    if snap.get("ok"):
+        return snap
+    page_url = ""
+    try:
+        from browser import browser_current_url
+
+        page_url = browser_current_url()
+    except Exception:
+        page_url = ""
+    fp = action_fingerprint(decision, page_url=page_url)
+    key = page_state_key(page_url)
+    prior = list(_OVERLAY_TIMEOUTS.get(key) or [])
+    err = str(snap.get("error") or "")
+    if is_timeoutish_error(err) and overlay_dismiss_should_run(
+        prior_timeout_fps=prior, current_fp=fp
+    ):
+        try:
+            from browser import browser_dismiss_blocking_overlay
+
+            dismissed = browser_dismiss_blocking_overlay()
+        except Exception as e:
+            dismissed = {"ok": False, "attempted": False, "reason": str(e)[:200]}
+        snap["overlay_dismiss"] = dismissed
+        if dismissed.get("attempted"):
+            snap2 = retry()
+            snap2["overlay_dismiss"] = dismissed
+            snap = snap2
+    if not snap.get("ok") and is_timeoutish_error(str(snap.get("error") or "")):
+        lst = _OVERLAY_TIMEOUTS.setdefault(key, [])
+        if fp and fp not in lst:
+            lst.append(fp)
+    return snap
+
+
 def execute_acquisition_action(decision: dict[str, Any], *, max_chars: int = 20000) -> dict[str, Any]:
     """
     Execute an acquisition decision via browser tools.
@@ -1007,32 +1061,36 @@ def execute_acquisition_action(decision: dict[str, Any], *, max_chars: int = 200
         text = decision.get("target_text") or ""
         if not text:
             return {"ok": False, "error": "missing_target_text"}
-        # 1. Visible innerText locators (existing path). Skip absent nodes
-        #    so a missing text= match does not burn 15s+8s before fallbacks.
-        snap = _click_first_present(click_text_selectors(str(text)), max_chars=max_chars)
-        if snap and snap.get("ok"):
-            return snap
-        # 2. Related input_field: token-boundary match into accessible name.
-        #    Focus/click that field — do not invent query_text.
-        from browser import browser_list_affordances
 
-        aff_snap = browser_list_affordances()
-        related = related_input_field(str(text), aff_snap.get("affordances") or [])
-        loc = related_input_locator(related)
-        if loc:
-            snap2 = browser_click(loc, max_chars=max_chars)
-            if snap2.get("ok"):
-                snap2["click_fallback"] = "related_input_field"
-                snap2["clicked_selector"] = loc[:200]
-                return snap2
-        # 3. Accessible-name locators (icon buttons without a related field).
-        snap3 = _click_first_present(
-            click_text_accessible_name_selectors(str(text)), max_chars=max_chars
-        )
-        if snap3 and snap3.get("ok"):
-            snap3["click_fallback"] = "accessible_name"
-            return snap3
-        return snap or snap3 or {"ok": False, "error": "click_text_no_locator"}
+        def _click_text_once() -> dict[str, Any]:
+            # 1. Visible innerText locators (existing path). Skip absent nodes
+            #    so a missing text= match does not burn 15s+8s before fallbacks.
+            s = _click_first_present(click_text_selectors(str(text)), max_chars=max_chars)
+            if s and s.get("ok"):
+                return s
+            # 2. Related input_field: token-boundary match into accessible name.
+            #    Focus/click that field — do not invent query_text.
+            from browser import browser_list_affordances
+
+            aff_snap = browser_list_affordances()
+            related = related_input_field(str(text), aff_snap.get("affordances") or [])
+            loc = related_input_locator(related)
+            if loc:
+                snap2 = browser_click(loc, max_chars=max_chars)
+                if snap2.get("ok"):
+                    snap2["click_fallback"] = "related_input_field"
+                    snap2["clicked_selector"] = loc[:200]
+                    return snap2
+            # 3. Accessible-name locators (icon buttons without a related field).
+            snap3 = _click_first_present(
+                click_text_accessible_name_selectors(str(text)), max_chars=max_chars
+            )
+            if snap3 and snap3.get("ok"):
+                snap3["click_fallback"] = "accessible_name"
+                return snap3
+            return s or snap3 or {"ok": False, "error": "click_text_no_locator"}
+
+        return _execute_with_overlay_retry(decision, _click_text_once(), _click_text_once)
     if action == "CLICK_SELECTOR":
         # Intentionally conservative: only allow simple text= selectors from decision
         sel = str(decision.get("target_text") or decision.get("selector") or "")
@@ -1046,20 +1104,24 @@ def execute_acquisition_action(decision: dict[str, Any], *, max_chars: int = 200
         selector = _fill_locator_from_decision(decision)
         if not selector:
             return {"ok": False, "error": "fill_no_locator", "action_class": "FILL_AND_SUBMIT"}
-        snap = browser_type(selector, query, press_enter=True, max_chars=max_chars)
-        snap["action_class"] = "FILL_AND_SUBMIT"
-        snap["filled_selector"] = selector[:200]
-        snap["query_text"] = query[:200]
-        if not snap.get("ok"):
-            # Soft fallback: try a broader text-like input if specific locator failed
+
+        def _fill_once() -> dict[str, Any]:
+            s = browser_type(selector, query, press_enter=True, max_chars=max_chars)
+            s["action_class"] = "FILL_AND_SUBMIT"
+            s["filled_selector"] = selector[:200]
+            s["query_text"] = query[:200]
+            if s.get("ok"):
+                return s
             fallback = 'input[type="search"], input[type="text"], input:not([type]), textarea'
-            if selector != fallback:
-                snap2 = browser_type(fallback, query, press_enter=True, max_chars=max_chars)
-                snap2["action_class"] = "FILL_AND_SUBMIT"
-                snap2["filled_selector"] = fallback
-                snap2["query_text"] = query[:200]
-                snap2["fallback_from"] = selector[:200]
-                return snap2
-        return snap
+            if selector == fallback:
+                return s
+            snap2 = browser_type(fallback, query, press_enter=True, max_chars=max_chars)
+            snap2["action_class"] = "FILL_AND_SUBMIT"
+            snap2["filled_selector"] = fallback
+            snap2["query_text"] = query[:200]
+            snap2["fallback_from"] = selector[:200]
+            return snap2
+
+        return _execute_with_overlay_retry(decision, _fill_once(), _fill_once)
 
     return {"ok": False, "error": f"unknown_action:{action}"}
