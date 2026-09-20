@@ -17,6 +17,7 @@ Hard rules
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, field
@@ -28,6 +29,52 @@ from interpretation import interpret_observation, interpret_observation_multi
 
 ChatFnDict = Callable[[list[dict[str, Any]]], dict[str, Any]]
 ChatFnStr = Callable[[list[dict[str, str]]], str]
+
+# Optional --trace-interpret: truncate large claim text; keep a short hash.
+_INTERPRET_TRACE_TEXT_MAX = 400
+
+
+def _source_text_for_interpret_trace(text: str) -> dict[str, Any]:
+    t = text or ""
+    digest = hashlib.sha256(t.encode("utf-8")).hexdigest()[:16]
+    n = len(t)
+    if n <= _INTERPRET_TRACE_TEXT_MAX:
+        shown = t
+    else:
+        shown = t[:_INTERPRET_TRACE_TEXT_MAX] + f"…[+{n - _INTERPRET_TRACE_TEXT_MAX} chars]"
+    return {
+        "source_text": shown,
+        "source_text_sha256_16": digest,
+        "source_text_chars": n,
+    }
+
+
+def _append_interpret_trace(
+    sink: list[dict[str, Any]] | None,
+    *,
+    observation: dict[str, Any],
+    decision_id: str,
+    outcome: str,
+    confidence: str | None,
+    reason: str | None = None,
+    source: str | None = None,
+) -> None:
+    """Side-channel per (candidate × decision) call. No-op when sink is None."""
+    if sink is None:
+        return
+    bind = _obs_binding_fields(observation)
+    rec: dict[str, Any] = {
+        "candidate_id": bind.get("candidate_id"),
+        "decision_id": str(decision_id),
+        "outcome": outcome,
+        "confidence": confidence,
+        **_source_text_for_interpret_trace(str(observation.get("text") or "")),
+    }
+    if reason:
+        rec["reason"] = reason
+    if source:
+        rec["source"] = source
+    sink.append(rec)
 
 # ---------------------------------------------------------------------------
 # EXPERIMENT FIXTURE only — packages offline / live_offer_state_slice.
@@ -682,6 +729,7 @@ def run_interpretation(
     max_llm_per_decision: int = 8,
     early_stop_on_high: bool = True,
     batch_decisions: bool = False,
+    interpret_call_trace: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Interpret candidate_claim observations against contract decisions.
@@ -703,6 +751,12 @@ def run_interpretation(
     decision already has a high-confidence satisfying outcome, remaining
     claims are skipped. Fase A skip-satisfied (acquisition loop) is
     independent of this flag.
+
+    interpret_call_trace: optional list filled with per-call records
+    (candidate_id, decision_id, truncated source_text, outcome,
+    confidence). Default None — no extra work, return dict unchanged.
+    Callers write this to step_NNN_interpret_trace.json; never to
+    events.jsonl.
     """
     if not batch_decisions:
         return _run_interpretation_legacy(
@@ -711,6 +765,7 @@ def run_interpretation(
             chat_fn=chat_fn,
             max_llm_per_decision=max_llm_per_decision,
             early_stop_on_high=early_stop_on_high,
+            interpret_call_trace=interpret_call_trace,
         )
 
     chat_dict = _adapt_chat_fn(chat_fn)
@@ -866,6 +921,15 @@ def run_interpretation(
                     **bind,
                 }
             texts_by_did[did].append(row)
+            _append_interpret_trace(
+                interpret_call_trace,
+                observation=o,
+                decision_id=str(did),
+                outcome=str(row.get("outcome") or "UNKNOWN"),
+                confidence=row.get("confidence"),
+                reason=row.get("reason"),
+                source=row.get("source"),
+            )
             required = required_by_did.get(did) or set()
             if (
                 early_stop_on_high
@@ -904,6 +968,7 @@ def _run_interpretation_legacy(
     chat_fn: ChatFnStr | None,
     max_llm_per_decision: int = 8,
     early_stop_on_high: bool = True,
+    interpret_call_trace: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Pre-Fase-B path: one LLM call per (claim × decision). For parity tests."""
     chat_dict = _adapt_chat_fn(chat_fn)
@@ -1014,6 +1079,15 @@ def _run_interpretation_legacy(
                 **bind,
             }
             texts.append(row)
+            _append_interpret_trace(
+                interpret_call_trace,
+                observation=o,
+                decision_id=str(did),
+                outcome=str(ir.outcome),
+                confidence=ir.confidence,
+                reason=ir.reason,
+                source=ir.source,
+            )
             if (
                 early_stop_on_high
                 and ir.confidence == "high"

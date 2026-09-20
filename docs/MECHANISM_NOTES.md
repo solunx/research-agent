@@ -942,6 +942,42 @@ Geen live.
 
 ---
 
+## 18. Per-call interpret-trace (`--trace-interpret`, infra)
+
+Geen Open-item. events.jsonl logt samengevatte interpret-outcomes per
+stap. Reconstructie van H-leak / #27 kostte extra rondes omdat
+(candidate × decision)-calls ontbraken.
+
+**Default uit.** `--trace-interpret` schrijft
+`step_NNN_interpret_trace.json`: `candidate_id`, `decision_id`,
+`source_text` (≤400 tekens + sha256-16), `outcome`, `confidence`.
+Niet in events.jsonl. Return-dict van `run_interpretation` ongewijzigd.
+
+```309:324:live_offer_state_slice.py
+def save_interpret_trace_artifact(
+    trace: TraceSession | None,
+    *,
+    enabled: bool,
+    step: int,
+    url: str,
+    surface: str,
+    batch_decisions: bool,
+    calls: list[dict[str, Any]] | None,
+) -> str | None:
+    """Write step_NNN_interpret_trace.json. No-op when the flag is off.
+
+    Never emits events.jsonl. Return dict of interpretation is unchanged.
+    """
+    if not enabled or trace is None:
+        return None
+```
+
+Offline: `evals/interpret_trace/test_interpret_trace_offline_v0.py`
+(flag uit = identieke return + geen artifact; flag aan = wiki 165815Z
+leesbare calls). Geen live.
+
+---
+
 ## 14. Path B — contractvraag + outcome-enum in de interpret-prompt (NIET GEFIXT)
 
 Audit 2026-09-20. Geen codewijziging. Path A was task-bold als

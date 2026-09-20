@@ -11,7 +11,7 @@
 - **#24** `41d5fc7` OPEN_URL-allowlist = aff ∪ shown `primary_action.href` (live `062211Z` OPEN abs `source=llm`)
 - **#10** `6debab8` D2c geen kale identifiers/1-decimaal; abs=`live_offer_state`. Taak 05 na #10 **5/5** `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`: `070449Z` `/abs/2609.18128`; `073200Z` `/abs/2609.18128`; `075144Z` `/abs/2609.13860`; `081459Z` `/abs/2609.18128`; `072546Z` `/abs/2609.20625`
 
-**Laatste commits (geen live):** `0ad8b3b` Path B-audit; `c92d1fd` #26 snapshot; `50a9522` disk-marge; deze commit = middag-queue. Docker: altijd `docker compose build` vóór live.
+**Laatste commits (geen live):** Open #32 HTML-replace splice; `--trace-interpret` (default uit). Docker: altijd `docker compose build` vóór live.
 
 **Campagne 1 klaar** (`campaign1_generaliteit_20260919T111126Z`): 18 runs, **0/18** SATISFIED, 5 CIRCUIT_BREAK. **Niet herstarten.**
 

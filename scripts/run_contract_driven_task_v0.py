@@ -156,6 +156,7 @@ def run_one(
     start_url_override: str | None,
     max_steps: int,
     batch_decisions: bool = False,
+    trace_interpret: bool = False,
 ) -> dict[str, Any]:
     task_id = task_path.stem
     task_text = load_task_text(task_path)
@@ -247,6 +248,7 @@ def run_one(
         ledger=ledger,
         trace=trace,
         batch_decisions=bool(batch_decisions),
+        trace_interpret=bool(trace_interpret),
     )
     duration = round(time.monotonic() - t0, 2)
 
@@ -345,6 +347,15 @@ def main() -> int:
         help=(
             "Fase B opt-in: one LLM call per claim for all pending decisions "
             "(default off — single-decision path). Does not change production default."
+        ),
+    )
+    ap.add_argument(
+        "--trace-interpret",
+        action="store_true",
+        default=False,
+        help=(
+            "Write step_NNN_interpret_trace.json with per (candidate × decision) "
+            "calls. Default off. Does not change outcomes or events.jsonl."
         ),
     )
     args = ap.parse_args()
@@ -451,6 +462,7 @@ def main() -> int:
                 start_url_override=args.start_url or None,
                 max_steps=args.max_steps,
                 batch_decisions=bool(args.batch_decisions),
+                trace_interpret=bool(args.trace_interpret),
             )
             campaign["results"].append(
                 {

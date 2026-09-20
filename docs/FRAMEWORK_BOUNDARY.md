@@ -418,7 +418,7 @@ These are domain-agnostic and may live in code permanently:
 | **Candidate objects** | First-class intermediate model (`candidates.py`): `identity_hints`, `evidence[]`, optional `primary_action`, `source_url`, `surface`. Code builds candidates; LLM interprets them into **contract** outcomes. Offline probe: `scripts/run_candidate_extraction_offline_v0.py`. See `docs/CANDIDATE_LAYER.md` |
 | Evidence store + claim status | UNKNOWN / evidence refs |
 | **Sufficiency gate** | STOP only when **frozen contract** required claims are satisfied — **code decides STOP**, LLM may only propose |
-| TraceSession / flush / job boundaries | Observability and isolation |
+| TraceSession / flush / job boundaries | Observability and isolation. Optional `--trace-interpret` writes `step_NNN_interpret_trace.json` (default off; not events.jsonl) |
 | Host memory transport layer | navigation/semantics/harvest sketches — not task criteria |
 
 ---

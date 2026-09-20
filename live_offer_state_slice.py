@@ -255,6 +255,7 @@ def _pipeline_on_obs(
     decisions: list[dict[str, Any]],
     interpret_even_if_not_admitted: bool = True,
     batch_decisions: bool = False,
+    interpret_call_trace: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     CANDIDATE_UNIT ranks whether the fragment is a primary unit.
@@ -283,6 +284,7 @@ def _pipeline_on_obs(
             decisions=decisions,
             chat_fn=chat_fn,
             batch_decisions=batch_decisions,
+            interpret_call_trace=interpret_call_trace,
         )
         outcomes = interp.get("outcomes") or {}
         elig = interp.get("eligibility") or eligibility_from_outcomes(outcomes, decisions)
@@ -302,6 +304,34 @@ def _pipeline_on_obs(
         "claim_n": claim_n,
         "skipped_interpretation_reason": skipped_reason,
     }
+
+
+def save_interpret_trace_artifact(
+    trace: TraceSession | None,
+    *,
+    enabled: bool,
+    step: int,
+    url: str,
+    surface: str,
+    batch_decisions: bool,
+    calls: list[dict[str, Any]] | None,
+) -> str | None:
+    """Write step_NNN_interpret_trace.json. No-op when the flag is off.
+
+    Never emits events.jsonl. Return dict of interpretation is unchanged.
+    """
+    if not enabled or trace is None:
+        return None
+    return trace.save_artifact(
+        f"step_{int(step):03d}_interpret_trace.json",
+        {
+            "schema": "interpret-trace-v0",
+            "url": url,
+            "surface": surface,
+            "batch_decisions": bool(batch_decisions),
+            "calls": list(calls or []),
+        },
+    )
 
 
 def _decisions_from_frozen_contract(contract: dict[str, Any]) -> list[dict[str, Any]]:
@@ -691,12 +721,17 @@ def run_acquisition_loop(
     allow_lab_fixture: bool = False,
     # Fase B opt-in: multi-decision interpret per claim (default False — P0 freeze)
     batch_decisions: bool = False,
+    # Optional per-call interpret log (default off — no extra artifacts)
+    trace_interpret: bool = False,
 ) -> dict[str, Any]:
     """
     backend must be playwright for multi-step (session preserved).
     force_click_texts is experimental scaffolding — not a product site rule engine.
     When `trace` is provided, every observe/affordance/gap/decision/action is
     recorded to events.jsonl + artifacts (forensic, non-steering).
+    `trace_interpret` (default False) adds step_NNN_interpret_trace.json
+    with per (candidate × decision) calls. It does not change outcomes or
+    events.jsonl.
 
     When frozen_contract is set (production path):
       decisions come from the contract; STOP is decided by sufficiency_stop (code),
@@ -965,9 +1000,9 @@ def run_acquisition_loop(
 
         # Open #6: extract_candidates already applied the provisional budget
         # (max_candidates=3, max_units=6). Open #27 may splice one extra
-        # long-text candidate, so len(selected) can be 4. Do not recap here
-        # with a hardcoded 3 — that dropped spliced c3 in 20260917T102344Z
-        # before interpret ever saw the abstract.
+        # long-text candidate; Open #32 may splice one D2c text unit after
+        # HTML leaf replace. Do not recap here with a hardcoded 3 — that
+        # dropped spliced c3 in 20260917T102344Z before interpret.
         obs = candidates_to_observations(selected)
         if title:
             obs.insert(
@@ -1047,6 +1082,9 @@ def run_acquisition_loop(
             decisions, best_outcomes
         )
         t_interp0 = _time.monotonic()
+        interpret_calls: list[dict[str, Any]] | None = (
+            [] if trace_interpret else None
+        )
         if pending_decisions:
             pipe = _pipeline_on_obs(
                 entity=entity,
@@ -1057,6 +1095,7 @@ def run_acquisition_loop(
                 # Contract path: interpret whenever claims exist (CU is ranking only)
                 interpret_even_if_not_admitted=True,
                 batch_decisions=batch_decisions,
+                interpret_call_trace=interpret_calls,
             )
         else:
             # All decisions already satisfied — no interpret LLM calls this step.
@@ -1070,6 +1109,16 @@ def run_acquisition_loop(
                 "claim_n": sum(1 for o in obs if o.get("channel") == "candidate_claim"),
                 "skipped_interpretation_reason": "all_decisions_already_satisfied",
             }
+        if pending_decisions:
+            save_interpret_trace_artifact(
+                trace,
+                enabled=bool(trace_interpret),
+                step=step,
+                url=final_url,
+                surface=surface,
+                batch_decisions=bool(batch_decisions),
+                calls=interpret_calls,
+            )
         interp_duration = round(_time.monotonic() - t_interp0, 3)
         # Re-attach already-satisfied outcomes so this step's view is complete
         # (correctness: final merge still uses best_outcomes; this is for logs).

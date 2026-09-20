@@ -2431,6 +2431,13 @@ HTML leaf replace op `list_results` dropte de text-pool. Fix: splice
 één unrepresented D2c/glyph text-unit (T=3, geen kale digit-run).
 01/02/03/05/06 text-arm ongewijzigd. Geen live.
 
+## 2026-09-20 — `--trace-interpret` (infra, geen Open-item)
+
+Optionele `step_NNN_interpret_trace.json` per (candidate × decision).
+Default uit: return-dict en events.jsonl ongewijzigd. Flag aan:
+wiki 165815Z reconstructie toont leesbare calls (UNKNOWN zonder LLM).
+Niet in events.jsonl.
+
 
 
 
