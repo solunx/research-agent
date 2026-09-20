@@ -887,41 +887,58 @@ True. 01/02/03/05/06 HTML: 0 `sp_message_*`; first-timeout gate False.
 
 ---
 
-## 17. HTML-leaf replace dropte D2c-teksteenheden (Open #32)
+## 17. Packager-exclusiviteitsrisico (#27, #32)
 
-### Probleem
+Benoemde risicoklasse. Elke nieuwe `return pool_X` die `pool_Y` van
+dezelfde observe-stap **niet** merget of extend, moet deze toets
+doorstaan vóór merge naar main. Geen lexicon; twee clusteringen van
+hetzelfde snapshot.
 
-Wiki `165815Z` `result_wiki_brussels_population_20260919T165815Z.json`:
-`stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false`
-`population_figure=UNKNOWN`. Na SCROLL:
-`step_003_candidate_units.json` u0 bevat
-`Bevolkingsdichtheid 198.674 (01/01/2026)`.
-`step_003_claims.json` `claim_preview` = Atomium / Manneken Pis /
-Belgische Revolutie 1830. Planner STOP citeert u0; code `stop_rejected`.
+### Definitie
 
-### Diagnose (niet rank, niet #27-recap)
+**Exclusive replace:** packager/pool X wordt de enige input voor de
+volgende laag, terwijl pool Y (zelfde pagina, andere clustering of
+ander budget) content kan bevatten die X niet heeft.
 
-Text-arm `rank_candidates` houdt u0 als eerste (`block_index=0`).
-Interpret zag de HTML-top-3 omdat `extract_candidates` bij
-`surface=list_results` de text-pool **vervangt** (`html_leaf_should_replace_text`
-via href+digit_runs). 1830/1958 zijn geen D2c; "165 miljard" wél, maar
-dat is niet het infoboxcijfer. Claims n=4 = titel + 3 HTML-kaarten —
-geen tweede cap zoals #27 `102344Z`.
+**Niet deze klasse:** rank binnen één pool; char-cap op één snapshot
+(`prepare_html_for_snapshot`); overlay die na dismiss een **nieuw**
+snapshot neemt; Open #19 skip-satisfied; `_drop_strict_parent_candidates`
+(zelfde HTML-pool, parent⊃child).
 
-Zelfde *klasse* als #27: twee packagers, exclusieve budget. Andere gate.
+### Verplichte vragen (zelfde discipline als #27 / #32)
 
-### Afgewezen
+1. Kan de **vervangen** bron content hebben die de **vervangende** niet
+   heeft?
+2. Wordt dat verlies gecompenseerd (splice, fallback-gate, extend)?
+3. Is de detector structureel (lengte, glyph ∨ D2c), geen domeinwoord?
 
-- Bare `digit_run_count`-boost — Open #10 / D2c-discipline; identifiers
-  en jaartallen zouden winnen.
-- HTML-replace uitzetten — breekt arXiv/Coolblue leaf-lists (#24b).
-- Surface-classifier T=3 locken — dat is Open #10, niet deze splice.
+Nee op 2 → niet mergen zonder overleg. Geen stilzwijgend extra exclusive
+return.
 
-### Oplossing + trigger
+### Instantie #27 — tweede cap dropte spliced long-text (opgelost)
 
-Na HTML `select_top_candidates`: splice maximaal één text-candidate met
-≥ 3 **unrepresented** `line_is_price_like`-regels (glyph ∨ D2c).
-T=3 = zelfde drempel als #10, provisionally. Daarna geen recap.
+`select_top_candidates` / `package_candidate_units` top-K vult met
+action-first chrome; lange innerText-regel verliest. Live recapte
+daarna `candidates_to_observations(..., max_candidates=3)` en gooide
+`c3` weg. Vangnet: wrap + één long-splice + **geen tweede cap**.
+Uitwerking: §3. Tests: `evals/long_line_units/`.
+
+### Instantie #32 — HTML-leaf replace dropte D2c-text (opgelost)
+
+Wiki `165815Z`: `stop_reason=MAX_ACQUISITION_STEPS`
+`population_figure=UNKNOWN`. u0 had `198.674 (01/01/2026)`;
+`claim_preview` = Atomium / Manneken / Belgische Revolutie.
+Text-rank houdt u0 eerste — dus niet rank. Claims n=4 = titel + 3
+HTML-kaarten — dus niet #27-recap.
+
+`extract_candidates` bij `surface=list_results`: repeating leaf mag
+text **vervangen**. Landmark-kaarten wonnen via href+digit_runs
+(1830/1958 zijn geen D2c). Infobox zat alleen in de text-pool.
+
+Vangnet: na HTML `select_top` splice maximaal één text-candidate met
+≥ 3 **unrepresented** `line_is_price_like`-regels (glyph ∨ D2c). T=3
+provisionally, zelfde drempel als #10. "165 miljard" op Atomium is D2c
+maar blokkeert splice niet (unrepresented-vergelijking).
 
 ```476:482:candidates.py
     if html_cands and html_leaf_should_replace_text(html_cands):
@@ -933,12 +950,44 @@ T=3 = zelfde drempel als #10, provisionally. Daarna geen recap.
         return splice_unrepresented_price_like_text(chosen, raw)
 ```
 
-### Bewijs
+Afgewezen: kale `digit_run_count`; HTML-replace uitzetten (#24b); T=3
+locken (#10). Offline: `evals/claims_vs_units/`. Geen live.
 
-Offline reconstruct 165815Z: splice n=4, `198.674` in observations.
-01/02/03/05/06 text-arm ongewijzigd. 03 HTML-kaarten houden n=3; 05
-arXiv pagination < T=3. `evals/claims_vs_units/test_claims_vs_units_offline_v0.py`.
-Geen live.
+### Audit 2026-09-20 — overige exclusive returns (geen fix, geen #33)
+
+Doorzocht: `candidates.py`, `candidate_units.py`, `structural_observer.py`,
+`live_offer_state_slice.py`, `live_detail_slice.py`, `evidence_acquisition.py`.
+Geen nieuwe live-geraakte instantie. Geen Open-nummer zonder overleg.
+
+| Plek | Vervangt | Vangnet zoals #27/#32? | Oordeel |
+|------|----------|------------------------|---------|
+| `extract_candidates` HTML-leaf `return splice(html, raw)` | text-pool door HTML-kaarten | ja: #32 D2c-splice; chrome-only → text-fallback | **#32** |
+| `select_top_candidates` / `package_candidate_units` `chosen = ranked[:max_n]` | rest van dezelfde pool | ja: #27 long-splice (≥240 / `_LINE_CHAR_CAP`) | **#27** |
+| `candidates_to_observations` default `max_candidates=None` | — | ja: geen tweede cap; `max_units=len(selected)` | **#27** cap-sync |
+| `units_to_observations(..., max_units=6)` default | extra units als caller 6 hardcode | productie-pad zet `cap=len(selected)`. Recap hier is #27-regressie | **geen nieuw item**; contract: niet opnieuw hardcoden |
+| `live_offer_state_slice` `obs = candidates_to_observations(selected)` | hele-pagina `page_text_to_observations` | titel-insert; line_obs alleen als `surface != list_results` én `len(selected) < 2`; content-dekking via #27+#32 | **architectuur**, geen #33. Restant: op `list_results` komen page-lines nooit extra binnen |
+| HTML `repeating_only=True` in live `extract_candidates` | niet-herhalende DOM (infobox-tabel) | als replace-gate False → text-arm; als True → #32 splice (max 1) | deel van **#32** |
+| `html_leaf_should_replace_text` False | HTML door text | ja: chrome-only HTML valt terug | **#24b** fallback, niet exclusive-verlies van text |
+| `structural_observer.extract_for_arm` | text \| html \| html_b2 \| ax | A/B-script, niet het live-pad | **buiten productie** |
+| `html_b2` NCA | leaf-html | niet in `extract_candidates` live | **niet live** (`html_b2` blijft afgewezen) |
+| `_drop_strict_parent_candidates` | parent-HTML als child⊂parent | zelfde pool; unieke identity-eisen | **niet deze klasse** |
+| `_visible_text_lines` `[:24]` / unit `texts[:12]` | staart van één kaart | truncatie in één packager, geen tweede bron | **niet deze klasse** (budget) |
+| `prepare_html_for_snapshot` body-dan-cap | raw `page.content()` | input van HTML-arm; als HTML niet itemish → text-fallback | **niet deze klasse**; #24 laag A |
+| `live_detail_slice.page_text_to_observations` skip `len>240` | lange regels | lab-pad, niet CD. #27-wrap zit in candidate_units | **niet CD-productie** |
+| overlay-retry nieuwe snapshot | gefaalde observe | nieuw observe, geen twee packagers van dezelfde HTML | **niet deze klasse** |
+| `_pipeline_on_obs` / Open #19 pending_decisions | herinterpret van satisfied ids | outcome-skip, geen candidate-pool | **niet deze klasse** (#19) |
+
+**Bekende restanten van de vangnetten (geen nieuw Open-item):** #32 spliced
+maximaal **één** unrepresented D2c-unit — een tweede infobox-blok blijft
+achter. #27 spliced maximaal **één** long unit. Die caps zijn dezelfde
+soort bound als Open #6 / #10 (provisionally). Niet stretchen zonder
+meting.
+
+### Wat een toekomstige patch niet mag doen
+
+Een derde `if html_cands: return html_cands` (of ax/b2) zonder splice of
+zonder merge met de andere pool. Dat is automatisch deze klasse, ook als
+de gate “itemish” heet. Toets hier; bij twijfel overleg, geen stille #33.
 
 ---
 

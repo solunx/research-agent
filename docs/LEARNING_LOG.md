@@ -2438,6 +2438,15 @@ Default uit: return-dict en events.jsonl ongewijzigd. Flag aan:
 wiki 165815Z reconstructie toont leesbare calls (UNKNOWN zonder LLM).
 Niet in events.jsonl.
 
+## 2026-09-20 — Audit packager-exclusiviteit (geen fix, geen #33)
+
+Risicoklasse in `MECHANISM_NOTES.md` §17. Exclusive replace = pool X
+vervangt pool Y van dezelfde observe-stap zonder merge. Bekende
+instanties: #27 (tweede cap) en #32 (HTML-leaf). Overige returns in
+candidates / units / observer / live_offer / live_detail / acquisition
+zijn architectuur, truncatie, lab-pad of A/B — geen nieuw Open-item.
+Splice-caps blijven max 1. Geen live.
+
 
 
 
