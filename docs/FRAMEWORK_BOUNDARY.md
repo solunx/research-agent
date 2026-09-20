@@ -368,6 +368,7 @@ Coolblue `183956Z`/`190223Z`: laptop list set `detail_link=CONCRETE_PRODUCT_PAGE
 - **Trigger (structural, no lexicon):** `fetch_ok` AND `affordances_count==0` AND `candidate_units_count<=1` AND `text_chars < DEAD_SURFACE_TEXT_CHARS_MAX` (400, **provisional**, same class as Open #6 / #10). Stop `DEAD_SURFACE_NO_CONTENT` before `_pipeline_on_obs`.
 - **Not bol:** `131049Z` has 3 global links, 2 units, 1093 chars — stretching the predicate to catch bol collides with the 2–3 unit negative.
 - **Offline:** `evals/dead_surface/test_dead_surface_offline_v0.py`. Live TUI/bol only after user OK + `docker compose build`.
+- **Entity-as-claim (separate):** `page_text_to_observations` no longer adds `candidate_id` as `candidate_claim`. Task text is not page evidence. `entity` remains on `contract_meta` / observation `candidate_id`. Offline: `evals/entity_claim/test_entity_not_claim_offline_v0.py`.
 
 ---
 

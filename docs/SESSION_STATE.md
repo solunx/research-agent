@@ -15,7 +15,7 @@
 
 **Campagne 1 klaar** (`campaign1_generaliteit_20260919T111126Z`): 18 runs, **0/18** SATISFIED, 5 CIRCUIT_BREAK. **Niet herstarten.**
 
-**H-leak gediagnosticeerd.** FIX 1 **H-dead-surface** shipped (Open #29): `DEAD_SURFACE_NO_CONTENT` vóór interpret. TUI reconstruct dead; bol **niet** (3 aff / 2 units / 1093 chars — predicate niet rekken). 01/02/05/06 golden ongewijzigd. Entity-als-claim = FIX 2. Geen live zonder OK.
+**H-leak gediagnosticeerd.** FIX 1 **H-dead-surface** `82cae84` (Open #29). FIX 2 **entity-als-claim** shipped: geen `candidate_claim` meer van task-bold. `entity` blijft in `contract_meta`. Geen live TUI/bol zonder OK.
 
 **Open (top 3):**
 1. **#26** — pad 2 live `061149Z`/`064948Z`. #25 onder pad 2 **offline geverifieerd** (canonieke abs-reject op bind-stap: unbind wist `NOT_RELEVANT`; pad 2 wekt het niet opnieuw). **Niet sluiten:** exacte `083112Z`-merge houdt homepage-`NOT_RELEVANT` op `step=0` (zelfde label op abs bump't de stap niet). Geen merge-fix zonder overleg. 03-run1 nog list-SATISFIED.

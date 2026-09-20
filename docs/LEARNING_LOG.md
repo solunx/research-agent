@@ -2257,6 +2257,16 @@ Offline lock: `evals/h_leak/test_h_leak_offline_v0.py`. Geen productie-fix.
 
 Offline: `evals/dead_surface/test_dead_surface_offline_v0.py`. Geen live (AGENT_RULES). Entity-als-claim is FIX 2.
 
+## 2026-09-20 — FIX 2 entity-als-claim geen `candidate_claim`
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| `add(..., candidate_id, "identity", "entity")` is paginabewijs van taaktekst | Regel verwijderd. `candidate_id` blijft op observations voor logging | **TOEGEPAST** |
+| Dunne echte pagina + positief-klinkende entity gaat niet meer de interpret in | Thin wiki-achtige tekst + entity=`one concrete bookable`: claim texts zijn page lines; frase afwezig; `origin=entity` afwezig | Negatieve test groen |
+| 01/02/05/06 `entity` in contract_meta blijft | 01 `one concrete bookable`; 02 `SBH Monica Beach`; 05 paper-hint; 06 `English Wikipedia`. Golden `stop_reason` onaangeroerd | Geen regressie op logging |
+
+Offline: `evals/entity_claim/test_entity_not_claim_offline_v0.py` + `evals/h_leak/` (injectie-assert omgedraaid). Geen live.
+
 
 
 

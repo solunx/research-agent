@@ -132,4 +132,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26** niet sluiten (zie `docs/MECHANISM_NOTES.md` §10–§11). Campagne 1 **klaar**. FIX 1 **H-dead-surface** (Open #29): `DEAD_SURFACE_NO_CONTENT` vóór interpret; TUI reconstruct dead, bol niet (3 aff / 2 units / 1093). FIX 2 entity-als-claim volgt apart. Geen live TUI/bol zonder OK. Niet html_b2.
+Open **#26** niet sluiten (zie `docs/MECHANISM_NOTES.md` §10–§11). Campagne 1 **klaar**. FIX 1 **H-dead-surface** `82cae84` (TUI dead; bol niet). FIX 2 **entity-als-claim** verwijderd als `candidate_claim`. Live TUI+bol alleen na expliciete OK + `docker compose build`. Niet html_b2.

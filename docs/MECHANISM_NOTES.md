@@ -606,6 +606,10 @@ Interpret draaide tóch (entity-claim → `BOOKABLE_PACKAGE`).
 `err` / `text_chars<40`. Bij True: `DEAD_SURFACE_NO_CONTENT` **vóór**
 `_pipeline_on_obs` / `page_text_to_observations`.
 
+**Apart:** `page_text_to_observations` voegt `candidate_id` niet meer toe
+als `candidate_claim` (task-tekst is geen paginabewijs). `entity` blijft
+run-id in `contract_meta` / observation `candidate_id`.
+
 ### Bewijs
 
 Offline `evals/dead_surface/test_dead_surface_offline_v0.py`. TUI

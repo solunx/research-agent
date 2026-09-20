@@ -151,7 +151,8 @@ def page_text_to_observations(
         )
         oid += 1
 
-    add("candidate_claim", candidate_id, "identity", "entity")
+    # Task/entity hint is run identity, not page evidence. Do not emit it as
+    # candidate_claim (H-leak: TUI "one concrete bookable" → BOOKABLE_PACKAGE).
     if title:
         add("candidate_claim", title, "page_title", "browser_title")
 
