@@ -587,35 +587,151 @@ gewist: `test_083112Z_canonical_bound_reject_then_fill_path1_then_path2`.
 
 ### Probleem
 
-TUI `111126Z`: fetch OK, 0 affordances, 1 unit, 190 tekens. LLM koos 6×
-STOP; code reject'te die STOP omdat gaps bleven (`MAX_ACQUISITION_STEPS`).
-Interpret draaide tóch (entity-claim → `BOOKABLE_PACKAGE`).
+TUI `111126Z` (`result_tui_package_crete_20260919T111126Z.json`):
+`stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false`. Fetch
+OK, 0 affordances, 1 unit, 190 tekens. LLM koos 6× STOP; code reject'te
+die STOP omdat gaps bleven. Interpret draaide tóch. Stap 0
+`subject_instance=UNKNOWN`; stappen 1–5 `BOOKABLE_PACKAGE` (via
+mechanisme 13: entity-als-claim). HANDOVER / campagne 1: 6 identieke
+`stop_reason` + eerste gap tot circuit_break.
+
+Bol `131049Z` is **dezelfde faalklasse in de lus** (6× STOP →
+`MAX_ACQUISITION_STEPS`) maar **niet** deze predicate: aff=3, units=2,
+`text_chars=1093`. Ontwerp voor die restklasse staat in LEARNING_LOG
+2026-09-20 (H-dead-surface-2); niet gebouwd.
 
 ### Afgewezen
 
-- Lexicon op "Access Denied" / "IP blocked" — betekenis in code.
+- Lexicon op `"Access Denied"` / `"IP blocked"` / hostnamen — betekenis
+  of sitenaam in code.
 - Drempel rekken tot bol (3 global links, 2 units, 1093 tekens) — botst
-  met de verplichte negatieve test (2–3 units = niet dood).
+  met de verplichte 2–3-unit negatieve test (sparse-real / 06 wiki).
 - Contractvraag herschrijven — TUI-specifiek; lost de 6×-cyclus niet op.
+- LLM STOP honoreren terwijl gaps blijven — dat is juist de reject die
+  de lus eindeloos maakte.
 
 ### Oplossing + trigger
 
 `is_dead_surface`: `fetch_ok` én `affordances_count==0` én
 `candidate_units_count<=1` én `text_chars < DEAD_SURFACE_TEXT_CHARS_MAX`
-(400, **provisional**). FETCH_FAILED_OR_EMPTY blijft eigenaar van
-`err` / `text_chars<40`. Bij True: `DEAD_SURFACE_NO_CONTENT` **vóór**
-`_pipeline_on_obs` / `page_text_to_observations`.
+(400, **provisional**, zelfde klasse als Open #6 max_candidates).
+`FETCH_FAILED_OR_EMPTY` blijft eigenaar van `err` / `text_chars<40`.
+Bij True: `DEAD_SURFACE_NO_CONTENT` **vóór** `_pipeline_on_obs` /
+`page_text_to_observations` — geen interpret, geen entity-claim
+safety-net.
 
-**Apart:** `page_text_to_observations` voegt `candidate_id` niet meer toe
-als `candidate_claim` (task-tekst is geen paginabewijs). `entity` blijft
-run-id in `contract_meta` / observation `candidate_id`.
+**Trigger:** acquisition-loop, na `package_candidate_units`, vóór
+`candidates_to_observations`.
+
+```97:112:live_offer_state_slice.py
+    if not fetch_ok:
+        return False
+    try:
+        aff_n = int(affordances_count)
+        unit_n = int(candidate_units_count)
+        n_chars = int(text_chars)
+        cap = int(text_chars_max)
+    except (TypeError, ValueError):
+        return False
+    if aff_n != 0:
+        return False
+    if unit_n > 1:
+        return False
+    if n_chars < 0 or n_chars >= cap:
+        return False
+    return True
+```
+
+```812:817:live_offer_state_slice.py
+        if is_dead_surface(
+            fetch_ok=True,
+            affordances_count=len(affordances),
+            candidate_units_count=len(units),
+            text_chars=len(text),
+        ):
+```
+
+```860:869:live_offer_state_slice.py
+            ledger.set_stop(DEAD_SURFACE_STOP_REASON)
+            if trace:
+                trace.log_stop(DEAD_SURFACE_STOP_REASON)
+            print(
+                f"[acquisition] step={step} STOP {DEAD_SURFACE_STOP_REASON} "
+                f"aff={len(affordances)} units={len(units)} "
+                f"text_chars={len(text)} (no interpret)",
+                flush=True,
+            )
+            break
+```
+
+Commit `82cae84`. Entity-als-claim is **mechanisme 13**, niet deze
+predicate.
 
 ### Bewijs
 
-Offline `evals/dead_surface/test_dead_surface_offline_v0.py`. TUI
-reconstruct = dead. Bol reconstruct = niet dead (cite 3/2/1093). 01/02
-fixtures + 05/06 loop-stappen = niet dead. Golden `stop_reason` 01/02/05/06
-ongewijzigd in de result-JSON.
+Live-bug `111126Z`: `stop_reason=MAX_ACQUISITION_STEPS`
+`outcomes.subject_instance=BOOKABLE_PACKAGE`. Offline reconstruct TUI
+= dead; bol `131049Z` = niet dead (cite aff=3 / units=2 / chars=1093).
+01 `065415Z` / 02 `062828Z` / 05 `081459Z` / 06 `064738Z` golden
+`stop_reason` ongewijzigd. Tests:
+`evals/dead_surface/test_dead_surface_offline_v0.py`. Live TUI/bol
+retest: **niet** zonder expliciete OK.
+
+---
+
+## 13. Entity-hint is geen `candidate_claim` (H-leak FIX 2)
+
+### Probleem
+
+`extract_entity_hint` = eerste `**bold**` in `task.md`. Die string ging
+als observation de interpret in:
+
+`add("candidate_claim", candidate_id, "identity", "entity")`
+
+TUI-taak bold = `"one concrete bookable"`. Interpret las dat als
+paginabewijs → `subject_instance=BOOKABLE_PACKAGE` op een Access-Denied
+pagina. `111126Z` stappen 1–5. Candidate-unit wees de fragment terecht
+af; `interpret_even_if_not_admitted=True` interprette tóch zolang er
+`candidate_claim`s waren.
+
+### Afgewezen
+
+- Entity helemaal schrappen uit de run — `contract_meta.entity` en
+  observation `candidate_id` zijn logging/identiteit, geen bewijs.
+- Alleen TUI-frase blocken — lexicon / taak-specifiek.
+- `interpret_even_if_not_admitted=False` als “fix” — dat verandert
+  list/home interpret (andere faalklasse); de injectie blijft.
+- Mechanisme 12 stretchen tot bol om H-leak te maskeren — bol injecteert
+  de entity niet; TUI-H is een observation-kanaal, geen surface-count.
+
+### Oplossing + trigger
+
+Regel verwijderd. `page_text_to_observations` emit’t alleen paginatekst:
+titel (`origin=browser_title`) en bodyregels (`origin=browser_inner_text`).
+`entity` blijft `candidate_id` op die observations en in `contract_meta`.
+
+**Trigger:** altijd in `page_text_to_observations`; geen
+`channel=candidate_claim` waarvan `text` de task-bold is.
+
+```154:157:live_detail_slice.py
+    # Task/entity hint is run identity, not page evidence. Do not emit it as
+    # candidate_claim (H-leak: TUI "one concrete bookable" → BOOKABLE_PACKAGE).
+    if title:
+        add("candidate_claim", title, "page_title", "browser_title")
+```
+
+Commit `2f030e3`.
+
+### Bewijs
+
+Live-bug `111126Z`: `outcomes.subject_instance=BOOKABLE_PACKAGE` terwijl
+de pagina geen bookable package toont. Offline
+`evals/entity_claim/test_entity_not_claim_offline_v0.py`: dunne
+wiki-achtige tekst + entity=`one concrete bookable` → claim-texts zijn
+page lines; frase afwezig; `origin=entity` afwezig.
+`evals/h_leak/test_h_leak_offline_v0.py` injectie-assert omgedraaid.
+01/02/05/06: `entity` in `contract_meta` blijft; golden `stop_reason`
+onaangeroerd. Geen live zonder OK.
 
 ---
 
