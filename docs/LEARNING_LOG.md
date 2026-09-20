@@ -2394,6 +2394,14 @@ het exacte 083112Z-pad (homepage `NOT_RELEVANT` step=0, abs dezelfde string
 step=3, unbind, pad 2). Snapshot: `subject_instance` blijft step=0.
 **Geen correctness-test.** `_merge_outcomes` / resetpaden ongewijzigd.
 
+## 2026-09-20 — Disk-check vóór middagcampagne (geen code)
+
+`evals/contract_driven/` **53M** (120 runs, mean 0.39 MB, max 1.8 MB).
+`evals/campaigns/` **56K**. Host **1.5T** vrij. HTML: 121 files / 15.6 MB,
+cap 200k/stap. `--min-free-gb 8` is één start-check ≈ 4000 worst-case runs;
+6 middag-jobs ≈ 12 MB. Marge niet krap. Voorstel HTML-only-last/fail: **niet**
+implementeren zonder OK (TUI/bol-bewijs zit in die snapshots).
+
 
 
 

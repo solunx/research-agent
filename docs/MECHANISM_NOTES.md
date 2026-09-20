@@ -871,3 +871,72 @@ Per-run output blijft `evals/contract_driven/<UTC-stamp>_<taak>/` zoals
 
 **Niet** in deze nota: een taken-lijst of N vastleggen. Dat is een
 apart bericht.
+
+---
+
+## Appendix — schijfruimte vóór onbewaakte campagne (2026-09-20)
+
+Geen codewijziging. Meting op de host die de traces houdt.
+
+### Probleem
+
+Fase 2 schrijft `step_NNN_page.html` (cap 200k in `trace_session.py`).
+`--min-free-gb` default **8** is één check bij **start**, niet per job.
+Vraag: is 8 GiB nog realistisch als HTML groter is dan pre-Fase-2
+text-only traces?
+
+### Meting (geen live)
+
+```
+evals/contract_driven/   53M   (120 run-dirs)
+evals/campaigns/         56K   (meta; 52K campaign1)
+host df /                1.5T free / 1.8T  (16% used)
+```
+
+| | |
+|--|--|
+| gemiddelde run | 0.39 MB |
+| mediaan run | 0.30 MB |
+| max run | 1.8 MB (`173006Z` wiki, 7× html) |
+| html-files | 121, totaal 15.6 MB |
+| runs mét html | 33/120 (oudere dirs pre-Fase 2) |
+| gemiddelde `*_page.html` | 126 KiB |
+| max html-file | 202 KiB (trace-cap 200k + truncate-comment) |
+
+Worst-case per run: 6 stappen × 200 KiB html ≈ 1.2 MB html + loop/result
+≈ **< 2 MB**. Default-marge 8 GiB ≈ 4000 zulke runs. Middag N=3+3 = 6
+jobs ≈ **12 MB**. Campagne 1 (18 runs) paste in dezelfde 53M-boom.
+
+### Trigger (bestaand, niet gewijzigd)
+
+```87:94:scripts/run_task_campaign_tmux_v0.sh
+# Disk: available KiB on the filesystem that holds --outdir.
+avail_kb="$(df -Pk "$ROOT" | awk 'NR==2 {print $4}')"
+need_kb=$((MIN_FREE_GB * 1024 * 1024))
+if [[ "${avail_kb:-0}" -lt "$need_kb" ]]; then
+  echo "DISK STOP: ${avail_kb} KiB free < --min-free-gb ${MIN_FREE_GB} GiB (traces accumulate)." >&2
+  exit 3
+fi
+```
+
+`--min-free-gb` is **ruim**, niet krap. Geen per-job hercheck. HTML-cap
+in de trace:
+
+```153:157:trace_session.py
+        if html:
+            html_art = self.save_artifact(
+                f"step_{self._step:03d}_page.html",
+                html if len(html) <= 200_000 else html[:200_000] + f"<!-- truncated +{len(html)-200000} -->",
+            )
+```
+
+### Voorstel (niet implementeren zonder OK)
+
+Marge is **niet** te krap voor een middagcampagne. HTML weglaten is
+geen schijfnood. Optioneel, alleen als traces kleiner moeten voor
+rsync/backup: `step_*_page.html` bewaren bij **laatste stap** of bij
+`stop_reason` ≠ `CONTRACT_SATISFIED` / `DEAD_SURFACE_NO_CONTENT`;
+tussentijdse stappen alleen `page_text`. Niet doen vóór de TUI/bol-
+hertest — die HTML is juist het bewijs van dead-surface vs bol-block.
+
+Niet voorgesteld: `--min-free-gb` verlagen. 8 GiB mag blijven.
