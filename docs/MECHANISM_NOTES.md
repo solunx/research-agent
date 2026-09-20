@@ -563,7 +563,7 @@ Geen patch zonder ontwerp.
 
 ### Citaat + bewijs
 
-```251:256:live_offer_state_slice.py
+```290:295:live_offer_state_slice.py
         if (
             cur is None
             or str(cur.get("outcome") or "") in _WEAK
@@ -577,9 +577,15 @@ Exacte reconstructie uit
 `steps_contract_flags`: stap 0 én stap 3 `subject_instance=NOT_RELEVANT`
 → na merge `step=0`. Unbind+pad 2 laten het staan. Abs-only labels op
 stap 3 (`access_status=OPEN_ACCESS`, `recency=IN_RANGE`) vallen wél weg.
-Test: `test_083112Z_exact_merge_homepage_not_relevant_survives_unbind`.
-Canonieke abs-reject op `step=3` (geen homepage-zelfde-string) **wordt**
-gewist: `test_083112Z_canonical_bound_reject_then_fill_path1_then_path2`.
+
+**Known-current-behavior, geen correctness-test:**
+`test_known_current_behavior_not_correctness_083112Z_merge_step_stamp`
+bevriest `_fp(after2)` als
+`SNAPSHOT_083112Z_AFTER_PATH1_PATH2`. Groen = “gedrag ongewijzigd”,
+niet “discrepantie is weg”. Een toekomstige merge-fix **moet** deze
+test opzettelijk rood maken en de snapshot herschrijven. Canonieke
+abs-reject op `step=3` (homepage op UNKNOWN gezet) **wordt** gewist:
+`test_083112Z_canonical_bound_reject_then_fill_path1_then_path2`.
 
 ---
 

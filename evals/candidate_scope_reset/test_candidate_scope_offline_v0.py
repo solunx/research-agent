@@ -2,7 +2,9 @@
 """
 Offline tests for Open #26 — candidate-scoped best_outcomes reset.
 
-No browser, no LLM, no GPU. Pure apply_candidate_scope_after_action.
+No browser, no LLM, no GPU. Path 1 (`apply_candidate_scope_after_action`)
+and path 2 (`apply_fill_query_round_reset`), including the composed
+#25 sequence (bound abs NOT_RELEVANT → FILL) against 083112Z artifacts.
 """
 from __future__ import annotations
 
@@ -14,9 +16,22 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from live_offer_state_slice import (  # noqa: E402
+    _merge_outcomes,
     apply_candidate_scope_after_action,
     apply_fill_query_round_reset,
 )
+
+RESULT_083112Z = (
+    ROOT
+    / "evals/contract_driven/20260917T083112Z_05_web_literature_abstract"
+    / "result_05_web_literature_abstract_20260917T083112Z.json"
+)
+ABS_083112Z = "https://arxiv.org/abs/2609.19059"
+SEARCH_083112Z = (
+    "https://arxiv.org/search/?query=large+language+model+agents+tool+use"
+)
+Q1_083112Z = "large language model agents tool use"
+Q2_083112Z = "LLM agents tool use"
 
 DECISIONS_05 = [
     {"id": "subject_instance", "required_for_eligibility": ["RELEVANT"]},
@@ -42,6 +57,60 @@ DECISIONS_06 = [
 def _fp(best: dict) -> str:
     rows = {k: {"outcome": v.get("outcome"), "step": v.get("step")} for k, v in sorted(best.items())}
     return json.dumps(rows, ensure_ascii=False, sort_keys=True)
+
+
+def _step_outcomes_083112Z() -> dict[int, dict[str, str]]:
+    raw = json.loads(RESULT_083112Z.read_text(encoding="utf-8"))
+    out: dict[int, dict[str, str]] = {}
+    for rec in raw["steps_contract_flags"]:
+        out[int(rec["step"])] = dict(rec["outcomes"])
+    return out
+
+
+def _bind_abs(*, best: dict, next_step: int):
+    """Current-code bind: abs href in preferred_item_links (post-#24b)."""
+    return apply_candidate_scope_after_action(
+        best_outcomes=best,
+        active_candidate_path=None,
+        candidate_bound_step=None,
+        action_class="OPEN_URL",
+        target_href=ABS_083112Z,
+        page_url_before=SEARCH_083112Z,
+        new_url=ABS_083112Z,
+        ok=True,
+        surface_before="list_results",
+        preferred_item_links=[{"text": "arXiv:2609.19059", "href": ABS_083112Z}],
+        decisions=DECISIONS_05,
+        next_step=next_step,
+    )
+
+
+def _loop_fill_after_bound(*, best, path, bound_step, next_step: int):
+    """Same order as live_offer_state_slice: path 1 then path 2."""
+    scoped, new_path, new_bound, ev1 = apply_candidate_scope_after_action(
+        best_outcomes=best,
+        active_candidate_path=path,
+        candidate_bound_step=bound_step,
+        action_class="FILL_AND_SUBMIT",
+        target_href=None,
+        page_url_before=ABS_083112Z,
+        new_url="https://arxiv.org/search/?query=LLM+agents+tool+use",
+        ok=True,
+        surface_before="list_results",
+        preferred_item_links=[],
+        decisions=DECISIONS_05,
+        next_step=next_step,
+    )
+    final, last_q, last_st, ev2 = apply_fill_query_round_reset(
+        best_outcomes=scoped,
+        action_class="FILL_AND_SUBMIT",
+        query_text=Q2_083112Z,
+        last_fill_query_text=Q1_083112Z,
+        last_fill_result_step=2,
+        next_step=next_step,
+        ok=True,
+    )
+    return scoped, ev1, final, ev2, new_path, last_q, last_st
 
 
 def test_unbind_after_reject_like_083112Z():
@@ -463,6 +532,165 @@ def test_reset_keeps_decision_keys_as_unknown_on_empty_pool():
     )
 
 
+def test_083112Z_canonical_bound_reject_then_fill_path1_then_path2():
+    """#25 under path 2: abs NOT_RELEVANT recorded at bind-step, then new FILL.
+
+    Homepage labels left UNKNOWN so merge writes the abs reject at step 3
+    (the existing unbind tests). Loop order = path 1 then path 2.
+    """
+    steps = _step_outcomes_083112Z()
+    best: dict = {}
+    for st in (0, 1, 2):
+        oc = dict(steps[st])
+        if st == 0:
+            oc["subject_instance"] = "UNKNOWN"
+            oc["title_extracted"] = "UNKNOWN"
+            oc["claim_extracted"] = "UNKNOWN"
+            oc["url_extracted"] = "UNKNOWN"
+        best = _merge_outcomes(best, oc, st)
+    best, path, bound, bev = _bind_abs(best=best, next_step=3)
+    assert bev == "bind" and path == "/abs/2609.19059" and bound == 3
+    best = _merge_outcomes(best, steps[3], 3)
+    assert best["subject_instance"] == {"outcome": "NOT_RELEVANT", "step": 3}
+    assert best["access_status"]["outcome"] == "OPEN_ACCESS"
+    assert best["recency"]["outcome"] == "IN_RANGE"
+    assert best["year_venue_extracted"]["outcome"] == "EXTRACTED"
+    assert best["source_site"] == {"outcome": "ARXIV", "step": 2}
+
+    after1, ev1, after2, ev2, new_path, last_q, last_st = _loop_fill_after_bound(
+        best=best, path=path, bound_step=bound, next_step=4
+    )
+    assert ev1 == "unbind", ev1
+    assert new_path is None
+    assert "subject_instance" not in after1
+    assert "access_status" not in after1
+    assert "recency" not in after1
+    assert "year_venue_extracted" not in after1
+    assert after1["source_site"] == {"outcome": "ARXIV", "step": 2}
+
+    assert ev2 == "search_round_reset", ev2
+    assert last_q == "llm agents tool use" and last_st == 4
+    assert "subject_instance" not in after2
+    assert "access_status" not in after2
+    assert after2["source_site"]["outcome"] == "UNKNOWN"
+    print(
+        "OK test_083112Z_canonical_bound_reject_then_fill_path1_then_path2 "
+        f"path1={ev1} path2={ev2} subject_absent={('subject_instance' not in after2)} "
+        f"source_site={after2['source_site']['outcome']}"
+    )
+
+
+def test_083112Z_exact_merge_homepage_not_relevant_survives_unbind():
+    """Measurement, not a pass-criterion for #25.
+
+    Raw 083112Z steps: homepage subject_instance=NOT_RELEVANT (step 0) and
+    abs the same label. _merge_outcomes does not bump step on equal concrete
+    strings, so unbind (drop step>=3) and path 2 (weaken step>=2) leave it.
+    Path 2 did not cause this; do not patch _merge_outcomes here.
+    """
+    steps = _step_outcomes_083112Z()
+    assert steps[0]["subject_instance"] == "NOT_RELEVANT"
+    assert steps[3]["subject_instance"] == "NOT_RELEVANT"
+    best: dict = {}
+    for st in (0, 1, 2):
+        best = _merge_outcomes(best, steps[st], st)
+    best, path, bound, bev = _bind_abs(best=best, next_step=3)
+    assert bev == "bind"
+    best = _merge_outcomes(best, steps[3], 3)
+    assert best["subject_instance"] == {"outcome": "NOT_RELEVANT", "step": 0}, best[
+        "subject_instance"
+    ]
+    after1, ev1, after2, ev2, _, _, _ = _loop_fill_after_bound(
+        best=best, path=path, bound_step=bound, next_step=4
+    )
+    assert ev1 == "unbind"
+    assert ev2 == "search_round_reset"
+    assert after1["subject_instance"] == {"outcome": "NOT_RELEVANT", "step": 0}
+    assert after2["subject_instance"] == {"outcome": "NOT_RELEVANT", "step": 0}
+    assert "access_status" not in after1 and "recency" not in after1
+    assert after1["source_site"]["outcome"] == "ARXIV"
+    assert after2["source_site"]["outcome"] == "UNKNOWN"
+    print(
+        "OK test_083112Z_exact_merge_homepage_not_relevant_survives_unbind "
+        f"subject_step={after2['subject_instance']['step']} "
+        f"path1_dropped_abs_labels={('access_status' not in after1)}"
+    )
+
+
+SNAPSHOT_083112Z_AFTER_PATH1_PATH2 = (
+    '{"authors_extracted": {"outcome": "UNKNOWN", "step": 4}, '
+    '"claim_extracted": {"outcome": "NOT_VISIBLE", "step": 0}, '
+    '"source_site": {"outcome": "UNKNOWN", "step": 4}, '
+    '"subject_instance": {"outcome": "NOT_RELEVANT", "step": 0}, '
+    '"title_extracted": {"outcome": "NOT_VISIBLE", "step": 0}, '
+    '"url_extracted": {"outcome": "NOT_VISIBLE", "step": 0}}'
+)
+
+
+def test_known_current_behavior_not_correctness_083112Z_merge_step_stamp():
+    """known-current-behavior test, niet een correctness-test.
+
+    Pins the 083112Z merge+unbind+path-2 result as a baseline snapshot.
+    Homepage subject_instance=NOT_RELEVANT at step=0, abs the same string
+    at step=3, bind, unbind, then path-2 weaken. Current _merge_outcomes
+    does not bump step on a repeated concrete label, so step=0 survives
+    both resets. A future merge-step fix MUST fail this test on purpose
+    (snapshot diff), not silently. Do not treat a green run as "the
+    discrepancy is gone" unless the snapshot was deliberately rewritten.
+    """
+    steps = _step_outcomes_083112Z()
+    assert steps[0]["subject_instance"] == "NOT_RELEVANT"
+    assert steps[3]["subject_instance"] == "NOT_RELEVANT"
+    best: dict = {}
+    for st in (0, 1, 2):
+        best = _merge_outcomes(best, steps[st], st)
+    best, path, bound, bev = _bind_abs(best=best, next_step=3)
+    assert bev == "bind"
+    best = _merge_outcomes(best, steps[3], 3)
+    after1, ev1, after2, ev2, _, _, _ = _loop_fill_after_bound(
+        best=best, path=path, bound_step=bound, next_step=4
+    )
+    assert ev1 == "unbind" and ev2 == "search_round_reset"
+    got = _fp(after2)
+    assert got == SNAPSHOT_083112Z_AFTER_PATH1_PATH2, (
+        "known-current-behavior snapshot changed — if this is an intentional "
+        "merge/reset fix, rewrite SNAPSHOT_083112Z_AFTER_PATH1_PATH2; "
+        f"got={got}"
+    )
+    print(
+        "OK test_known_current_behavior_not_correctness_083112Z_merge_step_stamp "
+        f"snapshot={got}"
+    )
+
+
+def test_083112Z_step0_site_label_survives_composed_fill():
+    """(b) Path 2 must not wipe a pre-search-round confirming label."""
+    best = {
+        "source_site": {"outcome": "ARXIV", "step": 0},
+        "subject_instance": {"outcome": "NOT_RELEVANT", "step": 3},
+        "access_status": {"outcome": "OPEN_ACCESS", "step": 3},
+        "title_extracted": {"outcome": "NOT_VISIBLE", "step": 2},
+    }
+    after1, ev1, after2, ev2, new_path, _, _ = _loop_fill_after_bound(
+        best=best,
+        path="/abs/2609.19059",
+        bound_step=3,
+        next_step=4,
+    )
+    assert ev1 == "unbind" and ev2 == "search_round_reset"
+    assert new_path is None
+    assert "subject_instance" not in after1
+    assert "subject_instance" not in after2
+    assert after1["source_site"] == {"outcome": "ARXIV", "step": 0}
+    assert after2["source_site"] == {"outcome": "ARXIV", "step": 0}
+    assert after2["title_extracted"]["outcome"] == "UNKNOWN"
+    print(
+        "OK test_083112Z_step0_site_label_survives_composed_fill "
+        f"source_site={after2['source_site']['outcome']} "
+        f"title={after2['title_extracted']['outcome']}"
+    )
+
+
 def main():
     test_unbind_after_reject_like_083112Z()
     test_fill_unbinds_bound_candidate()
@@ -476,6 +704,10 @@ def main():
     test_05_fill1_only_does_not_wipe()
     test_coolblue_refine_drops_list_pool_keeps_step0()
     test_reset_keeps_decision_keys_as_unknown_on_empty_pool()
+    test_083112Z_canonical_bound_reject_then_fill_path1_then_path2()
+    test_083112Z_exact_merge_homepage_not_relevant_survives_unbind()
+    test_known_current_behavior_not_correctness_083112Z_merge_step_stamp()
+    test_083112Z_step0_site_label_survives_composed_fill()
     print("\nALL OFFLINE TESTS PASSED")
 
 

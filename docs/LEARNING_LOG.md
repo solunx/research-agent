@@ -2159,7 +2159,7 @@ Pad 1 `unbind`: `subject_instance` / `access_status` / `recency` / `year_venue_e
 Step-0 `source_site=ARXIV` overleeft pad 1 **en** pad 2. Step-2 search-pool (`source_site` van de vorige query) weaken't pad 2 naar `UNKNOWN` — dat is pad-2-semantiek, niet een tweede delete van `NOT_RELEVANT`.
 
 ### Discrepantie (geen fix)
-Exacte `_merge_outcomes` op die `steps_contract_flags`: abs dezelfde `NOT_RELEVANT` bump't `step` niet → blijft `step=0`. Unbind (`step>=3`) en pad 2 (`step>=2`) laten homepage-`NOT_RELEVANT` staan. Abs-only confirming labels (step 3) vallen wél weg. Merge-kern, niet pad 2. Tests in `evals/candidate_scope_reset/test_candidate_scope_offline_v0.py`. #26 niet sluiten.
+Exacte `_merge_outcomes` op die `steps_contract_flags`: abs dezelfde `NOT_RELEVANT` bump't `step` niet → blijft `step=0`. Unbind (`step>=3`) en pad 2 (`step>=2`) laten homepage-`NOT_RELEVANT` staan. Abs-only confirming labels (step 3) vallen wél weg. Merge-kern, niet pad 2. Baseline-snapshot (geen correctness-test): `test_known_current_behavior_not_correctness_083112Z_merge_step_stamp`. #26 niet sluiten.
 
 ## 2026-09-19 — Campagne 1 generaliteit: taken + synthese `20260919T110338Z`
 
@@ -2386,6 +2386,13 @@ definitions. Tien contracten (01/02/03/05/06 + vijf campagne): outcomes zijn
 `SNAKE_CASE`; Path B-risico zit in de **vraag** (bookable package, RTX 4070,
 LLM agents, AirPods, Brussels) plus korte Engelse enum-tokens (`RELEVANT`,
 `VALID`, `CRETE`). Geen live, geen prompt-wijziging.
+
+## 2026-09-20 — #26 known-current-behavior snapshot (geen merge-fix)
+
+`test_known_current_behavior_not_correctness_083112Z_merge_step_stamp` bevriest
+het exacte 083112Z-pad (homepage `NOT_RELEVANT` step=0, abs dezelfde string
+step=3, unbind, pad 2). Snapshot: `subject_instance` blijft step=0.
+**Geen correctness-test.** `_merge_outcomes` / resetpaden ongewijzigd.
 
 
 
