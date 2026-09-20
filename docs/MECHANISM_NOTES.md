@@ -741,6 +741,77 @@ onaangeroerd. Geen live zonder OK.
 
 ---
 
+## 15. Dead surface 2a — 0 same-host http(s) (Open #30)
+
+### Probleem
+
+Bol `131049Z`: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false`.
+Fetch OK, 3 global links, 2 units, 1093 tekens. Titel `"bol"`. Affordances:
+`mailto:customerservice@bol.com`, `https://whatismyip.akamai.com/`,
+`https://developers.bol.com/` — geen same-host http(s) t.o.v.
+`https://www.bol.com/`. FIX 1 (#29) eist aff==0 ∧ units≤1 ∧ chars<400.
+
+### Afgewezen
+
+- 2b digit-tokens `403`/`404`/`429` — aparte discussie (lexicon vs
+  tekenklasse); bol heeft die tokens niet.
+- Units≤2 zonder same-host-filter — botst met 06 / sparse-real.
+- Sitenaam `bol.com` / string `"blocked"` — lexicon.
+- FIX 1 stretchen — TUI-stop_reason zou bol niet onderscheiden.
+
+### Oplossing + trigger
+
+`is_dead_surface_no_same_host`: `fetch_ok` én **niet** #29 én 0 http(s)
+affordances met `urlparse(href).netloc == urlparse(final_url).netloc`
+én `units <= 2` (provisional). mailto/tel/andere host tellen niet.
+Stop `DEAD_SURFACE_NO_SAME_HOST_CONTENT` vóór interpret.
+
+**Contactpagina-grens (aanvaard):** 2 units + alleen mailto = 2a-dead.
+Deze lus navigeert via same-host http(s). False-positive: die twee
+units bevatten het antwoord al (geen interpret). Escape: 3+ units of
+≥1 same-host http-href.
+
+**Trigger:** acquisition-loop na `package_candidate_units`, ná #29-check.
+
+```176:188:live_offer_state_slice.py
+    if not fetch_ok:
+        return False
+    if first_order_dead:
+        return False
+    try:
+        unit_n = int(candidate_units_count)
+        cap = int(max_units)
+    except (TypeError, ValueError):
+        return False
+    if unit_n > cap:
+        return False
+```
+
+```889:901:live_offer_state_slice.py
+        dead1 = is_dead_surface(
+            fetch_ok=True,
+            affordances_count=len(affordances),
+            candidate_units_count=len(units),
+            text_chars=len(text),
+        )
+        dead2 = is_dead_surface_no_same_host(
+            fetch_ok=True,
+            page_url=final_url,
+            affordances=affordances,
+            candidate_units_count=len(units),
+            first_order_dead=dead1,
+        )
+
+### Bewijs
+
+Bol reconstruct `131049Z`: 2a True, #29 False. 06 `064738Z`: 60 aff,
+33 same-host http, 2a False. TUI blijft #29. 01/02/03/05 + marktplaats /
+SS / wiki-BXL: 2a False.
+`evals/dead_surface/test_dead_surface_same_host_offline_v0.py`.
+Geen live zonder OK.
+
+---
+
 ## 14. Path B — contractvraag + outcome-enum in de interpret-prompt (NIET GEFIXT)
 
 Audit 2026-09-20. Geen codewijziging. Path A was task-bold als

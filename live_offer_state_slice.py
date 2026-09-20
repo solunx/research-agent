@@ -78,6 +78,10 @@ _PRICE_LIKE_LIST_THRESHOLD = 3  # provisional; see Open #10 in FRAMEWORK_BOUNDAR
 # FETCH_FAILED_OR_EMPTY already owns err or text_chars < 40.
 DEAD_SURFACE_TEXT_CHARS_MAX = 400  # provisional
 DEAD_SURFACE_STOP_REASON = "DEAD_SURFACE_NO_CONTENT"
+# Open #30 (2a): same-host http(s) affordance count. Distinct stop_reason
+# from #29 so campaign analysis can tell TUI-empty from bol-block.
+DEAD_SURFACE_NO_SAME_HOST_STOP_REASON = "DEAD_SURFACE_NO_SAME_HOST_CONTENT"
+DEAD_SURFACE_NO_SAME_HOST_MAX_UNITS = 2  # provisional; Task A 2a
 
 
 def is_dead_surface(
@@ -110,6 +114,79 @@ def is_dead_surface(
     if n_chars < 0 or n_chars >= cap:
         return False
     return True
+
+
+def _http_netloc(url: str) -> str:
+    """Host of an http(s) URL. Empty for mailto/tel/javascript/relative-without-base."""
+    try:
+        p = urlparse(str(url or "").strip())
+    except Exception:
+        return ""
+    if p.scheme not in ("http", "https"):
+        return ""
+    return (p.netloc or "").lower()
+
+
+def same_host_http_affordance_count(
+    *,
+    page_url: str,
+    affordances: list[dict[str, Any]] | None,
+) -> int:
+    """How many affordance hrefs are http(s) on the same host as page_url.
+
+    mailto / tel / javascript / empty / other hosts do not count.
+    Relative hrefs are resolved against page_url. Host equality is
+    urlparse.netloc — no www-stripping, no site-name list.
+    """
+    host = _http_netloc(page_url)
+    if not host:
+        return 0
+    n = 0
+    for raw in affordances or []:
+        if not isinstance(raw, dict):
+            continue
+        href = str(raw.get("href") or "").strip()
+        if not href:
+            continue
+        try:
+            abs_href = urljoin(page_url or "", href)
+        except Exception:
+            abs_href = href
+        other = _http_netloc(abs_href)
+        if other and other == host:
+            n += 1
+    return n
+
+
+def is_dead_surface_no_same_host(
+    *,
+    fetch_ok: bool,
+    page_url: str,
+    affordances: list[dict[str, Any]] | None,
+    candidate_units_count: int,
+    first_order_dead: bool = False,
+    max_units: int = DEAD_SURFACE_NO_SAME_HOST_MAX_UNITS,
+) -> bool:
+    """Open #30 / 2a. Second-order dead surface: no same-host http(s) navigation.
+
+    True when fetch succeeded AND first-order #29 did not already fire AND
+    zero http(s) affordances share page_url's host AND units <= max_units
+    (provisional 2). Bol 131049Z matches; wiki 06 must not.
+    """
+    if not fetch_ok:
+        return False
+    if first_order_dead:
+        return False
+    try:
+        unit_n = int(candidate_units_count)
+        cap = int(max_units)
+    except (TypeError, ValueError):
+        return False
+    if unit_n > cap:
+        return False
+    return same_host_http_affordance_count(
+        page_url=page_url, affordances=affordances
+    ) == 0
 
 
 def _classify_surface(
@@ -809,12 +886,29 @@ def run_acquisition_loop(
         # Code terminal BEFORE interpret / entity-claim safety-net. LLM STOP
         # while gaps remain is rejected; this is the structural empty-page
         # equivalent of FETCH_FAILED_OR_EMPTY (fetch itself succeeded).
-        if is_dead_surface(
+        dead1 = is_dead_surface(
             fetch_ok=True,
             affordances_count=len(affordances),
             candidate_units_count=len(units),
             text_chars=len(text),
-        ):
+        )
+        dead2 = is_dead_surface_no_same_host(
+            fetch_ok=True,
+            page_url=final_url,
+            affordances=affordances,
+            candidate_units_count=len(units),
+            first_order_dead=dead1,
+        )
+        if dead1 or dead2:
+            stop_reason = (
+                DEAD_SURFACE_STOP_REASON if dead1 else DEAD_SURFACE_NO_SAME_HOST_STOP_REASON
+            )
+            skip_why = (
+                "dead_surface_no_content" if dead1 else "dead_surface_no_same_host"
+            )
+            same_host_n = same_host_http_affordance_count(
+                page_url=final_url, affordances=affordances
+            )
             if trace:
                 try:
                     from candidates import candidates_to_jsonable
@@ -840,7 +934,7 @@ def run_acquisition_loop(
                 "text_chars": len(text),
                 "candidate_unit": None,
                 "interpreted": False,
-                "skipped_interpretation_reason": "dead_surface_no_content",
+                "skipped_interpretation_reason": skip_why,
                 "claim_n": 0,
                 "outcomes": {},
                 "eligible": False,
@@ -855,15 +949,16 @@ def run_acquisition_loop(
                 "candidate_units_n": len(units),
                 "preferred_item_links_n": len(preferred_links),
                 "unit_preview": unit_preview[:4],
+                "same_host_http_affordance_n": same_host_n,
             }
             steps_log.append(step_rec)
-            ledger.set_stop(DEAD_SURFACE_STOP_REASON)
+            ledger.set_stop(stop_reason)
             if trace:
-                trace.log_stop(DEAD_SURFACE_STOP_REASON)
+                trace.log_stop(stop_reason)
             print(
-                f"[acquisition] step={step} STOP {DEAD_SURFACE_STOP_REASON} "
-                f"aff={len(affordances)} units={len(units)} "
-                f"text_chars={len(text)} (no interpret)",
+                f"[acquisition] step={step} STOP {stop_reason} "
+                f"aff={len(affordances)} same_host_http={same_host_n} "
+                f"units={len(units)} text_chars={len(text)} (no interpret)",
                 flush=True,
             )
             break

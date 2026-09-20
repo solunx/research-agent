@@ -2409,6 +2409,13 @@ Twee tmux-commando's in `MECHANISM_NOTES.md` appendix: `middag_tui_dead` N=3
 `MAX_ACQUISITION_STEPS` / FETCH — bekende grens, geen regressie). Reserve
 T2/T3 E2/E3 C1 niet op de command line. Wacht op `ja, start` + sessienaam.
 
+## 2026-09-20 — Open #30 dead-surface 2a (same-host http)
+
+`is_dead_surface_no_same_host`: fetch_ok ∧ niet #29 ∧ 0 same-host http(s) ∧
+units≤2. Stop `DEAD_SURFACE_NO_SAME_HOST_CONTENT`. Bol `131049Z` triggert;
+06 33 same-host http niet. Contact mailto-only units=2 = aanvaard 2a-dead.
+Geen 2b. Geen live.
+
 
 
 

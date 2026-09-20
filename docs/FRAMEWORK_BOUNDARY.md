@@ -366,9 +366,18 @@ Coolblue `183956Z`/`190223Z`: laptop list set `detail_link=CONCRETE_PRODUCT_PAGE
 
 - **Symptom:** TUI `111126Z` fetch OK, `affordances=[]`, 1 unit, 190 chars → 6× LLM STOP rejected while gaps remain → `MAX_ACQUISITION_STEPS` + interpret on injected task-entity claim.
 - **Trigger (structural, no lexicon):** `fetch_ok` AND `affordances_count==0` AND `candidate_units_count<=1` AND `text_chars < DEAD_SURFACE_TEXT_CHARS_MAX` (400, **provisional**, same class as Open #6 / #10). Stop `DEAD_SURFACE_NO_CONTENT` before `_pipeline_on_obs`.
-- **Not bol:** `131049Z` has 3 global links, 2 units, 1093 chars — stretching the predicate to catch bol collides with the 2–3 unit negative.
+- **Not bol:** `131049Z` has 3 global links, 2 units, 1093 chars — stretching the predicate to catch bol collides with the 2–3 unit negative. **Open #30 (2a)** owns that rest class.
 - **Offline:** `evals/dead_surface/test_dead_surface_offline_v0.py`. Live TUI/bol only after user OK + `docker compose build`.
 - **Entity-as-claim (separate):** `page_text_to_observations` no longer adds `candidate_id` as `candidate_claim`. Task text is not page evidence. `entity` remains on `contract_meta` / observation `candidate_id`. Offline: `evals/entity_claim/test_entity_not_claim_offline_v0.py`.
+
+### #30 — dead surface 2a: zero same-host http(s) affordances (provisional unit cap)
+
+- **Symptom:** bol `131049Z` fetch OK, 3 global links (mailto + other hosts), 2 units, 1093 chars → 6× LLM STOP → `MAX_ACQUISITION_STEPS`. FIX 1 (#29) does not match.
+- **Trigger (structural, no lexicon, not 2b status tokens):** `fetch_ok` AND NOT `#29 is_dead_surface` AND `same_host_http_affordance_count==0` AND `candidate_units_count <= 2` (provisional). Stop `DEAD_SURFACE_NO_SAME_HOST_CONTENT` before interpret. Host equality = `urlparse.netloc` after `urljoin`; mailto/tel/other host do not count.
+- **Boundary (accepted):** contact page, 2 units, only mailto/tel = 2a-dead. This loop cannot OPEN_URL on-host. False-positive class: those two units already hold the answer (never interpreted). Escape: 3+ units, or ≥1 same-host http(s) href.
+- **Negatives:** 06 `064738Z` 60 aff / 33 same-host http. 01/02/03/05 + marktplaats/SS/wiki-BXL not 2a. TUI stays `#29` (`DEAD_SURFACE_NO_CONTENT`), not 2a.
+- **Offline:** `evals/dead_surface/test_dead_surface_same_host_offline_v0.py`. Live bol only after user OK.
+- **Not 2b:** digit tokens 403/404/429 left undiscussed; do not add without a separate decision.
 
 ---
 
