@@ -115,6 +115,7 @@ These rules constrain **contract-driven** production code. Legacy `agent.py` / `
 **#11 — claim order (MECHANICAL)**  
 - Eligible claims (channel allowed, not provenance-blocked): **stable FIFO** (document order).  
 - **No** lexical boost (`vlucht`, board words, …).  
+- Length bias (`len(text) < 120` → score −2 under FIFO `list_index*10`): domain-free, **not validated** across page types; **no problem observed** on live 01/02/03/05/06 or campaign-1. Not locked.  
 - `max_llm_per_decision` remains a code budget.
 
 **#12 — `_CU_SYSTEM` (candidate-unit prompt)**  
