@@ -25,10 +25,12 @@ from evidence_acquisition import (  # noqa: E402
     action_fingerprint,
     reset_overlay_timeout_memory,
 )
+from browser import overlay_intercept_retry_should_run  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 FIXTURE_2DEHANDS = HERE / "fixture_2dehands_sp_dialog.html"
 FIXTURE_TWO_BTN = HERE / "fixture_dialog_two_buttons.html"
+FIXTURE_FILL_INTERCEPT = HERE / "fixture_fill_pointer_intercept.html"
 ICON_SEARCH = ROOT / "evals" / "click_related_input" / "icon_search_page.html"
 EVALS = ROOT / "evals" / "contract_driven"
 FIX = ROOT / "evals" / "candidate_offline" / "fixtures_from_traces"
@@ -159,6 +161,62 @@ def test_negative_01_02_03_05_06_page_html_no_sp_dialog():
     print("OK test_negative_01_02_03_05_06_page_html_no_sp_dialog")
 
 
+def test_type_retry_predicate_matches_click_not_hash31():
+    """browser_type shares click's intercept gate; #31 stays second-fingerprint.
+
+    Coolblue Zoeken Timeout: first-line hide+retry True, #31 gate False.
+    fill_no_locator / click_text_no_locator: neither layer.
+    """
+    timeout_err = (
+        'Locator.click: Timeout 10000ms exceeded.\n'
+        'Call log:\n  - waiting for locator("text=Zoeken")'
+    )
+    intercept_err = (
+        '<iframe title="SP Consent Message" id="sp_message_iframe_1494622">'
+        " from <div role=\"dialog\" aria-modal=\"true\" "
+        'id="sp_message_container_1494622">…</div> subtree intercepts pointer events'
+    )
+    assert overlay_intercept_retry_should_run(timeout_err)
+    assert overlay_intercept_retry_should_run(intercept_err)
+    assert overlay_intercept_retry_should_run("consent_iframe")
+    assert not overlay_intercept_retry_should_run("click_text_no_locator")
+    assert not overlay_intercept_retry_should_run("fill_no_locator")
+    assert not overlay_intercept_retry_should_run("missing_query_text")
+    assert not overlay_intercept_retry_should_run("")
+    fp_zoeken = action_fingerprint(
+        {"action_class": "CLICK_TEXT", "target_text": "Zoeken"},
+        page_url="https://www.coolblue.be/nl",
+    )
+    assert not overlay_dismiss_should_run(
+        prior_timeout_fps=[], current_fp=fp_zoeken
+    )
+    print("OK test_type_retry_predicate_matches_click_not_hash31")
+
+
+def test_playwright_type_hides_overlay_then_fills():
+    if not FIXTURE_FILL_INTERCEPT.is_file():
+        print("SKIP test_playwright_type_hides_overlay_then_fills")
+        return
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        print("SKIP test_playwright_type_hides_overlay_then_fills (no playwright)")
+        return
+    import browser as br
+    from browser import browser_open, browser_type
+
+    snap = browser_open(FIXTURE_FILL_INTERCEPT.as_uri(), wait_seconds=0.3, max_chars=2000)
+    if snap.get("error") and "playwright" in str(snap.get("error") or "").lower():
+        print("SKIP playwright", snap.get("error"))
+        return
+    result = browser_type('input[name="query"]', "fiets", press_enter=False, max_chars=2000)
+    assert result.get("ok"), result
+    page = br._ensure_browser()
+    val = page.locator('input[name="query"]').input_value()
+    assert val == "fiets", val
+    print("OK test_playwright_type_hides_overlay_then_fills", val)
+
+
 def test_playwright_2dehands_fixture_optional():
     if not FIXTURE_2DEHANDS.is_file():
         print("SKIP test_playwright_2dehands_fixture_optional")
@@ -197,5 +255,7 @@ if __name__ == "__main__":
     test_gate_requires_second_different_fingerprint()
     test_negative_no_dialog_html_has_no_dismiss_plan()
     test_negative_01_02_03_05_06_page_html_no_sp_dialog()
+    test_type_retry_predicate_matches_click_not_hash31()
     test_playwright_2dehands_fixture_optional()
+    test_playwright_type_hides_overlay_then_fills()
     print("ALL OK overlay_dismiss offline")

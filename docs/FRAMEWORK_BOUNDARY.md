@@ -184,6 +184,29 @@ Where the “Hardcoded (framework)” table still mentions density signals with 
 
 These are **explicitly unlocked**; they depend on implementing the locked rules first.
 
+**Status-index 2026-09-20** (elke sessie: `SESSION_STATE.md`; dit bestand = detail):
+
+| # | Status | Restant |
+|---|--------|---------|
+| #4 | open (meting) | chrome-stats ná #1–#5 |
+| #6 | provisional | K=3 / units=6 |
+| #10 | **open** | T=3 niet locken; wiki=`list_results` |
+| #19 | provisional | merge + skip-satisfied; geen `NOT_STATED`-sentinel |
+| #20 | policy dicht | batch default uit; `--batch-decisions` opt-in |
+| #21 | grotendeels superseded | Fase G; click-fallback rest |
+| #22 | **stabiel** | cluster K provisional |
+| #23 | **downgraded** | heropenen alleen met ruwe result + same-run candidates |
+| #24a / #24 allowlist | **gesloten** | — |
+| #24b | **open** | leaf live; Coolblue geen `/product/` OPEN; niet `html_b2` |
+| #25 | **gesloten** | live `083112Z`; restant was #26 |
+| #26 | **open — niet sluiten** | geen merge-fix zonder overleg |
+| #27 / #28 | **gesloten** | live `111714Z` / `162616Z` |
+| #29 / #30 | **gesloten** (triggers) | char/unit-caps provisional; bol FETCH ≠ 2a |
+| #31 | **gesloten** (code) | 1e Timeout ≠ dismiss; type/click hide-retry |
+| #32 | **gesloten** (splice) | surface-tag blijft #10 |
+| #33 | **gesloten** | one-shot; live inject; 105757Z city-carry offline |
+| Path B | niet gefixt | `MECHANISM_NOTES` §14 |
+
 ### #4 — MinAC stats for “chrome cluster?” (measurement order)
 
 - Offline probe on 2026-08-29 used candidates **already filtered** by the lexicon chrome path → **chrome_rate = 0**, so A/B/C stat-sets were non-informative.  
@@ -309,14 +332,14 @@ These are **explicitly unlocked**; they depend on implementing the locked rules 
 - **Live `062211Z` (rebuild `41d5fc7`):** list OPEN_URL `https://arxiv.org/abs/2609.18128` `source=llm` (c2 `primary_action`; href **absent** from `step_002_affordances.json`) → navigated, `candidate_scope event=bind path=/abs/2609.18128`. **No `href_not_in_affordances`.** Raw `result_*`: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` only `claim_extracted=NOT_VISIBLE` `final_url=/abs/2609.18128v1`. Remaining gap is Open #10 (abs tagged `list_results` → html leaf chrome cards), not the allowlist. **#24 allowlist live-proven.** Do not close #24b/#10/#26 on this run.
 - **Coolblue list→detail (2026-09-18, offline then live 3×):** live pre-fix repeats `110505Z`/`114603Z`/`123057Z` all `MAX_ACQUISITION_STEPS` `detail_link=NO_URL`. Not a miss of #10 (surface already `list_results`) and not the 05 allowlist (no product href on candidates). (A `06f7f00`) `_snapshot` 400k cap counted `<script>`/`<style>`/`<head>` — `html_chars=699128`; `prepare_html_for_snapshot` strips those *then* keeps `<body>` *then* caps. (B `ef3b066`) pick max `n × (D2c + text-link)`; replace text only if itemish (price **or** href+digit-runs+≥2 lines). (C `64a4f88`) `inject_preferred_action_affordances` before `panel_option` cap. **Live 3× rebuild `3a3407bb`:** `174311Z`/`183956Z`/`190223Z` all `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true`. Step 1 after FILL `q=rtx 4070`: `packager_source=html_structure`, `primary_action.href` = `/nl/product/947851/asus-rog-strix…` / `969894/hp-victus…` / `948809/hp-victus…` (not Language/Account). Raw affordances still 47 `panel_option` + 0 `/product/` hrefs; replay `filter_safe` injects the three product links first. **0 OPEN_URL in all three loops.** `final_url` remains `/nl/zoeken?query=…`. Planner FILLed again (`videokaart` / `Super`) because list cards are laptops. Interpret set `detail_link=CONCRETE_PRODUCT_PAGE` on `list_results`. **Does not close #24b** (no list→detail navigation). Not html_b2. Not vision.
 
-### #25 — refine search after current-page object rejection (code in place; live retest pending user OK)
+### #25 — refine search after current-page object rejection (gesloten; live `083112Z`)
 
 - **Symptom (task 05, run `20260917T072448Z`, raw loop):** after `OPEN_URL` to `/abs/2609.19059`, current-page `subject_instance=NOT_RELEVANT`. Next actions were `CLICK_TEXT Related Papers` → `OPEN_URL HTML` → `CLICK_TEXT Back to Abstract` — all on the same rejected paper. Never a new `FILL_AND_SUBMIT`. Final: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` gaps `subject_instance=NOT_RELEVANT` `claim_extracted=NOT_VISIBLE`.
 - **Cause:** gaps already carried `observed=NOT_RELEVANT` / `result=FAIL` into `acquisition_decide`, but the planner system prompt preferred staying on the current entity (tabs / preferred_item). FILL was described only as “when gaps suggest missing search results.”
 - **Fix (2026-09-17):** if *current-page* outcome (not merged `best_outcomes`) is `NOT_RELEVANT` or `REJECTED` for a still-FAIL gap, **and** this run already saw `surface=list_results`, the planner prompt inverts: do not deepen this record; you MAY `FILL_AND_SUBMIT` with a **new** LLM-formulated `query_text` (code never writes the query). No input_field → use a listed affordance to reach search; no invented URLs. Absence labels (`NOT_VISIBLE` / `UNKNOWN`) do **not** trigger this.
 - **Anti-loop:** existing `action_fingerprint` includes `query_text`; identical FILL on the same field stays `no_progress_repeat_blocked`.
-- **Offline:** `evals/refine_search_after_reject/test_refine_search_offline_v0.py` green. Live taak 05: only after explicit user OK + `docker compose build`.
-- **Live `20260917T083112Z` (user):** #25 held — after abs `NOT_RELEVANT`, `OPEN_URL Search` then new FILL queries. Contract still false because merge kept `NOT_RELEVANT` (Open #26).
+- **Offline:** `evals/refine_search_after_reject/test_refine_search_offline_v0.py` green.
+- **Live `20260917T083112Z`:** #25 held — after abs `NOT_RELEVANT`, `OPEN_URL Search` then new FILL queries. Contract still false because merge kept `NOT_RELEVANT` (Open #26). **Dit item is gesloten**; restant is #26.
 
 ### #26 — candidate-scoped outcome reset on item switch / unbind **and** unbound-list search-round reset
 
@@ -355,20 +378,22 @@ Coolblue `183956Z`/`190223Z`: laptop list set `detail_link=CONCRETE_PRODUCT_PAGE
 - **Fix (observation-cap mismatch, 2026-09-17):** option (a) — live call is now `obs = candidates_to_observations(selected)` (no independent recap). Open #6 budget stays on `extract_candidates(max_candidates=3, max_units=6)`; #27 splice may make `len(selected)=4`. Option (b) (hardcode the same 3) would still drop c3. `candidates_to_observations` default is `max_candidates=None` → all of `selected`. Offline: `evals/long_line_units/test_long_line_units_offline_v0.py` reconstructs 102344Z (c3 in observations); old recap=3 drops c3; 01/02/06 first-3 claim texts unchanged. **This closes the #27 observation-cap follow-up.**
 - **Live `20260917T111714Z` (rebuild `1f0557e`, `batch_decisions=False`):** `stop_reason=CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`. Abs `step_006_claims.json` `candidate_claim_n=5`; `claim_preview` includes spliced c3 abstract (`Large language model (LLM) agents augmented by tools…`). **#27 contract-closed for this gap.** **#26 stays OPEN** (no scope event). #24b still open; PDF-download catch is Open #28.
 
-### #28 — navigation that starts a file download (code in place; live retest pending)
+### #28 — navigation that starts a file download (gesloten; live `162616Z`)
 
 - **Symptom:** `OPEN_URL` to an observed `/pdf/…` href (`111714Z` `https://arxiv.org/pdf/2609.19059`, also `102344Z`) → Playwright `Page.goto: Download is starting` → `error` + `soft_fail`. The loop already kept the list page; the step looked like a failed navigation.
 - **Not #24b:** the *wrong* pdf href (first `"pdf"` de-dupe) is still Open #24b. This item is only the engine treating a download as a crashed goto.
 - **Fix (structural):** listen for Playwright `download` on `goto`/`click`; match the engine message `Download is starting` (not a URL/file-type lexicon). Cancel the download (no PDF parse). Snapshot the **current** document (`download=True`, `error=None`). Acquisition: `ok` if page text remains; `download_kept_page` log; action_key still blocked so the planner tries another affordance (abs / HTML).
 - **Not in scope:** reading PDF bytes as contract evidence.
-- **Offline:** `evals/download_navigation/test_download_navigation_offline_v0.py` — live error string detected; timeout is not a download; execute OPEN_URL download is `ok` not `error`. Live 05 only after user OK + `docker compose build`.
+- **Offline:** `evals/download_navigation/test_download_navigation_offline_v0.py` — live error string detected; timeout is not a download; execute OPEN_URL download is `ok` not `error`.
+- **Live `162616Z`:** `download.kept_page=true` on `OPEN_URL` `/pdf/2609.19059`. **Gesloten** voor de engine-behandeling. PDF-bytes als contractbewijs blijft buiten scope.
 
 ### #29 — dead surface: code terminal before interpret (provisional char budget)
 
 - **Symptom:** TUI `111126Z` fetch OK, `affordances=[]`, 1 unit, 190 chars → 6× LLM STOP rejected while gaps remain → `MAX_ACQUISITION_STEPS` + interpret on injected task-entity claim.
 - **Trigger (structural, no lexicon):** `fetch_ok` AND `affordances_count==0` AND `candidate_units_count<=1` AND `text_chars < DEAD_SURFACE_TEXT_CHARS_MAX` (400, **provisional**, same class as Open #6 / #10). Stop `DEAD_SURFACE_NO_CONTENT` before `_pipeline_on_obs`.
 - **Not bol:** `131049Z` has 3 global links, 2 units, 1093 chars — stretching the predicate to catch bol collides with the 2–3 unit negative. **Open #30 (2a)** owns that rest class.
-- **Offline:** `evals/dead_surface/test_dead_surface_offline_v0.py`. Live TUI/bol only after user OK + `docker compose build`.
+- **Offline:** `evals/dead_surface/test_dead_surface_offline_v0.py`.
+- **Live middag S1:** TUI **3×** `stop_reason=DEAD_SURFACE_NO_CONTENT` `outcomes={}` `llm_calls_total=0`. **Trigger gesloten.** Char-budget blijft provisional.
 - **Entity-as-claim (separate):** `page_text_to_observations` no longer adds `candidate_id` as `candidate_claim`. Task text is not page evidence. `entity` remains on `contract_meta` / observation `candidate_id`. Offline: `evals/entity_claim/test_entity_not_claim_offline_v0.py`.
 
 ### #30 — dead surface 2a: zero same-host http(s) affordances (provisional unit cap)
@@ -377,7 +402,8 @@ Coolblue `183956Z`/`190223Z`: laptop list set `detail_link=CONCRETE_PRODUCT_PAGE
 - **Trigger (structural, no lexicon, not 2b status tokens):** `fetch_ok` AND NOT `#29 is_dead_surface` AND `same_host_http_affordance_count==0` AND `candidate_units_count <= 2` (provisional). Stop `DEAD_SURFACE_NO_SAME_HOST_CONTENT` before interpret. Host equality = `urlparse.netloc` after `urljoin`; mailto/tel/other host do not count.
 - **Boundary (accepted):** contact page, 2 units, only mailto/tel = 2a-dead. This loop cannot OPEN_URL on-host. False-positive class: those two units already hold the answer (never interpreted). Escape: 3+ units, or ≥1 same-host http(s) href.
 - **Negatives:** 06 `064738Z` 60 aff / 33 same-host http. 01/02/03/05 + marktplaats/SS/wiki-BXL not 2a. TUI stays `#29` (`DEAD_SURFACE_NO_CONTENT`), not 2a.
-- **Offline:** `evals/dead_surface/test_dead_surface_same_host_offline_v0.py`. Live bol only after user OK.
+- **Offline:** `evals/dead_surface/test_dead_surface_same_host_offline_v0.py`.
+- **Live middag S2:** bol **1×** `DEAD_SURFACE_NO_SAME_HOST_CONTENT`; **2×** `FETCH_FAILED_OR_EMPTY` (Page.goto 60s — infra, niet 2a). **2a-trigger gesloten.**
 - **Not 2b:** digit tokens 403/404/429 left undiscussed; do not add without a separate decision.
 
 ### #31 — blocking overlay dismiss after repeated timeout (ARIA dialog)
@@ -387,7 +413,9 @@ Coolblue `183956Z`/`190223Z`: laptop list set `detail_link=CONCRETE_PRODUCT_PAGE
 - **Detect:** visible `[role="dialog"]` or `[aria-modal="true"]`. No cookie/consent/host lexicon. Existing `COOKIE_SELECTORS` unused on this path.
 - **Dismiss (chosen):** first `button` / `[role=button]` in DOM order inside the dialog. **Rejected:** shortest visible text (length-as-meaning / "OK" guess). Cross-origin iframe, no same-origin button → `hide_blocking_dialog` (cannot click into the iframe).
 - **Negatives:** 01/02/03/05/06 page HTML has no `sp_message_*` dialog; first-timeout gate is False. Icon-search fixture (Zoeken timeout class) has 0 overlays.
-- **Offline:** `evals/overlay_dismiss/test_overlay_dismiss_offline_v0.py`. Live 2dehands only after user OK.
+- **Offline:** `evals/overlay_dismiss/test_overlay_dismiss_offline_v0.py`.
+- **Follow-up (type/click symmetry, middag S3):** `browser_click` already hid+force-retried on `intercepts pointer` / `consent_iframe` / `Timeout`. `browser_type` (FILL) did not — first FILL on 2dehands timed out while a later `CLICK_TEXT` could pass. Same intercept gate + `_hide_consent_overlays` + `force=True` click now runs **before** FILL is reported failed. Asymmetrie ontdekt tussen click- en type-paden; #31 blijft geldig ontwerp voor de oorspronkelijke FILL-reeks-casus, aanvullend gedekt door symmetrische hide+retry op `browser_type` zelf. #31 trigger (tweede timeout, zelfde path, ander fingerprint) blijft het vangnet wanneer hide+retry `ok=False` teruggeeft. Coolblue Zoeken first-timeout: type/click-retry True, #31 gate False.
+- **Live `live_33_31`:** FILL `q=fiets` + postcode 2000/1000 **zonder Timeout**; overlay_dismiss unused. Hide-retry dus niet in een Timeout-log gezien. **Code gesloten**; ARIA-vangnet ongewijzigd.
 
 ### #32 — HTML leaf replace drops D2c text units (claims-vs-units)
 
@@ -396,8 +424,23 @@ Coolblue `183956Z`/`190223Z`: laptop list set `detail_link=CONCRETE_PRODUCT_PAGE
 - **Mechanism:** Open #24b HTML leaf replace on `list_results`. Landmark `<li>` clusters win `html_leaf_should_replace_text` via href+digit_runs (1830/1958 are not D2c). Exclusive `select_top_candidates(html)` drops the text pool before interpret. Same *class* as #27 (two packagers, exclusive budget), different gate.
 - **Fix:** after HTML replace, splice at most one text candidate whose **unrepresented** `line_is_price_like` lines (glyph ∨ D2c, not bare digit_run) are ≥ 3 (same T as #10, **provisional**). "165 miljard" on the Atomium card is D2c but must not block splice. Priced HTML lists (Coolblue) already contain the D2c lines → no extra unit. arXiv pagination 100/200 is 2 hits → no splice.
 - **Negatives:** 01/02/03/05/06 text-arm fingerprints unchanged (`html=""`). Recorded 03 HTML (D2c on cards) and 05 HTML (no extra unit) do not grow. No lexicon (`bevolking` etc.).
-- **Offline:** `evals/claims_vs_units/test_claims_vs_units_offline_v0.py`. Live wiki only after user OK.
+- **Offline:** `evals/claims_vs_units/test_claims_vs_units_offline_v0.py`.
+- **Live middag S4:** wiki **3×** `stop_reason=CONTRACT_SATISFIED` `population_figure=FIGURE_FOUND`. **Splice gesloten.**
 - **Not closed:** Open #10 T=3 still tags the wiki article as `list_results`. This item is only the replace/splice, not the surface classifier.
+
+### #33 — cross-page exclusive replace (list-card evidence not carried to detail)
+
+**Correctie op Taak I (2026-09-20 “geen #33”):** die audit keek naar **single-page** packager-exclusiviteit (`return pool_X` vs pool_Y van hetzelfde snapshot). Deze instantie is **cross-page content-continuïteit**: de volgende observe vervangt het vorige packager-output geheel. Gerelateerde klasse, niet identiek. Nu apart benoemd.
+
+- **Evidence (middag S3, bound):** lijst `103805Z` step_005 HTML-candidate **c2** `identity_hints` = `Fiets voorwiel 26 en 28 inch`; `evidence` bevat titel, `€ 10,00`, `Artemis`, **`Antwerpen`**, `2 km`; `primary_action.href` = `…/m2118342883-fiets-voorwiel-26-en-28-inch` = later `final_url`. `105757Z` step_004 **c2** zelfde patroon: `Dames stadsfiets` + `€ 350,00` + `saskia` + **`Antwerpen`** + href `…/m2443330671-dames-stadsfiets`. Locatie zat in **dezelfde candidate** als titel/prijs/href — niet losse naburige tekst.
+- **List UNKNOWN is interpret, not cap/rank:** c2 zat in top-4 HTML-cards; `claim_preview` citeert `Artemis | Antwerpen | 2 km`. Outcome bleef `location_scope=UNKNOWN`. Packaging leverde het bewijs; de LLM aggregeerde het niet tot ANTWERP.
+- **After OPEN:** detail-packager (`list_results` leaf op de advertentie) dropte `Antwerpen`; 105757Z-detail candidates = `fietsen oostende` → `OTHER_REGION`. Vorige pagina’s c2-evidence is weg. `#22 subject_candidate_ref` is **intra-page**. `#26 candidate_path` bindt href, draagt **geen** evidence-regels mee.
+- **Fix (optie B, 2026-09-20):** bij `OPEN_URL` waarvan `target_href` gelijk is aan een getoonde candidate’s `primary_action.href`, stash `source_list_card` (hints + evidence, gecapt). Eerste interpret ná die OPEN: extra observation-kanaal `provenance.origin=prior_list_card`, **append** op de detail-observations — geen vervanging van detail-candidates. Clear bij `#26` unbind. `#22` blijft same-page; prior_list_card-rijen zijn same-record exempt in `_is_subject_bound` maar mogen de subject-ref niet zetten.
+- **One-shot (verplicht):** het kanaal loopt **niet** mee bij latere interpreten op dezelfde bind. Afgedwongen in `consume_prior_list_card_into_observations` (`live_offer_state_slice.py`): inbound `list_card_pending_interpret=True` → append extra rows, return **pending=False**. De acquisition-loop roept dit aan vlak vóór interpret; een tweede aanroep met pending=False voegt niets toe. Stash blijft tot unbind, maar zonder pending-flag is hij onzichtbaar voor interpret. Dit voorkomt de #22-zwakte (oud bewijs dat te lang meetelt).
+- **Negatives:** detail met eigen Antwerpen-bewijs + conflicterende list-card (`Oostende`) → candidates fingerprint ongewijzigd, location blijft ANTWERP. CLICK_TEXT / verzonnen href → geen stash. 01/02/03/06/tui/bol/wiki/ss packager-fingerprints ongewijzigd. **05 gebruikt wél** OPEN_URL vanaf `primary_action` (arxiv abs): extra search-card snippet op de eerste abs-interpret, abs-candidates ongewijzigd.
+- **Offline:** `evals/list_card_continuity/test_list_card_continuity_offline_v0.py` (105757Z reconstructie: zonder kanaal `OTHER_REGION`, mét `ANTWERP`).
+- **Live `live_33_31` (3/3 `CONTRACT_SATISFIED`):** `163011Z` OPEN listing `source=llm` → `list_card_pending_interpret=true` → step_001 `prior_list_card_injected=true`. Outcomes `location_scope=ANTWERP`. List-card-blob had **geen** stadsnaam; detail-candidate had `fietsen antwerpen`. Kanaal is live-zichtbaar; de 105757Z “list-Antwerpen vs detail-OTHER_REGION”-causaliteit blijft de offline reconstructie. `160944Z` FILL `q=fiets` + postcode 2000/1000 zonder Timeout (#31 type-pad; overlay_dismiss unused). `163601Z` SATISFIED op zoeklijst, geen inject.
+- **Closed (optie B + one-shot).** #26 bind bleef 0 (homepage `live_detail`, niet `list_results`); stash hangt aan href-match, niet aan #26 from_list.
 
 ---
 

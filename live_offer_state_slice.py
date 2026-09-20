@@ -580,6 +580,190 @@ def apply_candidate_scope_after_action(
     return best, active_candidate_path, candidate_bound_step, ""
 
 
+PRIOR_LIST_CARD_ORIGIN = "prior_list_card"
+PRIOR_LIST_CARD_CANDIDATE_ID = "prior_list_card"
+_LIST_CARD_HINTS_CAP = 8
+_LIST_CARD_EVIDENCE_CAP = 12
+_LIST_CARD_TEXT_CAP = 500
+
+
+def _candidate_as_mapping(c: Any) -> dict[str, Any]:
+    if isinstance(c, dict):
+        return c
+    to_dict = getattr(c, "to_dict", None)
+    if callable(to_dict):
+        return to_dict()
+    return {
+        "candidate_id": getattr(c, "candidate_id", "") or "",
+        "identity_hints": list(getattr(c, "identity_hints", None) or []),
+        "evidence": list(getattr(c, "evidence", None) or []),
+        "primary_action": getattr(c, "primary_action", None),
+        "source_url": getattr(c, "source_url", "") or "",
+        "surface": getattr(c, "surface", "") or "",
+        "block_index": getattr(c, "block_index", None),
+    }
+
+
+def compact_source_list_card(c: Any) -> dict[str, Any]:
+    """Small, domain-free snapshot of the list card that was opened."""
+    row = _candidate_as_mapping(c)
+    pa = row.get("primary_action") if isinstance(row.get("primary_action"), dict) else None
+    hints = [str(x).strip() for x in (row.get("identity_hints") or []) if str(x).strip()]
+    evidence = [str(x).strip() for x in (row.get("evidence") or []) if str(x).strip()]
+    blob_fn = getattr(c, "evidence_blob", None)
+    if callable(blob_fn):
+        blob = str(blob_fn(max_chars=_LIST_CARD_TEXT_CAP) or "")
+    else:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for part in hints + evidence:
+            key = part.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(part)
+        blob = " | ".join(ordered)[:_LIST_CARD_TEXT_CAP]
+    return {
+        "candidate_id": str(row.get("candidate_id") or ""),
+        "identity_hints": hints[:_LIST_CARD_HINTS_CAP],
+        "evidence": evidence[:_LIST_CARD_EVIDENCE_CAP],
+        "primary_action": dict(pa) if pa else None,
+        "source_url": str(row.get("source_url") or "")[:400],
+        "surface": str(row.get("surface") or ""),
+        "block_index": row.get("block_index"),
+        "text": blob,
+    }
+
+
+def source_list_card_from_open(
+    *,
+    action_class: str,
+    target_href: str | None,
+    selected: list[Any] | None,
+    page_url: str,
+) -> dict[str, Any] | None:
+    """Stash the shown candidate whose primary_action.href was OPENed.
+
+    OPEN_URL only. CLICK_TEXT without a matching candidate href returns None.
+    Href identity matches #26 `_href_in_preferred` (full URL or path).
+    """
+    if str(action_class or "").strip().upper() != "OPEN_URL":
+        return None
+    href = str(target_href or "").strip()
+    if not href:
+        return None
+    nh = _normalize_href(href, page_url)
+    np = _url_path(nh)
+    if not nh and not np:
+        return None
+    for c in selected or []:
+        row = _candidate_as_mapping(c)
+        pa = row.get("primary_action") if isinstance(row.get("primary_action"), dict) else {}
+        ph = _normalize_href(str((pa or {}).get("href") or ""), page_url)
+        if not ph:
+            continue
+        if nh == ph or (_url_path(ph) and _url_path(ph) == np):
+            return compact_source_list_card(c)
+    return None
+
+
+def apply_source_list_card_after_action(
+    *,
+    action_class: str,
+    target_href: str | None,
+    selected: list[Any] | None,
+    page_url: str,
+    scope_event: str,
+    source_list_card: dict[str, Any] | None,
+    list_card_pending_interpret: bool,
+) -> tuple[dict[str, Any] | None, bool]:
+    """Open #33: stash / clear list-card context after a successful navigation.
+
+    Clear on #26 unbind. OPEN_URL matching a shown primary_action.href
+    replaces the stash and arms *one* pending interpret. Switch without a
+    matching card drops a stale stash (wrong record).
+    """
+    card = source_list_card
+    pending = bool(list_card_pending_interpret)
+    event = str(scope_event or "")
+    if event == "unbind":
+        card = None
+        pending = False
+    matched = source_list_card_from_open(
+        action_class=action_class,
+        target_href=target_href,
+        selected=selected,
+        page_url=page_url,
+    )
+    if matched is not None:
+        return matched, True
+    if event == "switch":
+        return None, False
+    return card, pending
+
+
+def prior_list_card_to_observations(
+    source_list_card: dict[str, Any] | None,
+    *,
+    step: int,
+    page_url: str = "",
+    surface: str = "",
+) -> list[dict[str, Any]]:
+    """Extra interpret observations. Never a Candidate; never replaces a pool."""
+    if not source_list_card:
+        return []
+    text = str(source_list_card.get("text") or "").strip()
+    if not text:
+        return []
+    pa = source_list_card.get("primary_action")
+    pa = pa if isinstance(pa, dict) else {}
+    href = str(pa.get("href") or "")[:400]
+    list_url = str(source_list_card.get("source_url") or page_url or "")[:400]
+    return [
+        {
+            "observation_id": "prior-list-card",
+            "candidate_id": PRIOR_LIST_CARD_CANDIDATE_ID,
+            "text": text[:_LIST_CARD_TEXT_CAP],
+            "channel": "candidate_claim",
+            "scope": PRIOR_LIST_CARD_ORIGIN,
+            "block_index": None,
+            "item_link": pa or None,
+            "provenance": {
+                "origin": PRIOR_LIST_CARD_ORIGIN,
+                "source_url": list_url,
+                "surface": str(source_list_card.get("surface") or surface or ""),
+                "acquisition_step": step,
+                "item_link_href": href or None,
+                "list_candidate_id": str(source_list_card.get("candidate_id") or "") or None,
+            },
+        }
+    ]
+
+
+def consume_prior_list_card_into_observations(
+    obs: list[dict[str, Any]],
+    source_list_card: dict[str, Any] | None,
+    list_card_pending_interpret: bool,
+    *,
+    step: int,
+    page_url: str = "",
+    surface: str = "",
+) -> tuple[list[dict[str, Any]], bool, bool]:
+    """Append prior_list_card observations at most once — first interpret after OPEN.
+
+    One-shot is enforced here: when `list_card_pending_interpret` is True this
+    call always returns pending=False, whether or not extra rows were appended.
+    Later interprets on the same bind never see the channel. Does not replace
+    `obs`; copies then extends.
+    """
+    if not list_card_pending_interpret:
+        return list(obs), False, False
+    extra = prior_list_card_to_observations(
+        source_list_card, step=step, page_url=page_url, surface=surface
+    )
+    return list(obs) + extra, False, bool(extra)
+
+
 def _norm_fill_query(query_text: str | None) -> str:
     """Same normalization as action_fingerprint FILL `q=` (lower, strip, 120)."""
     return str(query_text or "").strip().lower()[:120]
@@ -837,6 +1021,9 @@ def run_acquisition_loop(
     last_fill_query_text: str | None = None
     last_fill_result_step: int | None = None
     prev_state_sig: str | None = None
+    # Open #33: list-card evidence for the first interpret after OPEN_URL only
+    source_list_card: dict[str, Any] | None = None
+    list_card_pending_interpret = False
 
     for step in range(0, max_acquisition_steps + 1):
         if trace:
@@ -1037,6 +1224,21 @@ def run_acquisition_loop(
             prov["surface"] = surface
             prov["acquisition_step"] = step
             prov["same_entity_path"] = same_entity
+        # Open #33 one-shot: first interpret after OPEN_URL only. This call
+        # always clears list_card_pending_interpret (see
+        # consume_prior_list_card_into_observations). Stash itself lives until
+        # #26 unbind; a False pending flag is what stops later steps from
+        # re-injecting (the #22-style lingering this bound prevents).
+        obs, list_card_pending_interpret, injected_prior_list_card = (
+            consume_prior_list_card_into_observations(
+                obs,
+                source_list_card,
+                list_card_pending_interpret,
+                step=step,
+                page_url=final_url,
+                surface=str(surface or ""),
+            )
+        )
         ledger.log_observations(obs)
         stage_d = stage_d_from_obs(obs)
         if trace:
@@ -1053,6 +1255,7 @@ def run_acquisition_loop(
                     "candidate_units": units[:8],
                     "unit_preview": unit_preview,
                     "obs_n": len(obs),
+                    "prior_list_card_injected": bool(injected_prior_list_card),
                 },
             )
             try:
@@ -1205,6 +1408,7 @@ def run_acquisition_loop(
             "candidate_units_n": len(units),
             "preferred_item_links_n": len(preferred_links),
             "unit_preview": unit_preview[:4],
+            "prior_list_card_injected": bool(injected_prior_list_card),
         }
         steps_log.append(step_rec)
         print(
@@ -1543,19 +1747,33 @@ def run_acquisition_loop(
                 ok=ok,
             )
         )
-        if scope_event or fill_round_event:
+        source_list_card, list_card_pending_interpret = (
+            apply_source_list_card_after_action(
+                action_class=str(decision.get("action_class") or ""),
+                target_href=str(decision.get("target_href") or "") or None,
+                selected=selected,
+                page_url=str(page_url_before),
+                scope_event=scope_event,
+                source_list_card=source_list_card,
+                list_card_pending_interpret=list_card_pending_interpret,
+            )
+        )
+        if scope_event or fill_round_event or list_card_pending_interpret:
             step_rec["candidate_scope"] = {
                 "event": scope_event,
                 "search_round_event": fill_round_event,
                 "active_candidate_path": active_candidate_path,
                 "candidate_bound_step": candidate_bound_step,
                 "last_fill_result_step": last_fill_result_step,
+                "list_card_pending_interpret": list_card_pending_interpret,
+                "source_list_card_id": (source_list_card or {}).get("candidate_id"),
             }
             print(
                 f"[acquisition] candidate_scope event={scope_event} "
                 f"search_round={fill_round_event} "
                 f"path={active_candidate_path} bound_step={candidate_bound_step} "
-                f"best_n={len(best_outcomes)}",
+                f"best_n={len(best_outcomes)} "
+                f"list_card_pending={list_card_pending_interpret}",
                 flush=True,
             )
 

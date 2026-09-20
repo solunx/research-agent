@@ -461,6 +461,31 @@ def _hide_consent_overlays(page) -> int:
         return 0
 
 
+def overlay_intercept_retry_should_run(err: str | None) -> bool:
+    """Same intercept gate browser_click already used before hide+force-retry.
+
+    #31 (ARIA, second fingerprint) is a later net; this is the per-action
+    first-line. Coolblue Zoeken Timeout is True here and False for #31.
+    """
+    err_s = str(err or "")
+    return (
+        "intercepts pointer" in err_s
+        or "consent_iframe" in err_s
+        or "Timeout" in err_s
+    )
+
+
+def _hide_overlays_and_force_click(page, locator, *, timeout_ms: int = 8000) -> tuple[bool, int, str]:
+    """Hide consent iframes, then force-click. Shared by click and type."""
+    hidden = _hide_consent_overlays(page)
+    _dismiss_cookies(page, rounds=2)
+    try:
+        locator.click(timeout=timeout_ms, force=True)
+        return True, hidden, ""
+    except Exception as e2:
+        return False, hidden, str(e2)
+
+
 def browser_click(selector: str, max_chars: int = 10000) -> dict[str, Any]:
     """
     Click an element (CSS or Playwright text selector, e.g. button:has-text('Zoeken')).
@@ -480,20 +505,18 @@ def browser_click(selector: str, max_chars: int = 10000) -> dict[str, Any]:
                 kept["ok"] = len(str(kept.get("text") or "")) > 40
                 return kept
         except Exception as click_err:
-            err_s = str(click_err)
             # Pointer intercepted by consent iframe / overlay → hide and retry once
-            if "intercepts pointer" in err_s or "consent_iframe" in err_s or "Timeout" in err_s:
-                hidden = _hide_consent_overlays(page)
-                _dismiss_cookies(page, rounds=2)
-                try:
-                    page.locator(selector).first.click(timeout=8000, force=True)
-                except Exception as e2:
+            if overlay_intercept_retry_should_run(str(click_err)):
+                ok_retry, hidden, err2 = _hide_overlays_and_force_click(
+                    page, page.locator(selector).first
+                )
+                if not ok_retry:
                     return {
                         "ok": False,
                         "url": page.url if page else "",
                         "title": "",
                         "text": "",
-                        "error": str(e2),
+                        "error": err2,
                         "pointer_intercept": True,
                         "overlays_hidden": hidden,
                         "no_op_exempt": True,  # runtime may skip no-op strike
@@ -646,11 +669,31 @@ def browser_type(
     press_enter: bool = False,
     max_chars: int = 8000,
 ) -> dict[str, Any]:
-    """Type into an input; optionally press Enter. Returns page snapshot."""
+    """Type into an input; optionally press Enter. Returns page snapshot.
+
+    Click/focus on the field uses the same overlay hide+force-retry as
+    browser_click (Open #31 type/click symmetry). Fill itself is unchanged.
+    """
     try:
         page = _ensure_browser()
         loc = page.locator(selector).first
-        loc.click(timeout=10000)
+        try:
+            loc.click(timeout=10000)
+        except Exception as click_err:
+            if not overlay_intercept_retry_should_run(str(click_err)):
+                raise
+            ok_retry, hidden, err2 = _hide_overlays_and_force_click(page, loc)
+            if not ok_retry:
+                return {
+                    "ok": False,
+                    "url": page.url if page else "",
+                    "title": "",
+                    "text": "",
+                    "error": err2,
+                    "pointer_intercept": True,
+                    "overlays_hidden": hidden,
+                    "no_op_exempt": True,
+                }
         loc.fill("")
         loc.fill(text, timeout=10000)
         if press_enter:

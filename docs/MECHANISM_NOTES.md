@@ -12,6 +12,10 @@ Geen domeinlexicon in deze triggers.
 **Procesregel:** een run-bewering citeert `stop_reason` / `outcomes` /
 `contract_satisfied` uit ruwe `result_*.json`. Zie `HANDOVER.md` §5.
 
+**Status #22–#33 (2026-09-20):** canoniek in `docs/SESSION_STATE.md`.
+Dit bestand legt alleen **waarom** de triggers zo zijn, niet of het
+item nog open is.
+
 ---
 
 ## 1. Entity-binding (#22) — `require_subject_binding`, fail-closed
@@ -823,8 +827,9 @@ onderschept pointer events (iframe `sp_message_iframe_*` erin). Niet
 alleen zoeken: élke klik/fill op die state.
 
 Bestaande `_hide_consent_overlays` / `COOKIE_SELECTORS` zijn
-consent-lexicon en golden **niet** op `browser_type` (FILL klikt de
-input zonder die hide-retry).
+consent-lexicon. Die golden al op `browser_click` (hide + `force=True`
+retry); tot middag S3 **niet** op `browser_type` (FILL klikt de input
+zonder die retry). Type/click-symmetrie: zie vervolg hieronder.
 
 ### Afgewezen
 
@@ -884,6 +889,30 @@ Offline: eerste knop = `"Lees het cookiebeleid volledig"`, niet `"OK"`.
 `hide_blocking_dialog`. Gate: één fingerprint False; twee verschillende
 True. 01/02/03/05/06 HTML: 0 `sp_message_*`; first-timeout gate False.
 `evals/overlay_dismiss/test_overlay_dismiss_offline_v0.py`. Geen live.
+
+### Type/click-symmetrie (vervolg #31)
+
+`browser_click` (reeds):
+
+```484:525:browser.py
+            if overlay_intercept_retry_should_run(str(click_err)):
+                ok_retry, hidden, err2 = _hide_overlays_and_force_click(
+                    page, page.locator(selector).first
+                )
+```
+
+Gate = `intercepts pointer` ∨ `consent_iframe` ∨ `Timeout`. Daarna
+`_hide_consent_overlays` + `_dismiss_cookies` + `click(..., force=True)`.
+`browser_type` gebruikt nu **dezelfde** helper op de click/focus van het
+doelveld, vóór FILL als gefaald telt. Fill zelf ongewijzigd.
+
+**Twee lagen, beide houden.** Hide+retry is first-line (net als click).
+`#31` blijft hoger vangnet: hide-selectors missen de dialog, of force-click
+faalt nog. Trigger (2e timeout, zelfde path, ander fingerprint) voorkomt
+Coolblue Zoeken (één Timeout → retry True, `#31` False). Elke timeout →
+`#31` blijft afgewezen. Asymmetrie ontdekt tussen click- en type-paden;
+`#31` blijft geldig ontwerp voor de oorspronkelijke FILL-reeks-casus,
+aanvullend gedekt door symmetrische hide+retry op `browser_type` zelf.
 
 ---
 
@@ -953,11 +982,14 @@ maar blokkeert splice niet (unrepresented-vergelijking).
 Afgewezen: kale `digit_run_count`; HTML-replace uitzetten (#24b); T=3
 locken (#10). Offline: `evals/claims_vs_units/`. Geen live.
 
-### Audit 2026-09-20 — overige exclusive returns (geen fix, geen #33)
+### Audit 2026-09-20 — overige exclusive returns (single-page; géén #33 destijds)
 
 Doorzocht: `candidates.py`, `candidate_units.py`, `structural_observer.py`,
 `live_offer_state_slice.py`, `live_detail_slice.py`, `evidence_acquisition.py`.
-Geen nieuwe live-geraakte instantie. Geen Open-nummer zonder overleg.
+**Toets was same-snapshot `return pool_X`.** Conclusie “geen #33” gold
+alleen die as. Middag S3 toont een **andere as** (volgende pagina
+vervangt packager-output). Dat is Open #33 hieronder — geen stille
+herinterpretatie van de audit-tabel.
 
 | Plek | Vervangt | Vangnet zoals #27/#32? | Oordeel |
 |------|----------|------------------------|---------|
@@ -965,7 +997,7 @@ Geen nieuwe live-geraakte instantie. Geen Open-nummer zonder overleg.
 | `select_top_candidates` / `package_candidate_units` `chosen = ranked[:max_n]` | rest van dezelfde pool | ja: #27 long-splice (≥240 / `_LINE_CHAR_CAP`) | **#27** |
 | `candidates_to_observations` default `max_candidates=None` | — | ja: geen tweede cap; `max_units=len(selected)` | **#27** cap-sync |
 | `units_to_observations(..., max_units=6)` default | extra units als caller 6 hardcode | productie-pad zet `cap=len(selected)`. Recap hier is #27-regressie | **geen nieuw item**; contract: niet opnieuw hardcoden |
-| `live_offer_state_slice` `obs = candidates_to_observations(selected)` | hele-pagina `page_text_to_observations` | titel-insert; line_obs alleen als `surface != list_results` én `len(selected) < 2`; content-dekking via #27+#32 | **architectuur**, geen #33. Restant: op `list_results` komen page-lines nooit extra binnen |
+| `live_offer_state_slice` `obs = candidates_to_observations(selected)` | hele-pagina `page_text_to_observations` | titel-insert; line_obs alleen als `surface != list_results` én `len(selected) < 2`; content-dekking via #27+#32 | **architectuur**, same-page. Restant: op `list_results` komen page-lines nooit extra binnen |
 | HTML `repeating_only=True` in live `extract_candidates` | niet-herhalende DOM (infobox-tabel) | als replace-gate False → text-arm; als True → #32 splice (max 1) | deel van **#32** |
 | `html_leaf_should_replace_text` False | HTML door text | ja: chrome-only HTML valt terug | **#24b** fallback, niet exclusive-verlies van text |
 | `structural_observer.extract_for_arm` | text \| html \| html_b2 \| ax | A/B-script, niet het live-pad | **buiten productie** |
@@ -986,8 +1018,41 @@ meting.
 ### Wat een toekomstige patch niet mag doen
 
 Een derde `if html_cands: return html_cands` (of ax/b2) zonder splice of
-zonder merge met de andere pool. Dat is automatisch deze klasse, ook als
-de gate “itemish” heet. Toets hier; bij twijfel overleg, geen stille #33.
+zonder merge met de andere pool. Dat is automatisch de **single-page**
+exclusive-replace klasse, ook als de gate “itemish” heet. Toets §17;
+bij twijfel overleg. **#33** is de cross-page variant (niet een vierde
+same-page `return`).
+
+### Instantie #33 — list-card → detail (optie B, one-shot)
+
+Middag S3. Lijst-HTML-card **c2** bond `Antwerpen` aan dezelfde
+candidate als titel/prijs/`primary_action.href` van de geopende
+advertentie (`103805Z` voorwiel; `105757Z` dames stadsfiets). Na
+OPEN ontbreekt die regel in detail-candidates. `#22` filtert rows op
+**dezelfde** pagina; `#26` onthoudt het href, niet de evidence.
+
+Lijst-`location_scope=UNKNOWN` is **interpret** (c2 zat in top-K),
+niet cap/rank. Cross-page verlies is exclusive replace van het vorige
+snapshot.
+
+**Gebouwd (optie B):** `source_list_card_from_open` bij OPEN_URL waarvan
+href = getoonde `primary_action.href`. Extra observation-kanaal
+`provenance.origin=prior_list_card` — append, geen packager-replace.
+Clear bij `#26` unbind (`apply_source_list_card_after_action`).
+
+**One-shot:** alleen de eerste interpret ná OPEN. Afgedwongen in
+`consume_prior_list_card_into_observations`: pending True → append +
+return pending=False. Loop roept dit aan vóór interpret
+(`live_offer_state_slice.py`). Latere stappen op dezelfde bind zien het
+kanaal niet — anders herintroduceer je #22-achtig oud bewijs.
+
+`#22` is geen evidence-bus. prior_list_card-rijen zijn same-record
+exempt in `_is_subject_bound`; `subject_candidate_ref_from_rows` slaat
+ze over (subject-ref blijft de detailpagina).
+
+Offline: `evals/list_card_continuity/test_list_card_continuity_offline_v0.py`.
+Live `live_33_31`: `163011Z` inject na OPEN listing; 3/3 SATISFIED.
+105757Z city-carry blijft de offline reconstructie (live list-card had geen stad).
 
 ---
 

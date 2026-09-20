@@ -375,6 +375,10 @@ def subject_candidate_ref_from_rows(per_text: list[dict[str, Any]]) -> dict[str,
         and str(r.get("outcome")) not in ("UNKNOWN", "MISMATCH", "NOT_FOUND", "")
         and not r.get("skipped")
         and not r.get("provenance_blocked")
+        # Open #33: prior_list_card must not become the intra-page subject ref
+        # (#22 stays current-page). The extra channel may still confirm
+        # subject_instance (no binding on that pass) but the ref is detail-only.
+        and not r.get("prior_list_card")
     ]
     if not confirmed:
         return None
@@ -409,6 +413,10 @@ def _is_subject_bound(
     """
     if not subject_ref:
         return False
+    # Open #33: the list card of the OPEN we just took is the same record,
+    # not a sibling entity on the current page. Exempt from #22 drop.
+    if row.get("prior_list_card"):
+        return True
     cid = str(row.get("candidate_id") or "")
     s_cid = str(subject_ref.get("candidate_id") or "")
     if cid and s_cid and cid == s_cid:
@@ -529,12 +537,17 @@ def _obs_binding_fields(o: dict[str, Any]) -> dict[str, Any]:
         href = str(link.get("href") or "").strip()
     if not href and isinstance(prov, dict):
         href = str(prov.get("item_link_href") or "").strip()
+    origin = ""
+    if isinstance(prov, dict):
+        origin = str(prov.get("origin") or "")
+    prior = origin == "prior_list_card" or str(o.get("scope") or "") == "prior_list_card"
     return {
         "candidate_id": str(o.get("candidate_id") or "") or None,
         "block_index": bi,
         "item_link": link,
         "item_link_href": href or None,
         "scope": str(o.get("scope") or "") or None,
+        "prior_list_card": prior,
     }
 
 

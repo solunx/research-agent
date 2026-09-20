@@ -42,7 +42,7 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 4. Leesvolgorde
 
-**Elke sessie (kort):** `docs/AGENT_RULES.md` → `docs/SESSION_STATE.md`.
+**Elke sessie (kort):** `docs/AGENT_RULES.md` → `docs/SESSION_STATE.md` (register #22–#33 + top-3).
 
 **Alleen bij bouwen / boundary-wijziging / audit-verificatie:**
 1. `docs/MECHANISM_NOTES.md` — waarom merge/binding/surface/FILL/reset zo gebouwd zijn (refactors)
@@ -81,44 +81,68 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 > **Elke bewering over een run-resultaat (geslaagd/gefaald/regressie) moet vergezeld gaan van een letterlijk citaat van `stop_reason`/`outcomes`/`contract_satisfied` uit het ruwe `result_*.json`-bestand. Nooit een parafrase, nooit uit geheugen.**
 
-## 6. Huidige status (19 september 2026)
+## 5b. Register Open items #22–#33 (2026-09-20)
 
-**Werkt, herhaaldelijk bevestigd stabiel:**
-- Taak 02 (hotel, detailpagina): 9/9 `CONTRACT_SATISFIED` op stap 0
-- Taak 06 (Wikipedia): stabiel, inclusief batch-decisions-modus
-- Entity-binding (#22): hard bevestigd via offline A/B met echte LLM
-- Architecture-freeze P0: hard-fail bij ontbrekend/niet-bevroren contract
-- Fase G zoekcapaciteit + §5 #10–#16 (taak 05 list→abs pad). **Na #10: 5/5** live `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` (`070449Z` `/abs/2609.18128`, `073200Z` zelfde, `075144Z` `/abs/2609.13860`, `081459Z` `/abs/2609.18128`, `072546Z` `/abs/2609.20625`). Niet één paper, niet één run.
+Canoniek in `docs/SESSION_STATE.md` (elke sessie). Dit is de handover-kopie zodat §6 niet veroudert t.o.v. het register.
 
-**Niet opnieuw diagnosticeren (al in §5):** #24a/#24b/#24 allowlist, #25, #27, #28, #10-trigger op arXiv abs. #26: bound-pad niet herschrijven; unbound FILL-round is een **tweede** pad (niet een vervanging).
+| # | Kort | Status |
+|---|------|--------|
+| #22 | Entity-binding fail-closed | **stabiel** (02 9/9). Cluster K provisional |
+| #23 | Hero-board coverage | **downgraded** — geen gap na #22 |
+| #24a | Woordgrens `Submit`≠`Submitted` | **gesloten** |
+| #24 | OPEN_URL-allowlist aff ∪ `primary_action.href` | **gesloten** live `062211Z` |
+| #24b | Leaf-HTML `list_results` | **open** — representatie live; Coolblue 0× `/product/` OPEN. Niet `html_b2` |
+| #25 | FILL na `NOT_RELEVANT` | **gesloten** live `083112Z` (restant was #26) |
+| #26 | Twee reset-paden | **open — niet sluiten.** Geen merge-fix zonder overleg |
+| #27 | Wrap + geen recap | **gesloten** live `111714Z` |
+| #28 | Download = stay-on-page | **gesloten** live `162616Z` |
+| #29 | Dead surface (leeg) | **gesloten** TUI 3× `DEAD_SURFACE_NO_CONTENT` |
+| #30 | Dead surface 2a (geen same-host http) | **gesloten** voor de trigger (bol 1×); 2× FETCH is infra |
+| #31 | Overlay ARIA + type/click hide-retry | **gesloten** als code. 1e Coolblue-Timeout ≠ dismiss |
+| #32 | HTML-replace D2c-splice | **gesloten** wiki 3× `FIGURE_FOUND`. Surface-tag = #10 |
+| #33 | List-card one-shot kanaal | **gesloten** optie B. Live inject `163011Z`; 105757Z city-carry offline |
 
-**Bewust nog niet opgelost, met reden (zie FRAMEWORK_BOUNDARY.md Open items):**
-- Open #4: minimale structurele stat-set voor "chrome" — kleine n, niet gevalideerd
-- Open #6: `max_candidates`-budget provisional
-- Open #10: **deze abs-trigger live-bewezen** (`070449Z`); T=3 + D2c-tighten blijft provisionally, niet gelockt over alle paginatypes
-- Open #26: twee paden. #25-compositie (bind-reject → FILL) offline: canonieke `NOT_RELEVANT` op bind-stap wordt gewist, pad 2 resurrect niet. Exacte `083112Z`-merge: homepage-`NOT_RELEVANT` `step=0` overleeft unbind+pad 2. Geen `_merge_outcomes`-fix zonder overleg. **Niet sluiten**
-- Open #19/#22-vervolg: `NOT_STATED` is contract-vocabulaire, geen framework-sentinel
-- Taak 03 (Coolblue): click-fallback `7863753`; live FILL `103711Z`. A+B+C `06f7f00`/`ef3b066`/`64a4f88`. Pre-#26 3× `174311Z`/`183956Z`/`190223Z` `CONTRACT_SATISFIED` zonder OPEN. Post-#26: `061149Z` `CONTRACT_SATISFIED` `/zoeken?query=nvidia+rtx+4070` 0× OPEN; `064948Z` `MAX_ACQUISITION_STEPS` OPEN categorieën + unbind, geen `/product/` OPEN. Niet html_b2
+Overige open: **#4** (meting), **#6** (budget 3/6), **#10** (T=3 niet locken; wiki=`list_results`), **#19** (provisional merge), **#20** (batch opt-in), **#21** rest (click-fallback), **taak 03** product-OPEN, **Path B** (niet gefixt).
+
+## 6. Huidige status (20 september 2026)
+
+**Werkt, herhaaldelijk bevestigd:**
+- Taak 02: 9/9 `CONTRACT_SATISFIED` op stap 0
+- Taak 05 na #10: **5/5** `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`
+- Taak 06 + wiki-Brussel middag S4: 3/3 `population_figure=FIGURE_FOUND` (#32 splice)
+- Marktplaats `live_33_31`: **3/3** `CONTRACT_SATISFIED` (FILL-postcode / listing+`prior_list_card` / zoeklijst)
+- Entity-binding (#22), Fase G FILL, architecture-freeze P0
+- TUI dead-surface (#29) 3× `DEAD_SURFACE_NO_CONTENT` zonder interpret
+
+**Niet opnieuw diagnosticeren:** alles in §5 plus register §5b gemarkeerd **gesloten** / **stabiel** / **downgraded**. #26 bound-pad niet herschrijven; unbound FILL-round is een **tweede** pad.
+
+**Bewust open, met reden:**
+- **#26** — pad 2 live; `083112Z` homepage-`NOT_RELEVANT` `step=0` overleeft unbind+pad 2. Geen `_merge_outcomes`-fix zonder overleg
+- **#10** — abs-trigger bewezen; T=3 provisionally; wiki-artikel nog `list_results`
+- **#24b / taak 03** — leaf-HTML live; geen Coolblue `/product/` OPEN. Niet `html_b2`
+- **#4 / #6 / #19** — meting / budget / merge-vocabulaire, geen actieve defect-fix
+- **Path B** — geïnventariseerd (`MECHANISM_NOTES` §14), niet gefixt
 - `batch_decisions=True` bewezen goedkoper, blijft **opt-in**
-- Niet `html_b2` als #24b-fix (heading+price NCA is de verkeerde vorm voor arXiv `<li>`)
 
 ## 7. Belangrijkste bestanden, met rol
 
 | Bestand | Rol |
 |---|---|
-| `docs/MECHANISM_NOTES.md` | Waarom-naslag (entity-binding, merge, #24–#27, FILL, #25, #26 twee paden, step-stamp-discrepantie) |
+| `docs/MECHANISM_NOTES.md` | Waarom-naslag (entity-binding, merge, #24–#33, FILL, #25, #26 twee paden, dead-surface, overlay, packager-exclusiviteit) |
+| `docs/SESSION_STATE.md` | Elke-sessie snapshot + register #22–#33 |
 | `scripts/run_contract_driven_task_v0.py` | Canoniek entry point |
 | `scripts/run_task_campaign_tmux_v0.sh` | Batch-campagne in detached tmux (N×M, circuit breaker, progress-log) |
 | `scripts/run_task_campaign_loop_v0.py` | Sequentiële docker-jobs van die campagne |
 | `scripts/analyze_campaign_v0.py` | LLM-loze samenvatting + deviant-runs |
 | `scripts/run_contract_synthesis_batch_v0.py` | Contract-synthese (Fase 1) |
-| `live_offer_state_slice.py` | Hoofdlus: acquisition, outcomes-merge, sufficiency-check per stap |
-| `pipeline_offline.py` | `run_interpretation`, `aggregate_outcome`, `_claim_priority`, batch-decisions-logica |
+| `live_offer_state_slice.py` | Hoofdlus: acquisition, outcomes-merge, #26 scope, #33 list-card one-shot, sufficiency |
+| `pipeline_offline.py` | `run_interpretation`, `aggregate_outcome`, `#22` binding, batch-decisions |
 | `interpretation.py` | LLM-prompt-opbouw per candidate/decision, `page_context` |
-| `candidates.py` | Candidate-schema, `rank_candidates`, entity-binding |
-| `candidate_units.py` | Ruwe paginatekst → units, eigen `_rank`, chunking |
+| `candidates.py` | Candidate-schema, `rank_candidates`, #32 splice na HTML-replace |
+| `candidate_units.py` | Ruwe paginatekst → units, eigen `_rank`, chunking, #27 wrap |
 | `evidence_acquisition.py` | Actieklassen (`OPEN_URL`, `CLICK_TEXT`, `FILL_AND_SUBMIT`, ...), anti-loop |
-| `browser.py` | Playwright-laag, affordance-extractie (DOM-queries) |
+| `overlay_dismiss.py` | #31 ARIA-dialog na 2e timeout (zelfde path, ander fingerprint) |
+| `browser.py` | Playwright; type/click overlay hide+force-retry |
 | `sufficiency.py` | Pure functie: outcomes → gaps/STOP-beslissing (geen eigen geheugen) |
 | `contract_discovery.py` | Fase 1 LLM-prompts (let op: hier zaten ooit domeinvoorbeelden in prompts, gecontroleerd/gefixt — check bij twijfel) |
 
@@ -132,4 +156,10 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26** niet sluiten (zie `docs/MECHANISM_NOTES.md` §10–§11). Campagne 1 **klaar**. FIX 1 **H-dead-surface** `82cae84` (TUI dead; bol niet). FIX 2 **entity-als-claim** verwijderd als `candidate_claim`. Live TUI+bol alleen na expliciete OK + `docker compose build`. Niet html_b2.
+Zie `docs/SESSION_STATE.md` **Open (top 3)**. Kort:
+
+1. **#26 niet sluiten** — geen merge-fix zonder overleg (`MECHANISM_NOTES` §10–§11).
+2. **#10** T=3 niet locken; wiki-`list_results` is dit item, niet #32.
+3. **#24b / taak 03** — geen `html_b2`; geen extra live zonder expliciete OK.
+
+Campagne 1 en middag-queue **klaar**. Packager-exclusiviteit: toets `MECHANISM_NOTES` §17 vóór een nieuwe `return pool_X`. Overlay: 1e Timeout is geen ARIA-dismiss.

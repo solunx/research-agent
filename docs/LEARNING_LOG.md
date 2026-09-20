@@ -2447,6 +2447,144 @@ candidates / units / observer / live_offer / live_detail / acquisition
 zijn architectuur, truncatie, lab-pad of A/B — geen nieuw Open-item.
 Splice-caps blijven max 1. Geen live.
 
+## 2026-09-20 — Middag S1 `middag_tui_dead` (live, #29)
+
+Campaign `evals/campaigns/middag_tui_dead_20260920T101512Z`. N=3.
+Alle drie: `stop_reason=DEAD_SURFACE_NO_CONTENT`, `contract_satisfied=false`,
+`outcomes={}`, `llm_calls_total=0`, `acquisition_steps=0`,
+`final_url=https://www.tui.nl/`. Geen `BOOKABLE_PACKAGE`. Geen 6×-LLM-STOP.
+CIRCUIT_BREAK consecutive=3 remaining_repeats_skipped=0 (N al op).
+Verzamelrapport: `evals/campaigns/middag_verzamelrapport.md`.
+
+## 2026-09-20 — Middag S2 `middag_bol_bound` (live, #30)
+
+Campaign `evals/campaigns/middag_bol_bound_20260920T101536Z`. N=3.
+Run 1 `101537Z`: `stop_reason=DEAD_SURFACE_NO_SAME_HOST_CONTENT`
+`contract_satisfied=false` `outcomes={}` `final_url=https://www.bol.com/`
+— #30 vuurt; geen 6×-reject.
+Run 2 `101542Z` + run 3 `101643Z`: `stop_reason=FETCH_FAILED_OR_EMPTY`
+`contract_satisfied=null` `outcomes=null` `ok=false`. events.jsonl:
+`Page.goto: Timeout 60000ms exceeded` op `https://www.bol.com/`.
+Niet Ollama, niet disk. Circuit niet (stop_reason niet 3× identiek).
+
+## 2026-09-20 — Middag S3 `middag_h2_marktplaats` (live, #31)
+
+Campaign `evals/campaigns/middag_h2_marktplaats_20260920T101756Z`. N=3.
+Alle drie `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false`.
+`overlay_dismiss` komt **niet** voor in loop/events/audit van de drie dirs.
+FILL mikt wel op `Dropdown zoekbalk` (`action_key=…|q=fiets|`); click
+timeout: `sp_message_container_1494622` / `sp_message_iframe_1494622`
+intercepts pointer events. Search bereikt later wél (`/q/bicycle/`,
+listings). Gap blijft `location_scope` (OTHER_REGION / UNKNOWN), niet
+overlay-weg. Overlay weg ≠ resultaat: bevestigd, overlay was niet weg.
+
+## 2026-09-20 — Middag S4 `middag_h3_wiki` (live, #32)
+
+Campaign `evals/campaigns/middag_h3_wiki_20260920T111537Z`. N=3.
+Alle drie `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true`
+`population_figure=FIGURE_FOUND` (niet UNKNOWN).
+`final_url=https://nl.wikipedia.org/wiki/Brussel_(stad)`.
+Outcomes identiek: NL_ARTICLE / FIGURE_FOUND / YEAR_FOUND / CITY_PROPER /
+URL_FOUND. CIRCUIT_BREAK consecutive=3 remaining_repeats_skipped=0.
+#32 splice: bevolkingscijfer bereikt interpret. Analyze rate=1.0.
+
+## 2026-09-20 — Middag S5 `middag_h4_trace_check` (live, --trace-interpret)
+
+Campaign `evals/campaigns/middag_h4_trace_check_20260920T114917Z`. N=1
+`06_web_wiki_fact`. `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true`.
+Twee artifacts: `step_000_interpret_trace.json` (surface=live_detail,
+schema=interpret-trace-v0, calls[] per candidate_id×decision_id) en
+`step_001_interpret_trace.json` (surface=list_results). Flag werkte live.
+Niet in events.jsonl. Geen inhoudelijk doel.
+
+## 2026-09-20 — Middag S6 `middag_semanticscholar_retest` (live, upstream)
+
+Campaign `evals/campaigns/middag_semanticscholar_retest_20260920T115358Z`. N=3.
+Alle drie `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false`
+`subject_instance=NOT_RAG`. Site antwoordt; search-pagina's tonen nog
+`Error: 405` in page_text (stappen 1/2/5). Geen FETCH_FAILED — 405 is
+pagina-inhoud, niet infra. CIRCUIT_BREAK consecutive=3. Geen fix-validatie.
+QUEUE_DONE `2026-09-20T13:52:19Z`. Verzamelrapport volledig.
+
+## 2026-09-20 — Diagnose #31 middag S3 (geen fix)
+
+Trigger (2e timeout, zelfde path, ander fp) **niet gehaald**.
+Timeouts: S1=2 (path `/` + `/q/bicycle`), S2=1 (`/`), S3=3
+(`/`, `/q/stadsfiets`, listing) — elk first-on-path.
+Overlay wél aanwezig bij klik (`sp_message_container_1494622`,
+`consentUUID=null`). 140350Z was FILL×3 timeout op `/`; deze runs
+hadden daarna een geslaagde FILL of CLICK op `/`. #31-ontwerp blijft
+geldig voor die FILL-reeks. `browser_click` heeft al hide-retry;
+`browser_type` niet.
+
+## 2026-09-20 — Diagnose location_scope middag S3 (geen fix)
+
+Contractvraag: listing in Antwerp/Brussels-regio?
+Detailpagina-tekst heeft `Antwerpen`; candidates/units op de
+listing niet (105757Z-candidates = `fietsen oostende` → OTHER_REGION).
+103805Z zoeklijst-claims hadden wél `Artemis | Antwerpen | 2 km`,
+interpret bleef UNKNOWN. Geen missing action class: Postcode is
+al `input_field` + FILL (q=2000 NO_PROGRESS). Packager/interpret,
+niet zoek-icoon-gat.
+
+## 2026-09-20 — Open #31 type/click-symmetrie (geen live)
+
+`browser_click` had hide+force-retry; `browser_type` niet. Zelfde
+gate (`intercepts pointer`/`consent_iframe`/`Timeout`) + helper op
+FILL click/focus. #31 blijft 2e-timeout ARIA-vangnet (Coolblue
+Zoeken: retry True, #31 False). Offline:
+`evals/overlay_dismiss/test_overlay_dismiss_offline_v0.py`.
+
+## 2026-09-20 — Open #33 list→detail (optie B, one-shot)
+
+Correctie Taak I “geen #33”: audit was single-page exclusive replace.
+S3: lijst-c2 bond `Antwerpen` aan titel/prijs/href; na OPEN weg.
+Lijst-UNKNOWN = interpret (bewijs in top-K). `#22` intra-page; `#26`
+href zonder evidence.
+
+Gebouwd: `source_list_card` bij OPEN_URL href-match; extra kanaal
+`provenance.origin=prior_list_card` op de **eerste** interpret na OPEN
+(`consume_prior_list_card_into_observations` zet pending=False). Clear
+bij unbind. Detail-candidates worden niet vervangen. 105757Z offline:
+zonder kanaal `OTHER_REGION`, mét `ANTWERP`. 05 OPEN-vanaf-card: extra
+snippet, abs-candidates gelijk. #31 type/click blijft het ARIA-vangnet.
+
+Offline: `evals/list_card_continuity/test_list_card_continuity_offline_v0.py`.
+
+## 2026-09-20 — Live `live_33_31` marktplaats (#33 + #31 type)
+
+N=3, tmux `live_33_31`, image `sha256:4785cb0d`. 3/3 `CONTRACT_SATISFIED`.
+
+`result_marktplaats_fiets_regio_20260920T160944Z.json`
+`stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true`
+`location_scope=BRUSSELS` `final_url=…/q/fiets/…|postcode:1000`
+FILL `q=fiets` + postcode 2000/1000, 0× Timeout. overlay_dismiss unused.
+
+`result_marktplaats_fiets_regio_20260920T163011Z.json`
+`stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true`
+`location_scope=ANTWERP`
+`final_url=…/m2444868600-elektrische-fiets-koga-middenmotor-bosch`
+Stap 0 `location_scope=UNKNOWN`; OPEN listing `source=llm`;
+`list_card_pending_interpret=true`; stap 1 `prior_list_card_injected=true`.
+List-card-tekst had geen stad; detail had `fietsen antwerpen`.
+
+`result_marktplaats_fiets_regio_20260920T163601Z.json`
+`stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true`
+`location_scope=ANTWERP` `final_url=…/q/fiets+antwerpen/`
+geen inject (geen OPEN vanaf card).
+
+#33 kanaal live-zichtbaar. 105757Z city-carry = offline. #31 type-pad:
+FILL slaagde; hide-retry niet in een Timeout-log gezien. #26 bind=0.
+
+## 2026-09-20 — Docs-consolidatie
+
+`SESSION_STATE.md` is het snapshot+register (#22–#33 + overige open).
+`HANDOVER.md` §5b/§6/§9 gelijkgetrokken (datum 20 sep).
+`FRAMEWORK_BOUNDARY.md` Open items heeft een status-index; stale
+“live pending” op #25/#28/#29/#30/#31/#32 bijgewerkt.
+Geen codewijziging. Geen live.
+
+
 
 
 
