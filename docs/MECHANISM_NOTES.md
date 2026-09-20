@@ -735,6 +735,118 @@ onaangeroerd. Geen live zonder OK.
 
 ---
 
+## 14. Path B — contractvraag + outcome-enum in de interpret-prompt (NIET GEFIXT)
+
+Audit 2026-09-20. Geen codewijziging. Path A was task-bold als
+`candidate_claim` (mechanisme 13). Path B is: **elke** interpret-call
+ziet de decision-`question` en de toegestane outcomes naast
+`source_text`. Nooit live gefalsifieerd op een rijke pagina; demping
+is alleen SYSTEM_PROMPT.
+
+### Probleem
+
+`build_user_prompt` stopt de hele decision (vraag, enum, definitions,
+notes) in dezelfde user-JSON als de snippet. Een dunne of irrelevante
+claim kan `BOOKABLE_PACKAGE` / `RELEVANT` / `RTX_4070` kiezen omdat de
+**vraag** het woord al noemt, niet omdat de snippet het toont.
+TUI `111126Z` bewees Path A; Path B bleef een hypothese.
+
+### Afgewezen (deze audit)
+
+- SYSTEM_PROMPT herschrijven — geen meting op rijke pagina.
+- Outcome-labels hercoderen — contract-synthese, niet interpret-code.
+- Vraag weglaten uit de payload — LLM heeft de vraag nodig; dat is een
+  ontwerpkeuze, geen stille patch.
+
+### Wat de prompt echt zegt
+
+Er staat **geen** zin “gebruik ALLEEN de snippet”. De dichtstbijzijnde
+regels zijn 4 (UNKNOWN boven gokken) en 6 (geen buitenkennis). “Use
+ONLY” in regel 5 geldt de **definitions**, niet de observation.
+
+```100:117:interpretation.py
+SYSTEM_PROMPT = """You are a semantic interpretation coprocessor for a research agent.
+
+You receive:
+- one decision from a frozen research contract (id, question, allowed outcomes, definitions)
+- one raw observation string (website text snippet)
+
+Your job: decide whether the observation is evidence for EXACTLY ONE of the allowed outcomes.
+
+Rules:
+1. Output EXACTLY one JSON object. No markdown fences, no commentary outside JSON.
+2. Schema:
+   {"outcome": "<one of allowed outcomes>", "confidence": "high"|"medium"|"low", "reason": "<short>", "source_text": "<echo input>"}
+3. outcome MUST be one of the allowed outcomes list (including UNKNOWN).
+4. Prefer UNKNOWN over guessing when the text is ambiguous or only related, not equivalent.
+5. Use ONLY the definitions supplied with this decision; do not equate labels that the
+   definitions treat as distinct categories.
+6. Do not use outside knowledge to invent facts not supported by the snippet.
+"""
+```
+
+`SYSTEM_PROMPT_MULTI` (batch) heeft dezelfde 4/6/7-regels. Payload:
+
+```169:178:interpretation.py
+    payload = {
+        "decision": {
+            "id": contract_decision.get("id"),
+            "question": contract_decision.get("question"),
+            "outcomes": contract_decision.get("outcomes"),
+            "definitions": contract_decision.get("definitions") or {},
+            "notes": contract_decision.get("notes") or [],
+        },
+        "observation": observation,
+    }
+```
+
+### Inventaris (01/02/03/05/06 + vijf campagne-contracten)
+
+Tien frozen files, niet negen: batch vijf + campagne vijf. Bronnen:
+`20260908T061529Z` (01/02/03/06), `20260916T165744Z` (05),
+`20260919T110338Z` (tui/bol/marktplaats/ss/wiki).
+
+**Patroon.** Outcome-labels zijn bijna altijd `SNAKE_CASE`-codes
+(`BOOKABLE_PACKAGE`, `PRICE_INCL_VAT`, `FIGURE_FOUND`), geen vrije
+Engelse zin. De **vragen** zijn vrije Engels/Nederlands en herhalen het
+suggestieve woord. Path B-gevoeligheid zit dus in de vraag (+ proper
+nouns in de enum), niet in “leesbare Engelse labels i.p.v. codes”.
+Uitzondering: korte Engelse woorden als enum (`RELEVANT`, `VALID`,
+`RECENT`, `CONFIRMED`, `OTHER`) — die kunnen ook in irrelevante
+paginatekst voorkomen, maar de LLM moet het **exacte** token
+uitvoeren; de priming loopt via de vraag.
+
+| Contract | Hoogste Path-B overlap | Waarom |
+|----------|------------------------|--------|
+| TUI | `subject_instance` Q *bookable package* + `BOOKABLE_PACKAGE`; `destination_confirm`=`CRETE` | Zelfde priming als `111126Z`; `CRETE` staat op elke Kreta-chrome-pagina |
+| 01 | `bookable` Q + `BOOKABLE`; `board_type` Q “board type” + `ALL_INCLUSIVE` | Transactioneel woord in vraag én enum |
+| 02 | Q “All Inclusive” + `ALL_INCLUSIVE`; property-naam in `subject_instance`-vraag | Label staat letterlijk in de vraag |
+| 03 | Q “RTX 4070” + `RTX_4070`; `IN_STOCK` | Productstring op elke Coolblue-lijstkaart |
+| 05 | Q “LLM agents” + `RELEVANT`/`NOT_RELEVANT` | `RELEVANT` is gewoon Engels; vraag lekt het onderwerp |
+| 06 | Q “Fuerteventura” + `CONFIRMED_ISLAND_ARTICLE` | Eilandnaam in de vraag |
+| bol | Q “AirPods Pro” + `CURRENT_MODEL`; `IN_STOCK` | Productnaam in de vraag |
+| marktplaats | Q “bicycle” + `CONFIRMED_BICYCLE`; `ANTWERP`/`BRUSSELS` | Stadsnaam-enum op footers |
+| SS | Q “retrieval-augmented generation (RAG)” + `CONFIRMED`/`NOT_RAG`; `RECENT`/`VALID` | Onderwerp in de vraag; `VALID` is Engels |
+| wiki-BXL | Q “city of Brussels” + `FIGURE_FOUND`; `NL_ARTICLE` | Relatief code-achtige enum; vraag noemt de stad |
+
+`evidence_signals.patterns` (TUI: `"book now"`, `"reserveer"`) zitten
+**niet** in `build_user_prompt` — alleen question/outcomes/definitions/notes.
+
+### Trigger (ongewijzigd, niet gefixt)
+
+Elke `interpret_observation` / `_multi`. Geen extra injectie naast deze
+payload.
+
+### Bewijs
+
+Offline: `evals/h_leak/test_h_leak_offline_v0.py`
+`test_build_user_prompt_does_not_inject_phrase_from_decision` — Path A
+frase zit niet in de lege/denied prompt; de **vraag**
+`"Is the page a specific bookable package…"` wél. Live Path B op rijke
+pagina: **ontbreekt**. Geen fix zonder die meting.
+
+---
+
 ## Appendix — campagne-infrastructuur (geen live starten vanuit deze nota)
 
 Losse runs: `AGENT_RULES.md` regels 1–3. Batch: regel 4 (één OK voor N,

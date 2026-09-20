@@ -2378,6 +2378,15 @@ pagina, `origin=candidate_unit_package`, `scope=unit`.
 titel is duplicaat paginabewijs, geen H-leak. Alleen overleg als iemand die
 dedup wil.
 
+## 2026-09-20 — Path B audit (`build_user_prompt`) — NIET GEFIXT
+
+Inventaris in `MECHANISM_NOTES.md` §14. SYSTEM_PROMPT heeft geen “ALLEEN de
+snippet”; regel 6 is “niet verzinnen buiten de snippet”, regel 5 “ONLY” =
+definitions. Tien contracten (01/02/03/05/06 + vijf campagne): outcomes zijn
+`SNAKE_CASE`; Path B-risico zit in de **vraag** (bookable package, RTX 4070,
+LLM agents, AirPods, Brussels) plus korte Engelse enum-tokens (`RELEVANT`,
+`VALID`, `CRETE`). Geen live, geen prompt-wijziging.
+
 
 
 
