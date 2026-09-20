@@ -940,3 +940,73 @@ tussentijdse stappen alleen `page_text`. Niet doen vóór de TUI/bol-
 hertest — die HTML is juist het bewijs van dead-surface vs bol-block.
 
 Niet voorgesteld: `--min-free-gb` verlagen. 8 GiB mag blijven.
+
+---
+
+## Appendix — middag-queue (NIET STARTEN vanuit deze nota)
+
+Twee hypothesen, **geen** generaliteitscampagne. Reserve T2/T3, E2/E3, C1
+staan **niet** op de command line: geen `task.md` onder die stems in
+deze tree; alleen meenemen als het start-bericht ze bij naam noemt plus
+N en sessienaam (`AGENT_RULES` regel 4).
+
+### 1. TUI dead-surface — N=3
+
+Fix 1 (`82cae84`): TUI Access Denied = aff=0, units=1, 190 tekens →
+`DEAD_SURFACE_NO_CONTENT` vóór interpret. Verwacht: drie keer die
+`stop_reason`, **niet** `MAX_ACQUISITION_STEPS`, **niet**
+`BOOKABLE_PACKAGE` uit Path A. Los van campagne 1.
+
+### 2. bol bekende grens — N=3
+
+FIX 1 vangt bol niet (aff=3, units=2, 1093 tekens). Verwacht: opnieuw
+6×-reject → `MAX_ACQUISITION_STEPS` (of `FETCH_FAILED_OR_EMPTY` zoals
+`133208Z`). **Dat is geen falen** — bevestiging van de 2a/2b-grens.
+Niet als regressie rapporteren.
+
+### 3. Reserve (niet in het plakcommando)
+
+T2/T3, E2/E3, C1 uit de eerdere 15-ideeën-lijst: alleen als het
+start-bericht ze expliciet toevoegt. Geen automatische derde sessie.
+
+### Plakcommando's (wacht op `ja, start` + exacte sessienaam)
+
+Twee sequentiële tmux-sessies, overzichtelijker dan één mix (verschillende
+verwachte `stop_reason`). Script doet `docker compose build` tenzij
+`--skip-build`.
+
+```bash
+# SESSIE 1 — alleen ná: "ja, start" met sessienaam middag_tui_dead
+# (N=3, taak tui_package_crete, --tasks-dir campaign1)
+./scripts/run_task_campaign_tmux_v0.sh \
+  --session middag_tui_dead \
+  --repeats 3 \
+  --tasks tui_package_crete \
+  --tasks-dir tasks/campaign1_generaliteit \
+  --contract-dirs evals/contract_synthesis/20260919T110338Z_synthesis \
+  --max-steps 6 \
+  --circuit-n 3
+```
+
+```bash
+# SESSIE 2 — alleen ná TUI klaar én "ja, start" met sessienaam middag_bol_bound
+# --skip-build alleen als image van sessie 1 nog vers is
+./scripts/run_task_campaign_tmux_v0.sh \
+  --session middag_bol_bound \
+  --repeats 3 \
+  --tasks bol_airpods_pro \
+  --tasks-dir tasks/campaign1_generaliteit \
+  --contract-dirs evals/contract_synthesis/20260919T110338Z_synthesis \
+  --max-steps 6 \
+  --circuit-n 3 \
+  --skip-build
+```
+
+Eén gecombineerde variant (alleen als het start-bericht **beide** taken
+én één sessienaam noemt): `--session middag_tui_bol --repeats 3 --tasks tui_package_crete,bol_airpods_pro` plus dezelfde `--tasks-dir` / `--contract-dirs`. Circuit is per taak; TUI-DEAD stopt bol niet.
+
+Volgen: `tail -f evals/campaigns/<session>_<stamp>/campaign_progress.log`.
+Stoppen: `tmux kill-session -t <session>`.
+
+**Dit start niet vanzelf.** Ontbreekt N, taken-lijst of sessienaam in het
+start-bericht → niet starten.

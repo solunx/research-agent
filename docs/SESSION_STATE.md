@@ -11,11 +11,11 @@
 - **#24** `41d5fc7` OPEN_URL-allowlist = aff ∪ shown `primary_action.href` (live `062211Z` OPEN abs `source=llm`)
 - **#10** `6debab8` D2c geen kale identifiers/1-decimaal; abs=`live_offer_state`. Taak 05 na #10 **5/5** `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`: `070449Z` `/abs/2609.18128`; `073200Z` `/abs/2609.18128`; `075144Z` `/abs/2609.13860`; `081459Z` `/abs/2609.18128`; `072546Z` `/abs/2609.20625`
 
-**Laatste commit:** `23028a0` (#26 unbound FILL-query-round reset). Docker: altijd `docker compose build` vóór live.
+**Laatste commits (geen live):** `0ad8b3b` Path B-audit; `c92d1fd` #26 snapshot; `50a9522` disk-marge; deze commit = middag-queue. Docker: altijd `docker compose build` vóór live.
 
 **Campagne 1 klaar** (`campaign1_generaliteit_20260919T111126Z`): 18 runs, **0/18** SATISFIED, 5 CIRCUIT_BREAK. **Niet herstarten.**
 
-**H-leak gediagnosticeerd.** FIX 1 **H-dead-surface** `82cae84` (Open #29). FIX 2 **entity-als-claim** shipped: geen `candidate_claim` meer van task-bold. `entity` blijft in `contract_meta`. Geen live TUI/bol zonder OK.
+**H-leak:** FIX 1 `82cae84` Open #29; FIX 2 `2f030e3` entity-geen-claim. Path B geïnventariseerd (§14), niet gefixt. Middag-queue (TUI N=3 + bol N=3) staat in `MECHANISM_NOTES` appendix — **niet starten** zonder `ja, start` + tmux-sessienaam.
 
 **Open (top 3):**
 1. **#26** — pad 2 live `061149Z`/`064948Z`. #25 onder pad 2 **offline geverifieerd** (canonieke abs-reject op bind-stap: unbind wist `NOT_RELEVANT`; pad 2 wekt het niet opnieuw). **Niet sluiten:** exacte `083112Z`-merge houdt homepage-`NOT_RELEVANT` op `step=0` (zelfde label op abs bump't de stap niet). Geen merge-fix zonder overleg. 03-run1 nog list-SATISFIED.

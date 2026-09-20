@@ -2402,6 +2402,13 @@ cap 200k/stap. `--min-free-gb 8` is één start-check ≈ 4000 worst-case runs;
 6 middag-jobs ≈ 12 MB. Marge niet krap. Voorstel HTML-only-last/fail: **niet**
 implementeren zonder OK (TUI/bol-bewijs zit in die snapshots).
 
+## 2026-09-20 — Middag-queue klaargezet, niet gestart
+
+Twee tmux-commando's in `MECHANISM_NOTES.md` appendix: `middag_tui_dead` N=3
+(verwacht `DEAD_SURFACE_NO_CONTENT`); `middag_bol_bound` N=3 (verwacht
+`MAX_ACQUISITION_STEPS` / FETCH — bekende grens, geen regressie). Reserve
+T2/T3 E2/E3 C1 niet op de command line. Wacht op `ja, start` + sessienaam.
+
 
 
 
