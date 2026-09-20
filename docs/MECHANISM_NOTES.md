@@ -1,0 +1,635 @@
+# Mechanism notes
+
+Naslag voor **waarom** de acquisitielus zo is gebouwd. Geen changelog
+(`LEARNING_LOG.md`) en geen audit-checklist (`FRAMEWORK_BOUNDARY.md`).
+Lees dit vóór een refactor van merge, binding, surface, affordances of
+FILL. Elke sessie: `AGENT_RULES.md` + `SESSION_STATE.md` eerst.
+
+**Regel die elk mechanisme hier eerbiedigt:** code = structuur (positie,
+herhaling, aanwezigheid van een link, tekenklasse). LLM = betekenis.
+Geen domeinlexicon in deze triggers.
+
+**Procesregel:** een run-bewering citeert `stop_reason` / `outcomes` /
+`contract_satisfied` uit ruwe `result_*.json`. Zie `HANDOVER.md` §5.
+
+---
+
+## 1. Entity-binding (#22) — `require_subject_binding`, fail-closed
+
+### Probleem
+
+`aggregate_outcome` nam de hoogste-confidence niet-UNKNOWN rij, ongeacht
+**welke** candidate die schreef. Op een hotel-detailpagina scoorde een
+carrousel-widget van een *ander* property `board_type=ALL_INCLUSIVE` voor
+Monica. Fail-open: het contract werd groen op bewijs dat structureel niet
+aan het subject hing. HANDOVER §5 #6: grounding ≠ groene test.
+
+### Afgewezen
+
+- LLM-vraag “is dit hetzelfde hotel?” in code-aggregatie — betekenis in
+  code, audit-verboden.
+- Alle candidates mergen (OR over de pagina) — zelfde fail-open.
+- Binding alleen op zichtbare naam-string — lexicon / taal.
+
+### Oplossing + trigger
+
+Twee passes: eerst `subject_instance` **zonder** binding → structurele
+`subject_candidate_ref` (`candidate_id` / `block_index` / `item_link`).
+Daarna overige decisions met `require_subject_binding=True`. Geen bound
+rij → `UNKNOWN` (fail-closed), niet de carrousel-label.
+
+**Trigger:** `require_subject_binding and subject_candidate_ref is not None`.
+`subject_instance` zelf bindt nooit op zichzelf.
+
+```437:443:pipeline_offline.py
+    if require_subject_binding and subject_candidate_ref is not None:
+        bound = [r for r in eligible_rows if _is_subject_bound(r, subject_candidate_ref)]
+        if bound:
+            eligible_rows = bound
+        else:
+            # Cross-entity-only answers → fail closed (do not use Abora for Monica).
+            return "UNKNOWN"
+```
+
+Caller: `_finalize_outcomes_with_binding` pass 2.
+
+### Bewijs
+
+Offline A/B `fase_d_binding` `20260915T073132Z` (echte LLM). Live taak 02
+9/9 `CONTRACT_SATISFIED` op detail zonder carrousel-lekkage. Tests:
+entity-binding evals in `pipeline_offline` / candidate layer.
+
+---
+
+## 2. Outcomes-persistentie (#5, `_merge_outcomes`)
+
+### Probleem
+
+Elke acquisitiestap herberekende outcomes from scratch. Stap 3
+`board_type=NOT_STATED` (pagina toont de tekst niet meer) wiste stap 1
+`ALL_INCLUSIVE`. HANDOVER §5 #5. Citaat-patroon:
+`20260831T063112Z` — latere afwezigheid mag eerder bewijs niet wissen.
+
+### Afgewezen
+
+- Alleen de laatste stap bewaren — precies de bug.
+- `NOT_RELEVANT` in `_WEAK` stoppen zodat een reject vanzelf verdampt —
+  dat verbreekt “concrete reject is persistent *binnen één candidate*”;
+  item-wissel is scope (#26), geen zwakkere merge.
+- Recency-only (nieuwste stap wint altijd) — een lege zoekpagina zou
+  PRICE/BOARD wissen.
+
+### Oplossing + trigger
+
+Per `decision_id`: `UNKNOWN`/`NOT_STATED`/`""` overschrijven een
+confirming label **niet**. Een **andere** concrete string wel (nieuwste
+tegenspraak wint). Stap-stempel gaat alleen mee bij write.
+
+**Trigger:** elke interpret-stap na aggregatie, vóór sufficiency.
+
+```246:257:live_offer_state_slice.py
+        if outcome in _WEAK:
+            # Never overwrite a better (confirming) outcome with weak absence.
+            if cur is None:
+                best[decision_id] = {"outcome": outcome, "step": step}
+            continue
+        if (
+            cur is None
+            or str(cur.get("outcome") or "") in _WEAK
+            or cur.get("outcome") != outcome
+        ):
+            best[decision_id] = {"outcome": outcome, "step": step}
+```
+
+Let op: **gelijke** concrete string bump’t `step` **niet**. Dat is
+mechanisme 11 (gedocumenteerd, niet gefixt).
+
+### Bewijs
+
+Taak 01: stap-log `board_type=NOT_STATED`, finale
+`outcomes.board_type=ALL_INCLUSIVE`. Taak 02: `UNKNOWN` stappen 0–2 →
+`ALL_INCLUSIVE` stap 3 blijft tot STOP. LEARNING_LOG 2026-09-07.
+
+---
+
+## 3. Observation-cap-sync (#27)
+
+### Probleem
+
+Een abstract als één innerText-regel >240 tekens werd structureel
+geskipt (`_skip_line_structural`). Wrap+splice (`d9e8000`) maakte `c3`
+wel, maar live recapte daarna hard `candidates_to_observations(...,
+max_candidates=3)` en gooide c3 weg vóór interpret.
+`20260917T102344Z`: `claim_extracted=NOT_VISIBLE` terwijl de abstract in
+`step_*_page_text.txt` stond. HANDOVER §5 #13; Open #27.
+
+### Afgewezen
+
+- Lange regels blijven droppen — herhaling bug #1 (stille databudget).
+- Open #6 optrekken naar 8 als “fix” — budget is een ander item;
+  de bug was een **tweede** cap, niet de eerste.
+- Recap op 3 hardcoden “om tokens te sparen” — verbergt splice.
+
+### Oplossing + trigger
+
+Live: `obs = candidates_to_observations(selected)` zonder extra cap.
+`extract_candidates` blijft Open #6 (3/6) plus hoogstens één long-text
+splice. Default `max_candidates=None` = alle `selected`.
+
+**Trigger:** altijd na `extract_candidates` in de acquisition-loop;
+geen tweede onafhankelijke top-K.
+
+```770:775:live_offer_state_slice.py
+        # Open #6: extract_candidates already applied the provisional budget
+        # (max_candidates=3, max_units=6). Open #27 may splice one extra
+        # long-text candidate, so len(selected) can be 4. Do not recap here
+        # with a hardcoded 3 — that dropped spliced c3 in 20260917T102344Z
+        # before interpret ever saw the abstract.
+        obs = candidates_to_observations(selected)
+```
+
+### Bewijs
+
+Live `20260917T111714Z`: `stop_reason=CONTRACT_SATISFIED`
+`claim_extracted=EXTRACTED`. `step_006_claims.json` `candidate_claim_n=5`,
+abstract in `claim_preview`. Offline:
+`evals/long_line_units/test_long_line_units_offline_v0.py`.
+
+---
+
+## 4. Affordance-dedup `(text, href)` (#24 Fase 1)
+
+### Probleem
+
+Identity was zichtbare **tekst**. Op arXiv-search waren ~19 papers
+`text="pdf"` met verschillende hrefs → één affordance. Daarna was de
+abs-URL niet in de allowlist. `171515Z` / eerdere 05-runs: één `"pdf"`.
+
+### Afgewezen
+
+- Eerste `"pdf"` houden en de rest verzinnen — LLM mag geen URL
+  verzinnen (`href_not_in_affordances`).
+- Pad-lexicon `/abs/` of `/pdf/` — domeinregel.
+- Helemaal niet dedupen — 60-cap vol chrome-duplicaten.
+
+### Oplossing + trigger
+
+Identity = `(kind, text, href, name, id)` plus cross-kind `(text, href)`.
+Zelfde label, andere href → beide blijven. Exacte `(text, href)`-dupes
+klappen nog in.
+
+**Trigger:** `browser_list_affordances` JS `push()` en Python
+`affordance_identity_accepts` (zelfde regel, twee sites — les bug #2).
+
+```656:662:browser.py
+            // Open #24b Fase 1: identity is (kind, text, href, name, id) — not text
+            // alone. Repeated labels ("pdf") with distinct hrefs must all survive.
+            // Mirrors Python affordance_identity_accepts.
+            const key = (kind + '|' + (text || '').toLowerCase() + '|' + hrefN + '|' + (extra && extra.name ? extra.name : '') + '|' + (extra && extra.id ? extra.id : ''));
+            if (seen.has(key)) return;
+            const textHrefKey = 'TH|' + (text || '').toLowerCase() + '|' + hrefN;
+```
+
+### Bewijs
+
+`evals/affordance_identity/test_affordance_identity_offline_v0.py`
+(negatief: 19 unieke pdf-hrefs). Live `171515Z` na Fase 2: per-paper
+kaarten; Fase 1 alleen was nog niet genoeg voor OPEN.
+
+---
+
+## 5. Leaf-HTML additief op `list_results` + replace-gate (#24 Fase 2 A+B+C)
+
+### Probleem
+
+Plat `page_text` maakte één blank-line-blok dat papers/producten
+oversprong. Coolblue `110505Z`: `html_chars=699128`, 400k-cap in
+`<head><style>`, candidates = Language/Account. Affordances: 47
+`panel_option`, 0 product-hrefs. arXiv: één chunk, `cand_ids=1`.
+
+### Afgewezen
+
+- `html_b2` (heading+price NCA) — arXiv-search heeft **één** `h1–h4`;
+  kaarten zijn `<li class="arxiv-result">`. Gemeten, niet geraden.
+- Altijd HTML i.p.v. text als `html` niet leeg is — chrome-HTML
+  verdringt text (header-widgets).
+- Eerste repeating group in DOM-volgorde — Coolblue header wint van
+  productkaarten.
+- `/product/`-lexicon in de allowlist — verboden.
+
+### Oplossing + trigger
+
+Drie structurele lagen, alleen `surface=list_results`:
+
+| Laag | Wat | Trigger |
+|------|-----|---------|
+| A | `prepare_html_for_snapshot`: strip non-content, `<body>`, *dan* cap | elke snapshot |
+| B | repeating cluster-score `n × (D2c + text-link)`; `html_leaf_should_replace_text` | leaf mag text vervangen iff prijs **of** (href ∧ digit_runs≥2 ∧ regels≥2) |
+| C | `inject_preferred_action_affordances` vóór 60-cap | shown `primary_action.href` in de planner-lijst |
+
+OPEN_URL-allowlist = safe aff ∪ diezelfde preferred hrefs (`41d5fc7`).
+
+```329:345:candidates.py
+def html_leaf_should_replace_text(cands: list[Candidate]) -> bool:
+    """Keep HTML leaf only when at least one card looks itemish.
+    Itemish = D2c/glyph price line (Open #10) OR (href + digit runs + ≥2 lines).
+    """
+    ...
+        if href and int(c.digit_run_count or 0) >= 2 and n_lines >= 2:
+            return True
+```
+
+```145:175:evidence_acquisition.py
+def inject_preferred_action_affordances(...):
+    """Put candidate primary_action links into the affordance list before cap.
+    Same source as observed_open_hrefs / the #24 allowlist.
+```
+
+**Trigger B:** `surface=="list_results"` en niet-lege `html`. Andere
+surfaces negeren html (additief).
+
+### Bewijs
+
+A: `evals/html_cap_body/` vs `110505Z`. B: live `174311Z`/`183956Z`/
+`190223Z` `packager_source=html_structure`, ASUS/VICTUS `/product/`-hrefs
+(niet Language/Account). C+allowlist: `062211Z` OPEN
+`https://arxiv.org/abs/2609.18128` `source=llm` terwijl href **niet** in
+ruwe `step_002_affordances.json` stond. `171515Z` leaf-cards met `/abs/`.
+Niet sluiten: 03 blijft vaak interpret-op-lijst zonder product-OPEN.
+
+---
+
+## 6. Surface-classificatie + D2c identifier-uitsluiting (#10)
+
+### Probleem
+
+`list_results` = `price_hits >= T`. Abs-pagina `062211Z`: arXiv-id
+`2609.18128` (kale 4+ cijfers) + review-achtige 1-decimalen →
+`price_hits=4` → ten onrechte `list_results` → html-leaf pakte
+PDF/HTML/TeX-chrome i.p.v. de abstract. `claim_extracted=NOT_VISIBLE`.
+
+### Afgewezen
+
+- Lexicon-prijsdetector (`vanaf`/`from`/`p.p.`) — taal in code.
+- T verlagen tot 1 — lists en abs vallen samen.
+- Host/path-string “arxiv” → always detail — sitenaam in code.
+
+### Oplossing + trigger
+
+D2c weigert kale 4+ digit integers en 1-decimaalfracties; 3-digit
+prijzen zonder glyph blijven (Monica). T=3 **provisionally**. Site-root
+start: same-host → `same_entity` → abs wordt `live_offer_state` i.p.v.
+marketing.
+
+**Trigger:** `_classify_surface`: `dense_list = count_price_like_lines >= 3`.
+`step==0 and same_entity` → `live_detail` (property-pagina-wacht).
+
+```141:143:candidate_units.py
+        # Bare 4+ digit integers are identifiers, not displayed prices.
+        if not dec and len(num) >= 4:
+            continue
+```
+
+```116:125:live_offer_state_slice.py
+    price_hits = count_price_like_lines(text or "")
+    dense_list = price_hits >= _PRICE_LIKE_LIST_THRESHOLD
+    if step == 0 and same_entity:
+        return "live_detail", True
+    if dense_list:
+        return "list_results", same_entity
+```
+
+T=3 is **niet** gelockt over alle paginatypes (Open #10).
+
+### Bewijs
+
+`evals/surface_threshold/test_surface_threshold_offline_v0.py`
+(reconstruct `062211Z`). Live na `6debab8`: `070449Z` / `073200Z` /
+`075144Z` / `081459Z` / `072546Z` allemaal `CONTRACT_SATISFIED`
+`claim_extracted=EXTRACTED` op `/abs/…`.
+
+---
+
+## 7. `input_field` + `FILL_AND_SUBMIT` (Fase G)
+
+### Probleem
+
+Actie-enum had klikken/openen, geen typen. De agent kon niet zoeken,
+alleen navigeren. HANDOVER §5 #9: ontbrekende capability, geen datalek.
+
+### Afgewezen
+
+- Query uit de taaktekst knippen in code — LLM-betekenis.
+- `?q=` op de URL plakken zonder observed input — verzonnen control.
+- Site-specifieke search-knop.
+
+### Oplossing + trigger
+
+Nieuwe affordance-`kind=input_field` (placeholder/aria/name/id; mag
+lege innerText). Actie `FILL_AND_SUBMIT`: `query_text` is **vrije LLM-
+tekst**; code matcht alleen het observed field en typt+Enter. Anti-loop
+fingerprint bevat `q=` zodat dezelfde box met een andere query mag.
+
+**Trigger (planner mag kiezen):** `kind=input_field` staat in safe
+affordances. **Trigger (execute):** `query_text` non-empty en locator uit
+het gematchte field. Geen field → `fill_no_input_field_affordance`.
+
+```697:708:evidence_acquisition.py
+    # FILL_AND_SUBMIT: target must match an input_field affordance; query_text is
+    # free text formulated by the LLM (never auto-copied from gaps by code).
+    ...
+        if not input_affs:
+            return {
+                "action_class": "STOP",
+                "reason": "fill_no_input_field_affordance",
+```
+
+### Bewijs
+
+Live `103711Z` taak 03: `FILL_AND_SUBMIT` `target_text=Zoeken naar...`
+`query_text=RTX 4070` `target_id=search`. `stop_reason=CONTRACT_SATISFIED`.
+Taak 05: FILL op arXiv-search (`083112Z`, `072546Z`).
+
+---
+
+## 8. Retry met nieuwe query na `NOT_RELEVANT` (#25)
+
+### Probleem
+
+Na OPEN abs `subject_instance=NOT_RELEVANT` bleef de planner op hetzelfde
+record (Related Papers / HTML / Back). Gaps toonden de FAIL al.
+`20260917T072448Z`: `stop_reason=MAX_ACQUISITION_STEPS`
+`subject_instance=NOT_RELEVANT` `claim_extracted=NOT_VISIBLE`. System
+prompt zei “blijf bij current entity”.
+
+### Afgewezen
+
+- Code schrijft `query_text` — betekenis.
+- Merged `best_outcomes.NOT_RELEVANT` als trigger — homepage-reject zou
+  forever FILL’en (daarom current-page only).
+- `NOT_VISIBLE` / `UNKNOWN` als reject — afwezigheid ≠ object-reject.
+
+### Oplossing + trigger
+
+Hint iff **current-page** outcome ∈ `{NOT_RELEVANT, REJECTED}` voor een
+nog-FAIL gap **én** deze run heeft al `surface=list_results` gezien.
+Dan: niet verdiepen; `FILL_AND_SUBMIT` met **nieuwe** LLM-`query_text`
+mag. Geen input_field → eerst een listed affordance naar search.
+
+```348:386:evidence_acquisition.py
+def object_rejected_on_current_page(...):
+    """Uses current-page outcomes, not merged best_outcomes: a homepage
+    NOT_RELEVANT must not keep firing after a later page confirms the subject.
+    """
+...
+def should_hint_refine_search(...):
+    rejected = object_rejected_on_current_page(current_page_outcomes, gaps)
+    if not rejected:
+        return None
+    if "list_results" not in {str(s or "") for s in (surfaces_seen or [])}:
+        return None
+```
+
+#25 lost **planner-stuck** op. Dat merge `NOT_RELEVANT` daarna vasthoudt
+is #26, niet #25.
+
+### Bewijs
+
+Live `083112Z`: na abs-reject `OPEN_URL Search` daarna FILL
+`q=LLM agents tool use`. Contract bleef false door merge (Open #26).
+Offline: `evals/refine_search_after_reject/`. Compositie met pad 2:
+`evals/candidate_scope_reset/` (canonieke bind-reject wist het label;
+exacte 083112Z-merge is mechanisme 11).
+
+---
+
+## 9. Click-robuustheid → related `input_field` (taak 03)
+
+### Probleem
+
+`CLICK_TEXT Zoeken` op Coolblue: knop is aria-only, `locator("text=Zoeken")`
+timeout 8000ms, daarna categorie-browse. Fase G `input_field` stond wél
+in affordances (`placeholder=Zoeken naar...`, `id=search`) maar loste de
+**mis-klik** niet op. `20260916T110052Z` step 0: `execute_error` Timeout.
+
+### Afgewezen
+
+- Eerste zichtbare input — vangt newsletter/account (negatieven).
+- `type=search` of nabijheid in de DOM-index — niet universeel, niet
+  structureel-uniek.
+- Coolblue-`#search`-special case — sitenaam.
+
+### Oplossing + trigger
+
+Na gemiste visible-text locators: unieke `input_field` waarvan accessible
+name **token-boundary** matcht (`_label_matches_text`) met de click-text.
+Focus/klik dat field; **geen** verzonnen `query_text`. 0 of ≥2 matches →
+None. Daarna pas aria-label voor icon-buttons zonder related field.
+
+**Trigger:** `CLICK_TEXT` execute, visible-text locators falen, precies
+één related input.
+
+```1015:1027:evidence_acquisition.py
+        # 2. Related input_field: token-boundary match into accessible name.
+        #    Focus/click that field — do not invent query_text.
+        ...
+        if loc:
+            snap2 = browser_click(loc, max_chars=max_chars)
+            if snap2.get("ok"):
+                snap2["click_fallback"] = "related_input_field"
+```
+
+### Bewijs
+
+Offline `evals/click_related_input/`: Zoeken → `#search`;
+`Computers & tablets` / `NietBestaand` → geen fallback. Live `103711Z`
+bewijst het FILL-pad, niet deze timeout-fallback (planner koos FILL).
+Vangnet blijft voor icon-search.
+
+---
+
+## 10. Twee reset-paden (#26)
+
+`_merge_outcomes` is **correct binnen één bound candidate**. Reset is
+scope, geen zwakke-label-hack. Pad 1 en pad 2 lossen **verschillende**
+gaten. Eén maakt de ander niet overbodig.
+
+### 10a. Pad 1 — bound unbind/switch
+
+**Probleem.** #25 verliet de rejected paper; merge hield
+`subject_instance=NOT_RELEVANT` vast. Latere list-`UNKNOWN` overschrijft
+niet. Risico: titel van paper A + `RELEVANT` van paper B. `083112Z`
+finaal: `stop_reason=MAX_ACQUISITION_STEPS` `subject_instance=NOT_RELEVANT`.
+
+**Afgewezen.** `_WEAK` uitbreiden met `NOT_RELEVANT` — wis ook een
+bewuste reject *op dezelfde pagina*. `same_entity_path` vs `start_url`
+als reset — breekt taak 02 Fly & Go / arXiv-root.
+
+**Trigger.** Succesvolle navigatie én `active_candidate_path is not None`:
+FILL always unbind; leave-path zonder preferred bind → unbind; preferred
+ander path → switch. Bind alleen via `preferred_item_links` vanaf
+`list_results` (Search is geen candidate). Same-record deepening
+(`/abs/id` → `/html/id`) unbindt niet.
+
+**Reset:** **drop** keys met `step >= candidate_bound_step`; pre-bind
+blijft (`source_site`).
+
+```393:397:live_offer_state_slice.py
+    if action == "FILL_AND_SUBMIT":
+        if active_candidate_path is not None:
+            best = _reset_post_bind_outcomes(best, candidate_bound_step)
+            return best, None, None, "unbind"
+```
+
+**Bewijs.** Live bind `062211Z`/`070449Z`/`072546Z` `path=/abs/…`.
+Unbind `064948Z` `event=unbind` na FILL `q=videokaart`. Offline:
+`test_unbind_after_reject_like_083112Z`, `test_fill_unbinds_bound_candidate`.
+
+### 10b. Pad 2 — unbound search-round reset
+
+**Probleem.** Nooit gebonden: lijst-interpret zette
+`detail_link=CONCRETE_PRODUCT_PAGE`; refine FILL andere query liet die
+confirming label plakken (`skip_satisfied` bevatte `detail_link`).
+Pad 1 deed niets (`active_candidate_path is None`).
+`183956Z`/`190223Z`: `stop_reason=CONTRACT_SATISFIED` terwijl
+`final_url` `/zoeken?query=…` bleef, 0× OPEN_URL.
+
+**Afgewezen.** Alleen pad 1 — deelt dit gat niet. `search_round_id` op
+candidates — `c0`/`block_index` recyclen per pagina; extra id is geen
+structureel feit. Keys deleten i.p.v. weaken — sufficiency ziet de gap
+niet meer.
+
+**Trigger.** Succesvolle `FILL_AND_SUBMIT` waarvan genormaliseerde
+`query_text` **verschilt** van de vorige succesvolle FILL in deze run.
+Eerste FILL: no-op (onthoudt `last_fill_query_text` +
+`last_fill_result_step`).
+
+**Reset:** **weaken** `step >= last_fill_result_step` naar `UNKNOWN`,
+keys blijven. `_merge_outcomes` ongewijzigd (confirming slaat later
+UNKNOWN nog). Loopvolgorde: pad 1 **daarna** pad 2.
+
+```496:503:live_offer_state_slice.py
+    if (
+        last_fill_query_text is not None
+        and prev_q
+        and new_q != prev_q
+        and last_fill_result_step is not None
+    ):
+        best = _weaken_outcomes_from_step(best, last_fill_result_step, next_step)
+        event = "search_round_reset"
+```
+
+**Bewijs.** Live `061149Z`: 3× `search_round_reset`; na eerste reset
+stap 2 `detail_link=NO_URL`. `064948Z`: reset + later unbind.
+Offline: `test_coolblue_refine_drops_list_pool_keeps_step0`;
+01/02/06 trigger-dood (fingerprint ongewijzigd).
+
+#26 **niet sluiten:** 03-run1 nog SATISFIED op zoeklijst; mechanisme 11.
+
+---
+
+## 11. Step-stamp bij herhaalde waarde — GEDOCUMENTEERD, NIET GEFIXT
+
+### Wat het is
+
+`_merge_outcomes` schrijft `step` alleen bij een **nieuwe** concrete
+string (of eerste write / weak→concrete). Zelfde label opnieuw →
+`step` blijft de **eerste** keer.
+
+Pad 1 drop’t `step >= candidate_bound_step`. Pad 2 weaken’t
+`step >= last_fill_result_step`. Een reject die **string-gelijk** is aan
+een eerdere (homepage) reject houdt `step=0` en overleeft beide resets.
+
+### Exacte voorwaarde
+
+1. Stap A schrijft `decision_id=X` `outcome=V` (V niet in `_WEAK`) met
+   `step=A`.
+2. Later, na bind op stap B > A, schrijft interpret opnieuw `X=V`
+   (zelfde string, bv. homepage `NOT_RELEVANT` én abs `NOT_RELEVANT`).
+3. Merge bump’t `step` niet → blijft A.
+4. Unbind/FILL met `candidate_bound_step=B` drop’t alleen `step>=B` →
+   `X=V` blijft. Pad 2 met `last_fill_result_step` tussenin wipe’t A
+   evenmin als A < die drempel.
+
+Niet: verschillende concrete strings (die winnen wél en bump’en step).
+Niet: weak labels (die overschrijven confirming niet).
+
+### Waarom niet stiekem fixen
+
+Een automatische step-bump bij gelijke V verandert de merge-kern
+(Open #11 “tegenspraak wint” is al provisional). Het zou homepage- en
+abs-reject ononderscheidbaar *in de tijd* maken op een andere manier.
+Geen patch zonder ontwerp.
+
+### Citaat + bewijs
+
+```251:256:live_offer_state_slice.py
+        if (
+            cur is None
+            or str(cur.get("outcome") or "") in _WEAK
+            or cur.get("outcome") != outcome
+        ):
+            best[decision_id] = {"outcome": outcome, "step": step}
+```
+
+Exacte reconstructie uit
+`result_05_web_literature_abstract_20260917T083112Z.json`
+`steps_contract_flags`: stap 0 én stap 3 `subject_instance=NOT_RELEVANT`
+→ na merge `step=0`. Unbind+pad 2 laten het staan. Abs-only labels op
+stap 3 (`access_status=OPEN_ACCESS`, `recency=IN_RANGE`) vallen wél weg.
+Test: `test_083112Z_exact_merge_homepage_not_relevant_survives_unbind`.
+Canonieke abs-reject op `step=3` (geen homepage-zelfde-string) **wordt**
+gewist: `test_083112Z_canonical_bound_reject_then_fill_path1_then_path2`.
+
+---
+
+## 12. Dead surface — code-terminal vóór interpret (Open #29)
+
+### Probleem
+
+TUI `111126Z`: fetch OK, 0 affordances, 1 unit, 190 tekens. LLM koos 6×
+STOP; code reject'te die STOP omdat gaps bleven (`MAX_ACQUISITION_STEPS`).
+Interpret draaide tóch (entity-claim → `BOOKABLE_PACKAGE`).
+
+### Afgewezen
+
+- Lexicon op "Access Denied" / "IP blocked" — betekenis in code.
+- Drempel rekken tot bol (3 global links, 2 units, 1093 tekens) — botst
+  met de verplichte negatieve test (2–3 units = niet dood).
+- Contractvraag herschrijven — TUI-specifiek; lost de 6×-cyclus niet op.
+
+### Oplossing + trigger
+
+`is_dead_surface`: `fetch_ok` én `affordances_count==0` én
+`candidate_units_count<=1` én `text_chars < DEAD_SURFACE_TEXT_CHARS_MAX`
+(400, **provisional**). FETCH_FAILED_OR_EMPTY blijft eigenaar van
+`err` / `text_chars<40`. Bij True: `DEAD_SURFACE_NO_CONTENT` **vóór**
+`_pipeline_on_obs` / `page_text_to_observations`.
+
+### Bewijs
+
+Offline `evals/dead_surface/test_dead_surface_offline_v0.py`. TUI
+reconstruct = dead. Bol reconstruct = niet dead (cite 3/2/1093). 01/02
+fixtures + 05/06 loop-stappen = niet dead. Golden `stop_reason` 01/02/05/06
+ongewijzigd in de result-JSON.
+
+---
+
+## Appendix — campagne-infrastructuur (geen live starten vanuit deze nota)
+
+Losse runs: `AGENT_RULES.md` regels 1–3. Batch: regel 4 (één OK voor N,
+taken-lijst, tmux-naam).
+
+| Stuk | Pad |
+|------|-----|
+| Start (host/node-01) | `scripts/run_task_campaign_tmux_v0.sh` |
+| Sequentiële loop | `scripts/run_task_campaign_loop_v0.py` |
+| Samenvatting | `scripts/analyze_campaign_v0.py` |
+
+Per-run output blijft `evals/contract_driven/<UTC-stamp>_<taak>/` zoals
+`run_contract_driven_task_v0.py` nu schrijft. Campagne-meta
+(`campaign_progress.log`, manifest, circuit-breaker) staat onder
+`--campaign-dir`.
+
+**Niet** in deze nota: een taken-lijst of N vastleggen. Dat is een
+apart bericht.

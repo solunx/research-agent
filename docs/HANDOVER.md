@@ -45,10 +45,11 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 **Elke sessie (kort):** `docs/AGENT_RULES.md` → `docs/SESSION_STATE.md`.
 
 **Alleen bij bouwen / boundary-wijziging / audit-verificatie:**
-1. `docs/FRAMEWORK_BOUNDARY.md` — regel uit §3 + Open items (het relevante item, niet alles)
-2. `docs/CANDIDATE_LAYER.md` LOCKED-schema — als je candidates/units aanraakt
-3. Dit document §5 (gefixte bugs) — als je een “nieuw” defect denkt te vinden
-4. `docs/LEARNING_LOG.md` / `docs/BOUNDARY_AUDIT_FINAL.md` — alleen als SESSION_STATE of de taak daar expliciet naar wijst; nooit als default-inlees
+1. `docs/MECHANISM_NOTES.md` — waarom merge/binding/surface/FILL/reset zo gebouwd zijn (refactors)
+2. `docs/FRAMEWORK_BOUNDARY.md` — regel uit §3 + Open items (het relevante item, niet alles)
+3. `docs/CANDIDATE_LAYER.md` LOCKED-schema — als je candidates/units aanraakt
+4. Dit document §5 (gefixte bugs) — als je een “nieuw” defect denkt te vinden
+5. `docs/LEARNING_LOG.md` / `docs/BOUNDARY_AUDIT_FINAL.md` — alleen als SESSION_STATE of de taak daar expliciet naar wijst; nooit als default-inlees
 
 ## 5. Complete lijst van gevonden en gefixte bugs (NIET opnieuw diagnosticeren)
 
@@ -74,20 +75,20 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 | 18 | Coolblue list HTML: 400k-cap telde `<script>`/`<style>`/`<head>` mee → body-kaarten vielen buiten de snapshot (`110505Z` `html_chars=699128`) | `prepare_html_for_snapshot`: strip non-content, houd `<body>`, *dan* cap. `06f7f00`. `evals/html_cap_body/` | Cap op ruwe `page.content()` is geen content-budget |
 | 19 | Leaf `repeating_only` nam de eerste repeating group (header-widgets) i.p.v. productkaarten; niet-lege HTML verving de text-arm blind | Cluster-score = n × (D2c + text-link); `html_leaf_should_replace_text` (prijs OF href+digit-runs+≥2 regels). `ef3b066`. `evals/html_leaf_list/` | Eerste cluster ≠ item-cluster; chrome-HTML mag text niet verdringen. arXiv heeft geen € — tie-break is niet prijs-only |
 | 20 | Product-`primary_action` verdronk in `panel_option`-filters (47 filters, 4 nav hrefs, geen product-URL in cap) | `inject_preferred_action_affordances` vóór cap; zelfde bron als #24 allowlist. Geen `/product/`-lexicon. `64a4f88`. `evals/preferred_href_allowlist/` | Allowlist accepteert een href die de planner nooit ziet; inject maakt hem zichtbaar |
-| 21 | Unbound lijst-interpret zette `detail_link=CONCRETE_PRODUCT_PAGE`; refine FILL andere query liet die confirming label plakken (`#26` pad 2; `183956Z`/`190223Z`) | `apply_fill_query_round_reset`: andere FILL-`query_text` → weaken `step>=last_fill_result_step` naar `UNKNOWN`, keys blijven. `_merge_outcomes` ongewijzigd. Pad 1 (bound unbind) blijft apart. `23028a0`. `evals/candidate_scope_reset/` | Twee reset-paden: bound path vs unbound search-round. Eén maakt de ander niet overbodig |
+| 21 | Unbound lijst-interpret zette `detail_link=CONCRETE_PRODUCT_PAGE`; refine FILL andere query liet die confirming label plakken (`#26` pad 2; `183956Z`/`190223Z`) | `apply_fill_query_round_reset`: andere FILL-`query_text` → weaken `step>=last_fill_result_step` naar `UNKNOWN`, keys blijven. `_merge_outcomes` ongewijzigd. Pad 1 (bound unbind) blijft apart. `23028a0`. Live `search_round_reset` `061149Z`/`064948Z`; unbind `064948Z`. `evals/candidate_scope_reset/` | Twee reset-paden: bound path vs unbound search-round. Eén maakt de ander niet overbodig. #26 niet sluiten |
 
 **Meta-les, zelf ook een keer fout gegaan:** een van de externe reviewers (mij, Claude) las ooit een run-resultaat verkeerd en rapporteerde een fictieve regressie, wat tot een halve dag onnodige diagnose leidde. **Daarom deze procesregel, dwing 'm af:**
 
 > **Elke bewering over een run-resultaat (geslaagd/gefaald/regressie) moet vergezeld gaan van een letterlijk citaat van `stop_reason`/`outcomes`/`contract_satisfied` uit het ruwe `result_*.json`-bestand. Nooit een parafrase, nooit uit geheugen.**
 
-## 6. Huidige status (18 september 2026)
+## 6. Huidige status (19 september 2026)
 
 **Werkt, herhaaldelijk bevestigd stabiel:**
 - Taak 02 (hotel, detailpagina): 9/9 `CONTRACT_SATISFIED` op stap 0
 - Taak 06 (Wikipedia): stabiel, inclusief batch-decisions-modus
 - Entity-binding (#22): hard bevestigd via offline A/B met echte LLM
 - Architecture-freeze P0: hard-fail bij ontbrekend/niet-bevroren contract
-- Fase G zoekcapaciteit + §5 #10–#16 (taak 05 list→abs pad). **Na #10: 4/4** live `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` (`070449Z` `/abs/2609.18128`, `073200Z` zelfde, `075144Z` `/abs/2609.13860`, `081459Z` `/abs/2609.18128`). Niet één paper, niet één run.
+- Fase G zoekcapaciteit + §5 #10–#16 (taak 05 list→abs pad). **Na #10: 5/5** live `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED` (`070449Z` `/abs/2609.18128`, `073200Z` zelfde, `075144Z` `/abs/2609.13860`, `081459Z` `/abs/2609.18128`, `072546Z` `/abs/2609.20625`). Niet één paper, niet één run.
 
 **Niet opnieuw diagnosticeren (al in §5):** #24a/#24b/#24 allowlist, #25, #27, #28, #10-trigger op arXiv abs. #26: bound-pad niet herschrijven; unbound FILL-round is een **tweede** pad (niet een vervanging).
 
@@ -95,9 +96,9 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 - Open #4: minimale structurele stat-set voor "chrome" — kleine n, niet gevalideerd
 - Open #6: `max_candidates`-budget provisional
 - Open #10: **deze abs-trigger live-bewezen** (`070449Z`); T=3 + D2c-tighten blijft provisionally, niet gelockt over alle paginatypes
-- Open #26: bound-unbind **en** unbound FILL-query-round (twee paden). Offline `evals/candidate_scope_reset/`. Live 03+05 na `ja, start` per taak — niet 03-only als #25-bewijs
+- Open #26: twee paden. #25-compositie (bind-reject → FILL) offline: canonieke `NOT_RELEVANT` op bind-stap wordt gewist, pad 2 resurrect niet. Exacte `083112Z`-merge: homepage-`NOT_RELEVANT` `step=0` overleeft unbind+pad 2. Geen `_merge_outcomes`-fix zonder overleg. **Niet sluiten**
 - Open #19/#22-vervolg: `NOT_STATED` is contract-vocabulaire, geen framework-sentinel
-- Taak 03 (Coolblue): click-fallback `7863753`; live FILL `103711Z`. A+B+C `06f7f00`/`ef3b066`/`64a4f88`. Live 3× `174311Z`/`183956Z`/`190223Z` allemaal `CONTRACT_SATISFIED` — leaf pakt productkaarten, maar **geen OPEN_URL**, `final_url` blijft zoeklijst. Niet html_b2
+- Taak 03 (Coolblue): click-fallback `7863753`; live FILL `103711Z`. A+B+C `06f7f00`/`ef3b066`/`64a4f88`. Pre-#26 3× `174311Z`/`183956Z`/`190223Z` `CONTRACT_SATISFIED` zonder OPEN. Post-#26: `061149Z` `CONTRACT_SATISFIED` `/zoeken?query=nvidia+rtx+4070` 0× OPEN; `064948Z` `MAX_ACQUISITION_STEPS` OPEN categorieën + unbind, geen `/product/` OPEN. Niet html_b2
 - `batch_decisions=True` bewezen goedkoper, blijft **opt-in**
 - Niet `html_b2` als #24b-fix (heading+price NCA is de verkeerde vorm voor arXiv `<li>`)
 
@@ -105,7 +106,11 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 | Bestand | Rol |
 |---|---|
+| `docs/MECHANISM_NOTES.md` | Waarom-naslag (entity-binding, merge, #24–#27, FILL, #25, #26 twee paden, step-stamp-discrepantie) |
 | `scripts/run_contract_driven_task_v0.py` | Canoniek entry point |
+| `scripts/run_task_campaign_tmux_v0.sh` | Batch-campagne in detached tmux (N×M, circuit breaker, progress-log) |
+| `scripts/run_task_campaign_loop_v0.py` | Sequentiële docker-jobs van die campagne |
+| `scripts/analyze_campaign_v0.py` | LLM-loze samenvatting + deviant-runs |
 | `scripts/run_contract_synthesis_batch_v0.py` | Contract-synthese (Fase 1) |
 | `live_offer_state_slice.py` | Hoofdlus: acquisition, outcomes-merge, sufficiency-check per stap |
 | `pipeline_offline.py` | `run_interpretation`, `aggregate_outcome`, `_claim_priority`, batch-decisions-logica |
@@ -127,4 +132,4 @@ Dit is niet een stijlvoorkeur — het is met een zes rondes durende, formele aud
 
 ## 9. Wat NU als eerstvolgende stap klaarstaat
 
-Open **#26** unbound FILL-query-round offline groen. Live **03 én 05** alleen na expliciet `ja, start` per taak (`docker compose build` eerst). #25-planner niet wijzigen. Niet html_b2. Niet batch-default.
+Open **#26** niet sluiten (zie `docs/MECHANISM_NOTES.md` §10–§11). Campagne 1 **klaar**. FIX 1 **H-dead-surface** (Open #29): `DEAD_SURFACE_NO_CONTENT` vóór interpret; TUI reconstruct dead, bol niet (3 aff / 2 units / 1093). FIX 2 entity-als-claim volgt apart. Geen live TUI/bol zonder OK. Niet html_b2.

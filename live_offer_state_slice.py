@@ -72,6 +72,45 @@ ChatFnStr = Callable[[list[dict[str, str]]], str]
 # step==0 + same_entity → live_detail short-circuit remains the property-page guard.
 _PRICE_LIKE_LIST_THRESHOLD = 3  # provisional; see Open #10 in FRAMEWORK_BOUNDARY.md
 
+# H-dead-surface (Open #29): fetch succeeded but the page has no actionable
+# structure and almost no text. Provisional char budget — not locked across
+# page types (same class as Open #6 max_candidates / Open #10 T=3).
+# FETCH_FAILED_OR_EMPTY already owns err or text_chars < 40.
+DEAD_SURFACE_TEXT_CHARS_MAX = 400  # provisional
+DEAD_SURFACE_STOP_REASON = "DEAD_SURFACE_NO_CONTENT"
+
+
+def is_dead_surface(
+    *,
+    fetch_ok: bool,
+    affordances_count: int,
+    candidate_units_count: int,
+    text_chars: int,
+    text_chars_max: int = DEAD_SURFACE_TEXT_CHARS_MAX,
+) -> bool:
+    """Structural dead-page gate. No lexicon, no host names, no error strings.
+
+    True only when fetch succeeded AND there is nothing to act on AND
+    almost no text AND at most one candidate unit. 2–3 units (sparse but
+    real) must stay False — see evals/dead_surface negatives.
+    """
+    if not fetch_ok:
+        return False
+    try:
+        aff_n = int(affordances_count)
+        unit_n = int(candidate_units_count)
+        n_chars = int(text_chars)
+        cap = int(text_chars_max)
+    except (TypeError, ValueError):
+        return False
+    if aff_n != 0:
+        return False
+    if unit_n > 1:
+        return False
+    if n_chars < 0 or n_chars >= cap:
+        return False
+    return True
+
 
 def _classify_surface(
     *,
@@ -766,6 +805,68 @@ def run_acquisition_loop(
             max_lines_per_unit=8,
         )
         unit_preview = unit_claim_preview(units)
+
+        # Code terminal BEFORE interpret / entity-claim safety-net. LLM STOP
+        # while gaps remain is rejected; this is the structural empty-page
+        # equivalent of FETCH_FAILED_OR_EMPTY (fetch itself succeeded).
+        if is_dead_surface(
+            fetch_ok=True,
+            affordances_count=len(affordances),
+            candidate_units_count=len(units),
+            text_chars=len(text),
+        ):
+            if trace:
+                try:
+                    from candidates import candidates_to_jsonable
+
+                    trace.save_artifact(
+                        f"step_{step:03d}_candidates.json",
+                        {
+                            "url": final_url,
+                            "surface": surface,
+                            "candidates": candidates_to_jsonable(selected),
+                            "preview": cand_preview,
+                        },
+                    )
+                    trace.save_artifact(
+                        f"step_{step:03d}_candidate_units.json",
+                        {"url": final_url, "surface": surface, "units": units[:8]},
+                    )
+                except Exception:
+                    pass
+            step_rec = {
+                "step": step,
+                "url": final_url,
+                "text_chars": len(text),
+                "candidate_unit": None,
+                "interpreted": False,
+                "skipped_interpretation_reason": "dead_surface_no_content",
+                "claim_n": 0,
+                "outcomes": {},
+                "eligible": False,
+                "contract_satisfied": False,
+                "sufficiency": None,
+                "gaps": [],
+                "affordance_n": len(affordances),
+                "interp_llm_calls": 0,
+                "surface": surface,
+                "same_entity_path": same_entity,
+                "state_sig": cur_sig,
+                "candidate_units_n": len(units),
+                "preferred_item_links_n": len(preferred_links),
+                "unit_preview": unit_preview[:4],
+            }
+            steps_log.append(step_rec)
+            ledger.set_stop(DEAD_SURFACE_STOP_REASON)
+            if trace:
+                trace.log_stop(DEAD_SURFACE_STOP_REASON)
+            print(
+                f"[acquisition] step={step} STOP {DEAD_SURFACE_STOP_REASON} "
+                f"aff={len(affordances)} units={len(units)} "
+                f"text_chars={len(text)} (no interpret)",
+                flush=True,
+            )
+            break
 
         # Open #6: extract_candidates already applied the provisional budget
         # (max_candidates=3, max_units=6). Open #27 may splice one extra

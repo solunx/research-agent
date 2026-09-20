@@ -2123,6 +2123,140 @@ Pad (1) bound `_reset_post_bind_outcomes` (drop) ongewijzigd. Pad (2) `apply_fil
 ### Niet
 Geen live tot `ja, start` per taak (03 én 05). Geen html_b2. #26 niet sluiten op offline alleen.
 
+## 2026-09-19 — Open #26 live 03×2 + 05×1 (`061149Z` / `064948Z` / `072546Z`)
+
+Rebuild image na `23028a0`. Canoniek pad, `--max-steps 6`.
+
+### Citaat result (raw)
+- `result_03_web_product_gpu_20260919T061149Z.json`: `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true` `subject_instance=RTX_4070` `detail_link=CONCRETE_PRODUCT_PAGE` `final_url=https://www.coolblue.be/nl/zoeken?query=nvidia+rtx+4070` `acquisition_steps=5`
+- `result_03_web_product_gpu_20260919T064948Z.json`: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` `subject_instance=OTHER_GPU` `detail_link=CONCRETE_PRODUCT_PAGE` `study_design=UNKNOWN` `final_url=https://www.coolblue.be/nl/zoeken/producttype:videokaarten?query=videokaart` `acquisition_steps=6`
+- `result_05_web_literature_abstract_20260919T072546Z.json`: `stop_reason=CONTRACT_SATISFIED` `contract_satisfied=true` `claim_extracted=EXTRACTED` `final_url=https://arxiv.org/abs/2609.20625` `acquisition_steps=3`
+
+### Citaat pad 2 (unbound reset)
+`061149Z` loop: 0× `OPEN_URL`. FILL `q=rtx 4070` → step 1 `detail_link=CONCRETE_PRODUCT_PAGE`. Refine `q=rtx 4070 videokaart` → `search_round=search_round_reset path=None`. Step 2 `detail_link=NO_URL` `skip_satisfied=['price_scope']` (niet `detail_link`). Nog twee resets (`rtx 4070 super`, `nvidia rtx 4070`). SATISFIED op stap 5 **zelfde** nvidia-query (geen FILL tussen 4 en 5).
+`064948Z`: reset op `q=rtx 4070 super videokaart`; step 2 `detail_link=NO_URL`.
+
+### Citaat pad 1 (bound unbind)
+`064948Z`: `OPEN_URL` `Bekijk alle categorieën` `event=bind path=/nl/ons-assortiment bound_step=3`. Later FILL `q=videokaart` `event=unbind search_round=search_round_reset path=None`.
+
+### Citaat 05
+`072546Z`: homepage `NOT_RELEVANT` → OPEN Search → FILL (eerste FILL = pad-2 no-op) → list `RELEVANT` → `OPEN_URL` `arXiv:2609.20625` `event=bind path=/abs/2609.20625` → `CONTRACT_SATISFIED` `claim_extracted=EXTRACTED`. Geen abs-`NOT_RELEVANT`→FILL-retry (#25 niet herbewijzen). Reset brak het 05-happy-path niet.
+
+### Niet
+#26 **niet sluiten** (één SATISFIED-op-lijst blijft; 05 geen FILL-retry na abs-reject). #24b **niet sluiten** (geen `/product/` OPEN). Geen extra live zonder nieuwe hypothese. Geen html_b2.
+
+## 2026-09-19 — #25 onder pad-2, offline reconstructie `083112Z`
+
+Geen live. Loopvolgorde = pad 1 daarna pad 2. Bind met abs-href in `preferred_item_links` (huidige #24b; 083112Z-artifact had chrome-preferred).
+
+### Citaat artifact
+`result_05_web_literature_abstract_20260917T083112Z.json` `steps_contract_flags`: stap 0 `subject_instance=NOT_RELEVANT`; stap 3 `subject_instance=NOT_RELEVANT` `access_status=OPEN_ACCESS` `recency=IN_RANGE` `year_venue_extracted=EXTRACTED`. FILL-queries uit events: `q=large language model agents tool use` daarna `q=LLM agents tool use`.
+
+### (a) Canonieke bind-reject (abs-label op step 3)
+Pad 1 `unbind`: `subject_instance` / `access_status` / `recency` / `year_venue_extracted` **afwezig**. Pad 2 `search_round_reset`: `subject_instance` blijft afwezig (geen resurrect).
+
+### (b) Geen dubbele/tegenstrijdige pad-2-wipe van pre-search-round
+Step-0 `source_site=ARXIV` overleeft pad 1 **en** pad 2. Step-2 search-pool (`source_site` van de vorige query) weaken't pad 2 naar `UNKNOWN` — dat is pad-2-semantiek, niet een tweede delete van `NOT_RELEVANT`.
+
+### Discrepantie (geen fix)
+Exacte `_merge_outcomes` op die `steps_contract_flags`: abs dezelfde `NOT_RELEVANT` bump't `step` niet → blijft `step=0`. Unbind (`step>=3`) en pad 2 (`step>=2`) laten homepage-`NOT_RELEVANT` staan. Abs-only confirming labels (step 3) vallen wél weg. Merge-kern, niet pad 2. Tests in `evals/candidate_scope_reset/test_candidate_scope_offline_v0.py`. #26 niet sluiten.
+
+## 2026-09-19 — Campagne 1 generaliteit: taken + synthese `20260919T110338Z`
+
+Vijf nieuwe `tasks/campaign1_generaliteit/*.md` (geen handmatig contract). Synthese `--llm --no-heuristic`. Map: `evals/contract_synthesis/20260919T110338Z_synthesis`.
+
+| stem | frozen | remaining_gaps | decisions |
+|------|--------|----------------|-----------|
+| `tui_package_crete` | true | [] | subject_instance, price_scope, departure_airport, board_type, destination_confirm, dates_confirm, party_size, bookable_evidence |
+| `bol_airpods_pro` | true | [] | subject_instance, detail_link, price_scope, stock_status |
+| `marktplaats_fiets_regio` | true | [] | subject_instance, location_scope, detail_link, price_scope, listing_status |
+| `semanticscholar_rag_paper` | true | [] | subject_instance, recency, title_extracted, claim_extracted, url_valid, source_type |
+| `wiki_brussels_population` | true | [] | subject_instance, population_figure, population_year, scope_type, article_url |
+
+`campaign_report.json` counts: total=5 frozen=5 unfrozen=0 error=0. Wrapper én inner `frozen=true` in elke `contract_*.json`.
+
+Live N=6 tmux-sessie `campaign1_generaliteit` daarna; analyse na afloop, niet hier.
+
+## 2026-09-19 — Campagne 1 uitkomst `campaign1_generaliteit_20260919T111126Z`
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| Vijf nieuwe domeinen, N=6, laten zien of SATISFIED LLM-variatie is | **0/18** `contract_satisfied=true`. 5× CIRCUIT_BREAK op identieke `stop_reason`+`first_gap`. 12 repeats overgeslagen. Geen LLM-variatie | **Niet herstarten.** Circuit deed zijn werk. 0/18 is per-taak structureel |
+| Campagne-infra (tmux, circuit, analyzer) is bruikbaar | END `runs=18 circuit_breaks=5` 2026-09-19T17:47:26Z. Analyzer schreef `campaign_analysis.json`+`.md`. Bol FETCH_FAILED_OR_EMPTY brak de streak (niet circuit) | Infra **houden**. Geen extra live zonder nieuwe hypothese |
+| #26 bind/unbind/search_round_reset is de bottleneck op nieuwe sites | bind=0 unbind=0 op alle 18. `search_round_reset` alleen wiki (3) + Semantic Scholar (3). TUI/bol: 0 FILL. 2dehands: FILL timeout vóór round-reset | #26 **niet** de campagne-oorzaak. Niet sluiten. Geen merge-fix |
+
+Analyzer: `evals/campaigns/campaign1_generaliteit_20260919T111126Z/campaign_analysis.{json,md}`. Progress: zelfde map `campaign_progress.log`. Contracten: `evals/contract_synthesis/20260919T110338Z_synthesis/`.
+
+### Headline (ruwe result_*.json)
+
+| stem | n | sat | stop | first_gap | llm mean | dur mean | mechanisms |
+|------|---|-----|------|-----------|----------|----------|------------|
+| tui_package_crete | 3 | 0 | MAX×3 | `price_scope\|FAIL\|NO_PRICE` | 353 | 2387s | 0 bind / 0 FILL |
+| bol_airpods_pro | 6 | 0 | MAX×5 + FETCH×1 | `subject_instance\|UNKNOWN\|UNKNOWN` | 64 | 530s | 0 bind / 0 FILL |
+| marktplaats_fiets_regio | 3 | 0 | MAX×3 | `subject_instance\|FAIL\|NOT_BICYCLE` | 116 | 1086s | FILL timeout; 0 bind |
+| semanticscholar_rag_paper | 3 | 0 | MAX×3 | `subject_instance\|FAIL\|NOT_RAG` | 230 | 2401s | reset=3; href_open_llm=4 |
+| wiki_brussels_population | 3 | 0 | MAX×3 | `population_figure\|UNKNOWN\|UNKNOWN` | 137 | 983s | reset=3; artikel bereikt |
+
+Deviant-runs = nieuwe outcomes-combinatie per stem (analyzer): TUI één; bol MAX + FETCH; 2dehands PRICE_FOUND vs PRICE_NOT_SHOWN; SS één; wiki één.
+
+### Citaat per stem (niet parafraseren)
+
+**TUI** `result_tui_package_crete_20260919T111126Z.json`: `stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false` `final_url=https://www.tui.nl/` `outcomes={subject_instance: BOOKABLE_PACKAGE, price_scope: NO_PRICE, departure_airport: AIRPORT_NOT_VISIBLE, board_type: UNKNOWN, destination_confirm: UNKNOWN, dates_confirm: UNKNOWN, party_size: UNKNOWN, bookable_evidence: UNKNOWN}`. `step_000_page_text.txt`: `Access Denied` / Akamai `errors.edgesuite.net`. Loop: 6× `action_class=STOP` `source=llm` `stop_rejected` (gaps blijven). Claims bevatten letterlijk `"one concrete bookable"` naast `"Access Denied"`.
+
+**bol** `result_bol_airpods_pro_20260919T131049Z.json`: `MAX_ACQUISITION_STEPS` `false` `final_url=https://www.bol.com/` `outcomes={subject_instance: UNKNOWN, detail_link: URL_NOT_FOUND, price_scope: PRICE_NOT_SHOWN, stock_status: UNKNOWN}`. `step_000_page_text.txt`: `IP address is blocked` / `possible abuse`. Repeat 3 `20260919T133208Z`: `FETCH_FAILED_OR_EMPTY` `contract_satisfied=null` `outcomes=null` `final_url=null` `duration_s=60.34`. Circuit pas na runs 4–6 (streak gereset door FETCH).
+
+**2dehands** `result_marktplaats_fiets_regio_20260919T140350Z.json`: `MAX_ACQUISITION_STEPS` `false` `final_url=https://www.2dehands.be/` `outcomes={subject_instance: NOT_BICYCLE, location_scope: UNKNOWN, detail_link: URL_FOUND, price_scope: PRICE_FOUND, listing_status: ACTIVE_FOR_SALE}`. `143952Z` zelfde gap, `price_scope=PRICE_NOT_SHOWN`. FILL `q=fiets`/`bicycle`/`stadsfiets` → `Locator.click Timeout` ; overlay `sp_message_iframe_*` / `SP Consent Message` intercepts pointer events. Homepage-units = auto's (`Citroën C4`, `€ 10.450`). Geen OPEN van listing.
+
+**Semantic Scholar** `result_semanticscholar_rag_paper_20260919T145809Z.json`: `MAX_ACQUISITION_STEPS` `false` `final_url=https://www.semanticscholar.org/search?q=retrieval%20augmented%20generation&sort=relevance` `outcomes={subject_instance: NOT_RAG, recency: NOT_RECENT, title_extracted: NOT_FOUND, claim_extracted: NOT_FOUND, url_valid: INVALID, source_type: OTHER}`. `step_001_page_text.txt`: `Error: 405` / `Our servers are having a bit of trouble.` FILL → OPEN Homepage `source=llm` → `SCOPE search_round_reset`.
+
+**Wiki** `result_wiki_brussels_population_20260919T165815Z.json`: `MAX_ACQUISITION_STEPS` `false` `final_url=https://nl.wikipedia.org/wiki/Brussel_(stad)` `outcomes={subject_instance: NL_ARTICLE, population_figure: UNKNOWN, population_year: UNKNOWN, scope_type: CITY_PROPER, article_url: URL_FOUND}`. Contract-outcomes `population_figure ∈ {FIGURE_FOUND, UNKNOWN}`. Na SCROLL `step_003_candidate_units.json` u0: `Bevolkings­dichtheid\t198.674 (01/01/2026)`. `step_003_claims.json` `claim_preview` blijft Atomium / Manneken Pis / Belgische Revolutie 1830. Planner STOP: *"The population figure (198.674) and date (01/01/2026) are already visible in candidate_unit [u0]"* — code `stop_rejected`, interpret blijft UNKNOWN. Surface na zoek = `list_results`. `page_text` lead: `Brussel telt ruim 198.000 inwoners`.
+
+### Vijf faalklassen (niet één “agent is stom”)
+
+1. **Host-block** (TUI Akamai, bol IP-abuse). 0 affordances. LLM diagnoseert correct; code verbrandt 6 STOP-rejects. Interpret TUI: `BOOKABLE_PACKAGE` op Access Denied.
+2. **Consent-overlay eet FILL** (2dehands Sourcepoint iframe). Zoek landt nooit. Homepage-auto's → `NOT_BICYCLE` + `PRICE_FOUND`/`URL_FOUND` van chrome.
+3. **Upstream 405** (Semantic Scholar). #26 pad-2 reset + allowlist OPEN homepage werken; site geeft geen papers.
+4. **Claims-kanaal mist infobox** (wiki). Units + planner zien `198.674 (01/01/2026)`; interpret-claims niet. Code-STOP-authority werkt.
+5. **Contract-tekst in claims** (TUI `"one concrete bookable"`). Subject-definitie lekt als page-evidence.
+
+### Wat dit níet is
+
+Geen reden om N=6 opnieuw te draaien. Geen #26/#24b-sluiting. Geen merge-step-fix. Geen html_b2. Circuit niet “te agressief” (bol FETCH bewijst het tegenovergestelde). qwen-generaliteit is **niet** gefalsifieerd: wiki navigeerde naar het juiste artikel; SS probeerde drie queries; 2dehands koos `q=fiets`. De loop kwam niet tot betekenis-op-bewijs.
+
+### Hypothesen voor later (geen implementatie zonder overleg)
+
+- **H-overlay:** consent-modal die pointer events onderschept is execute-blocker; click_fallback (nearby-input) vuurt hier niet.
+- **H-dead-surface:** 0 affordances + error/block-pagina mag een code-terminal zijn i.p.v. 6× LLM-STOP. Geen lexicon; structureel (lege aff + fetch-ok).
+- **H-claims-vs-units:** interpret ziet `claim_preview`; planner ziet `candidate_units`. Infobox-cijfers zitten in units, niet in ranked claims. Wiki-artikel als `list_results` (digit runs / price_hits) raakt Open #10 T=3.
+- **H-leak:** task/contract-subject in claim-kanaal → false confirming (`BOOKABLE_PACKAGE` op Access Denied).
+- **H-site-keuze:** tui.nl / bol.com vanaf dit IP zijn geen research-oppervlak. Volgende campagne: hosts die daadwerkelijk HTML+affordance teruggeven (wiki-achtig), of overlay-hypothese eerst.
+
+Geen extra live. Geen fix in deze fase.
+
+## 2026-09-19 — H-leak diagnose (TUI `"one concrete bookable"`)
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| `"one concrete bookable"` zit in de contract-`question` en gaat via `build_user_prompt` mee als interpret-payload | **Nee.** `subject_instance.question` = `"Is the page a specific bookable package rather than a destination brochure or generic search listing?"` — frase **niet** in de vraag. `build_user_prompt(decision, Access Denied)` bevat de frase **niet**. Subject-`definition` heeft wél `"One concrete bookable …"` maar die gaat **niet** de interpret-payload in (alleen id/question/outcomes/definitions/notes) | Niet oplossen door de contractvraag te herschrijven |
+| Frase komt uit task.md en wordt als `source_text` geïnterpreteerd | **Ja.** `tasks/campaign1_generaliteit/tui_package_crete.md` `Find **one concrete bookable**`. `extract_entity_hint` = eerste `**bold**` → entity=`one concrete bookable`. `page_text_to_observations` regel `add("candidate_claim", candidate_id, "identity", "entity")`. Live obs `live-0` `text=one concrete bookable` `origin=entity` | Leak = **task-bold → entity → identity-claim**, niet de contractvraag |
+| Alleen op lege/foutieve pagina's | **Gated door sparse candidates.** Injectie alleen als `surface != list_results` én `len(selected) < 2` (`live_offer_state_slice.py`). TUI: 1 unit Access Denied → injectie. **Negatieve controle bol** `131049Z`: 2 units, zelfde host-block-klasse, géén entity-claim, `subject_instance=UNKNOWN`. Wiki/SS homepage: ≥3 candidates → géén injectie | H-leak-symptoom zit achter dezelfde poort als H-dead-surface. Entity-als-claim is daarnaast zelf een structurele fout |
+| `interpret_observation(Access Denied)` triggert consistent BOOKABLE_PACKAGE | Geen nieuwe LLM (AGENT_RULES). `chat_fn=None` → UNKNOWN (fail-closed). Live TUI ×3: `111126Z` step0 UNKNOWN → step1+ BOOKABLE_PACKAGE; `115228Z`/`123201Z` BOOKABLE vanaf step0. CU `NOT_ADMISSIBLE` *"unit_text 'one concrete bookable' is a verbatim fragment of the task prompt"* — daarna `interpret_even_if_not_admitted=True` | Niet 100% op de eerste stap; 3/3 runs eindigen BOOKABLE. Per-claim traces niet bewaard — unieke niet-pagina-`source_text` is de entity-claim |
+
+Offline lock: `evals/h_leak/test_h_leak_offline_v0.py`. Geen productie-fix.
+
+**Niet:** contractvraag herschrijven. **Wel later (overleg):** H-dead-surface = interpret overslaan / code-terminal bij 0 affordances + sparse units na succesvolle fetch; tegelijk entity-als-claim niet als page-evidence. H-leak is het zichtbare symptoom van die sparse-page safety net + task-bold entity.
+
+## 2026-09-20 — FIX 1 H-dead-surface `DEAD_SURFACE_NO_CONTENT`
+
+| Hypothesis | Result | Decision |
+|------------|--------|----------|
+| 0 aff + ≤1 unit + korte tekst na succesvolle fetch mag code-STOP vóór interpret | TUI reconstruct: aff=0 units=1 chars=190 → `is_dead_surface=True`. Loop breekt vóór `_pipeline_on_obs` | **TOEGEPAST.** `DEAD_SURFACE_TEXT_CHARS_MAX=400` provisional (Open #29) |
+| 2–3 units (sparse maar echt, o.a. 06 wiki) blijven live | 06 `064738Z` step0 aff=36 units=6 chars=22031: niet dead. Synthetic 2 en 3 units + 0 aff + 190 chars: niet dead | Negatieve test groen |
+| 01/02/05/06 golden stop/outcomes ongewijzigd | 01 `065415Z` `MAX_ACQUISITION_STEPS` false; 02 `062828Z` / 05 `081459Z` / 06 `064738Z` `CONTRACT_SATISFIED`. Fixtures 01/02 + loop-stappen 05/06: `is_dead_surface=False` | Geen regressie |
+| Bol stopt ook vroeg | **Nee onder deze predicate.** `131049Z` aff=3 (mailto/IP/dev) units=2 chars=1093. Rekken naar units≤2 botst met de 2–3-unit negatieve test | Niet stretchen. Bol blijft FIX-2-irrelevant (geen entity-injectie) tot een aparte predicate |
+
+Offline: `evals/dead_surface/test_dead_surface_offline_v0.py`. Geen live (AGENT_RULES). Entity-als-claim is FIX 2.
+
 
 
 
