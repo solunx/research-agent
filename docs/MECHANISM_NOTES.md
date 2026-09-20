@@ -887,6 +887,61 @@ True. 01/02/03/05/06 HTML: 0 `sp_message_*`; first-timeout gate False.
 
 ---
 
+## 17. HTML-leaf replace dropte D2c-teksteenheden (Open #32)
+
+### Probleem
+
+Wiki `165815Z` `result_wiki_brussels_population_20260919T165815Z.json`:
+`stop_reason=MAX_ACQUISITION_STEPS` `contract_satisfied=false`
+`population_figure=UNKNOWN`. Na SCROLL:
+`step_003_candidate_units.json` u0 bevat
+`Bevolkingsdichtheid 198.674 (01/01/2026)`.
+`step_003_claims.json` `claim_preview` = Atomium / Manneken Pis /
+Belgische Revolutie 1830. Planner STOP citeert u0; code `stop_rejected`.
+
+### Diagnose (niet rank, niet #27-recap)
+
+Text-arm `rank_candidates` houdt u0 als eerste (`block_index=0`).
+Interpret zag de HTML-top-3 omdat `extract_candidates` bij
+`surface=list_results` de text-pool **vervangt** (`html_leaf_should_replace_text`
+via href+digit_runs). 1830/1958 zijn geen D2c; "165 miljard" wél, maar
+dat is niet het infoboxcijfer. Claims n=4 = titel + 3 HTML-kaarten —
+geen tweede cap zoals #27 `102344Z`.
+
+Zelfde *klasse* als #27: twee packagers, exclusieve budget. Andere gate.
+
+### Afgewezen
+
+- Bare `digit_run_count`-boost — Open #10 / D2c-discipline; identifiers
+  en jaartallen zouden winnen.
+- HTML-replace uitzetten — breekt arXiv/Coolblue leaf-lists (#24b).
+- Surface-classifier T=3 locken — dat is Open #10, niet deze splice.
+
+### Oplossing + trigger
+
+Na HTML `select_top_candidates`: splice maximaal één text-candidate met
+≥ 3 **unrepresented** `line_is_price_like`-regels (glyph ∨ D2c).
+T=3 = zelfde drempel als #10, provisionally. Daarna geen recap.
+
+```476:482:candidates.py
+    if html_cands and html_leaf_should_replace_text(html_cands):
+        # Repeating itemish list recovered — select from leaf cards, not
+        # 8-line text chunks. Chrome-only repeating groups fall back to text.
+        # Open #32: HTML exclusive replace is a second packager (#27-class).
+        # Splice one unrepresented D2c/glyph text unit; do not recap again.
+        chosen = select_top_candidates(html_cands, max_n=max_candidates)
+        return splice_unrepresented_price_like_text(chosen, raw)
+```
+
+### Bewijs
+
+Offline reconstruct 165815Z: splice n=4, `198.674` in observations.
+01/02/03/05/06 text-arm ongewijzigd. 03 HTML-kaarten houden n=3; 05
+arXiv pagination < T=3. `evals/claims_vs_units/test_claims_vs_units_offline_v0.py`.
+Geen live.
+
+---
+
 ## 14. Path B — contractvraag + outcome-enum in de interpret-prompt (NIET GEFIXT)
 
 Audit 2026-09-20. Geen codewijziging. Path A was task-bold als

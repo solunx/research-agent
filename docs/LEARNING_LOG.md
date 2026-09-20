@@ -2423,6 +2423,14 @@ Na 2 verschillende timeouts op dezelfde path: first-button in
 consent-lexicon. 2dehands-fixture herkent `sp_message_container_1494622`.
 Eerste timeout (Coolblue Zoeken) vuurt niet. Geen live.
 
+## 2026-09-20 — Open #32 claims-vs-units (HTML replace vs infobox)
+
+Wiki `165815Z`: units u0 had `198.674 (01/01/2026)`; claims toonden
+Atomium/Manneken. Niet rank (text-arm houdt u0), niet #27-recap.
+HTML leaf replace op `list_results` dropte de text-pool. Fix: splice
+één unrepresented D2c/glyph text-unit (T=3, geen kale digit-run).
+01/02/03/05/06 text-arm ongewijzigd. Geen live.
+
 
 
 

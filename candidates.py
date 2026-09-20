@@ -346,6 +346,83 @@ def html_leaf_should_replace_text(cands: list[Candidate]) -> bool:
     return False
 
 
+# Open #32: same T as Open #10 list-density; provisional, not locked.
+# HTML leaf replace is a second packager. Exclusive select dropped wiki
+# infobox u0 (198.674) while landmark cards won via href+digits, not rank.
+_UNREPRESENTED_PRICE_LIKE_MIN = 3
+
+
+def _candidate_price_like_lines(c: Candidate) -> list[str]:
+    from candidate_units import line_is_price_like
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for ln in list(c.evidence or []) + list(c.identity_hints or []):
+        s = (ln or "").strip()
+        if not s or not line_is_price_like(s):
+            continue
+        key = _norm(s)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
+def html_cards_have_price_like(cands: list[Candidate]) -> bool:
+    """True when any HTML card already carries a D2c/glyph line (Open #10)."""
+    return any(_candidate_price_like_lines(c) for c in (cands or []))
+
+
+def splice_unrepresented_price_like_text(
+    html_chosen: list[Candidate],
+    text_cands: list[Candidate],
+    *,
+    min_hits: int = _UNREPRESENTED_PRICE_LIKE_MIN,
+) -> list[Candidate]:
+    """Open #32: after HTML leaf replace, keep one D2c/glyph text unit.
+
+    Same class as #27 (two packagers, exclusive cap). Detector is
+    line_is_price_like (glyph ∨ D2c), not bare digit_run_count.
+
+    A 3-digit prose run on an HTML card (wiki "165 miljard") is D2c but
+    must not block splice: compare *unrepresented* lines, not "any D2c
+    on HTML". Skip when no text unit has ≥ min_hits unrepresented
+    price-like lines (arXiv pagination 100/200 is 2; wiki infobox is 4).
+    Priced lists: the same D2c lines already sit in HTML evidence.
+    """
+    if not html_chosen or not text_cands:
+        return html_chosen
+    html_blob = _norm(
+        " ".join(
+            " ".join(list(c.evidence or []) + list(c.identity_hints or []))
+            for c in html_chosen
+        )
+    )
+    best: Candidate | None = None
+    best_n = 0
+    for c in text_cands:
+        unrep = [
+            ln
+            for ln in _candidate_price_like_lines(c)
+            if _norm(ln) and _norm(ln) not in html_blob
+        ]
+        if len(unrep) > best_n:
+            best_n = len(unrep)
+            best = c
+    if best is None or best_n < max(1, int(min_hits)):
+        return html_chosen
+    html_ids = {
+        _norm(c.evidence_blob(max_chars=2000)) for c in html_chosen
+    }
+    if _norm(best.evidence_blob(max_chars=2000)) in html_ids:
+        return html_chosen
+    out = list(html_chosen) + [best]
+    for i, c in enumerate(out):
+        c.candidate_id = f"c{i}"
+    return out
+
+
 def extract_candidates(
     *,
     text: str,
@@ -399,7 +476,10 @@ def extract_candidates(
     if html_cands and html_leaf_should_replace_text(html_cands):
         # Repeating itemish list recovered — select from leaf cards, not
         # 8-line text chunks. Chrome-only repeating groups fall back to text.
-        return select_top_candidates(html_cands, max_n=max_candidates)
+        # Open #32: HTML exclusive replace is a second packager (#27-class).
+        # Splice one unrepresented D2c/glyph text unit; do not recap again.
+        chosen = select_top_candidates(html_cands, max_n=max_candidates)
+        return splice_unrepresented_price_like_text(chosen, raw)
     return select_top_candidates(raw, max_n=max_candidates)
 
 
@@ -413,9 +493,10 @@ def candidates_to_observations(
     Default (`max_candidates=None`): no extra cap — pass through all of
     `candidates`. Live acquisition already budgets via extract_candidates
     (Open #6: max_candidates=3, max_units=6) plus at most one Open #27
-    long-text splice. An independent recap here (hardcoded 3) dropped
-    spliced c3 in 20260917T102344Z. Pass an explicit int only in tests
-    that need a tighter slice.
+    long-text splice and at most one Open #32 D2c text splice after HTML
+    replace. An independent recap here (hardcoded 3) dropped spliced c3
+    in 20260917T102344Z. Pass an explicit int only in tests that need a
+    tighter slice.
     """
     cap = len(candidates) if max_candidates is None else max_candidates
     units = []
@@ -465,6 +546,9 @@ __all__ = [
     "extract_candidates",
     "rank_candidates",
     "select_top_candidates",
+    "html_leaf_should_replace_text",
+    "html_cards_have_price_like",
+    "splice_unrepresented_price_like_text",
     "candidates_to_observations",
     "candidates_preview",
     "candidates_to_jsonable",

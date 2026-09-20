@@ -388,6 +388,16 @@ Coolblue `183956Z`/`190223Z`: laptop list set `detail_link=CONCRETE_PRODUCT_PAGE
 - **Negatives:** 01/02/03/05/06 page HTML has no `sp_message_*` dialog; first-timeout gate is False. Icon-search fixture (Zoeken timeout class) has 0 overlays.
 - **Offline:** `evals/overlay_dismiss/test_overlay_dismiss_offline_v0.py`. Live 2dehands only after user OK.
 
+### #32 — HTML leaf replace drops D2c text units (claims-vs-units)
+
+- **Symptom:** wiki `165815Z` step 3. `step_003_candidate_units.json` u0 has `Bevolkingsdichtheid 198.674 (01/01/2026)`. `step_003_claims.json` `claim_preview` is Atomium / Manneken Pis / Belgische Revolutie. Planner STOP cites u0; interpret stays `population_figure=UNKNOWN`. Surface=`list_results` (Open #10 T=3 on infobox digits).
+- **Not rank:** text-arm `rank_candidates` keeps u0 first (`block_index=0`, digit_run=11). **Not #27 recap:** claims n=4 = page title + 3 HTML cards; `candidates_to_observations` has no second cap.
+- **Mechanism:** Open #24b HTML leaf replace on `list_results`. Landmark `<li>` clusters win `html_leaf_should_replace_text` via href+digit_runs (1830/1958 are not D2c). Exclusive `select_top_candidates(html)` drops the text pool before interpret. Same *class* as #27 (two packagers, exclusive budget), different gate.
+- **Fix:** after HTML replace, splice at most one text candidate whose **unrepresented** `line_is_price_like` lines (glyph ∨ D2c, not bare digit_run) are ≥ 3 (same T as #10, **provisional**). "165 miljard" on the Atomium card is D2c but must not block splice. Priced HTML lists (Coolblue) already contain the D2c lines → no extra unit. arXiv pagination 100/200 is 2 hits → no splice.
+- **Negatives:** 01/02/03/05/06 text-arm fingerprints unchanged (`html=""`). Recorded 03 HTML (D2c on cards) and 05 HTML (no extra unit) do not grow. No lexicon (`bevolking` etc.).
+- **Offline:** `evals/claims_vs_units/test_claims_vs_units_offline_v0.py`. Live wiki only after user OK.
+- **Not closed:** Open #10 T=3 still tags the wiki article as `list_results`. This item is only the replace/splice, not the surface classifier.
+
 ---
 
 ## Hardcoded (framework) — allowed

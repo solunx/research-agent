@@ -15,11 +15,11 @@
 
 **Campagne 1 klaar** (`campaign1_generaliteit_20260919T111126Z`): 18 runs, **0/18** SATISFIED, 5 CIRCUIT_BREAK. **Niet herstarten.**
 
-**H-leak:** FIX 1 `82cae84` Open #29; FIX 2 `2f030e3` entity-geen-claim. Open #30 2a same-host (`e2229bc`). Open #31 overlay-dismiss (offline). Path B geïnventariseerd (§14), niet gefixt. Middag-queue — **niet starten** zonder `ja, start` + tmux-sessienaam.
+**H-leak:** FIX 1 `82cae84` Open #29; FIX 2 `2f030e3` entity-geen-claim. Open #30 2a same-host (`e2229bc`). Open #31 overlay-dismiss (offline). Open #32 HTML-replace splice (offline). Path B geïnventariseerd (§14), niet gefixt. Middag-queue — **niet starten** zonder `ja, start` + tmux-sessienaam.
 
 **Open (top 3):**
 1. **#26** — pad 2 live `061149Z`/`064948Z`. #25 onder pad 2 **offline geverifieerd** (canonieke abs-reject op bind-stap: unbind wist `NOT_RELEVANT`; pad 2 wekt het niet opnieuw). **Niet sluiten:** exacte `083112Z`-merge houdt homepage-`NOT_RELEVANT` op `step=0` (zelfde label op abs bump't de stap niet). Geen merge-fix zonder overleg. 03-run1 nog list-SATISFIED.
-2. **#10** — deze trigger bewezen; T=3 provisionally, niet gelockt over alle paginatypes. Campagne: wiki-artikel `Brussel_(stad)` als `list_results`.
+2. **#10** — deze trigger bewezen; T=3 provisionally, niet gelockt over alle paginatypes. Campagne: wiki-artikel `Brussel_(stad)` als `list_results`. Open #32 spliced de infobox terug naar interpret; surface-tag blijft #10.
 3. **Taak 03 Coolblue list→detail** — A+B live op zoeklijst. Post-#26: `061149Z` `CONTRACT_SATISFIED` `final_url=/zoeken?query=nvidia+rtx+4070` **0× OPEN_URL**; `064948Z` `MAX_ACQUISITION_STEPS` `final_url=/zoeken/producttype:videokaarten?query=videokaart` — eerste OPEN (`Bekijk alle categorieën`, bind `/nl/ons-assortiment`), geen product-`/product/` OPEN. #24b niet sluiten. Niet `html_b2`.
 
 Volledige docs alleen bij audit/verificatie: `MECHANISM_NOTES.md` (waarom), `FRAMEWORK_BOUNDARY.md` Open items, `HANDOVER.md`, `CANDIDATE_LAYER.md` LOCKED, `LEARNING_LOG.md`, `BOUNDARY_AUDIT_FINAL.md`. Campagne-infra: `scripts/run_task_campaign_tmux_v0.sh` — niet starten zonder N + taken + sessienaam.
